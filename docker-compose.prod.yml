@@ -1,0 +1,154 @@
+# docker-compose.prod.yml
+# Stack de producción AGENTICA para VPS Axenova
+# Compatible con Traefik ya instalado en axenova.com
+#
+# Requisitos en el VPS:
+#   - Red externa "traefik_public" ya existente (la de Axenova)
+#   - Traefik con certresolver "letsencrypt" configurado
+#   - Variables de entorno en /opt/agentica/.env
+
+services:
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       agentica
+      POSTGRES_USER:     agentica
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentica"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-agentica_redis}
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-agentica_redis}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Qdrant ───────────────────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - internal
+
+  # ── Backend ──────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:      postgresql+asyncpg://agentica:${POSTGRES_PASSWORD}@postgres:5432/agentica
+      REDIS_URL:         redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/0
+      QDRANT_URL:        http://qdrant:6333
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY:    ${OPENAI_API_KEY:-}
+      JWT_SECRET:        ${JWT_SECRET}
+      ADMIN_PASSWORD:    ${ADMIN_PASSWORD}
+      ENCRYPTION_KEY:    ${ENCRYPTION_KEY}
+      ENVIRONMENT:       production
+      CORS_ORIGINS:      ${CORS_ORIGINS:-https://agentica.axenova.com}
+      BASE_DOMAIN:       ${BASE_DOMAIN:-axenova.com}
+      CELERY_BROKER:     redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/1
+      CELERY_BACKEND:    redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/2
+      TWILIO_ACCOUNT_SID:  ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN:   ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER:-}
+      TELEGRAM_BOT_TOKEN:  ${TELEGRAM_BOT_TOKEN:-}
+    volumes:
+      - agent_builds:/app/builds
+    networks:
+      - internal
+      - traefik_public
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_public"
+      # API — www.axenova.com/agentica/api
+      - "traefik.http.routers.agentica-api.rule=Host(`www.${BASE_DOMAIN:-axenova.com}`) && PathPrefix(`/agentica/api`)"
+      - "traefik.http.routers.agentica-api.entrypoints=websecure"
+      - "traefik.http.routers.agentica-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.agentica-api.loadbalancer.server.port=8000"
+      # Middlewares & WebSocket upgrade
+      - "traefik.http.middlewares.agentica-ws.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.middlewares.agentica-strip.stripprefix.prefixes=/agentica"
+      - "traefik.http.routers.agentica-api.middlewares=agentica-ws,agentica-strip"
+
+  # ── Celery Worker ─────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:      postgresql+asyncpg://agentica:${POSTGRES_PASSWORD}@postgres:5432/agentica
+      REDIS_URL:         redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ENCRYPTION_KEY:    ${ENCRYPTION_KEY}
+      ENVIRONMENT:       production
+      CELERY_BROKER:     redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/1
+      CELERY_BACKEND:    redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/2
+    volumes:
+      - agent_builds:/app/builds
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - internal
+      - traefik_public
+    depends_on:
+      - postgres
+      - redis
+    command: celery -A app.tasks.celery_app worker --loglevel=info -Q builds,evals,deploys --concurrency=2
+
+  # ── Frontend ──────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    networks:
+      - traefik_public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_public"
+      - "traefik.http.routers.agentica-ui.rule=Host(`www.${BASE_DOMAIN:-axenova.com}`) && PathPrefix(`/agentica`)"
+      - "traefik.http.routers.agentica-ui.entrypoints=websecure"
+      - "traefik.http.routers.agentica-ui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.agentica-ui.loadbalancer.server.port=80"
+      - "traefik.http.routers.agentica-ui.middlewares=agentica-strip"
+
+networks:
+  internal:
+    driver: bridge
+  traefik_public:
+    external: true     # Red Traefik ya existente en el VPS Axenova
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  agent_builds:

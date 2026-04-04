@@ -1,0 +1,131 @@
+"""
+FastAPI app del agente desplegado — generado por AGENTICA.
+agent_id: {{ agent_id }}
+"""
+import os
+import asyncio
+import json
+import time
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+# Importar el executor o crew generado
+{% if framework == "langchain" %}
+from agent import executor, AGENT_ID, AGENT_NAME
+{% else %}
+from agent import crew, AGENT_ID, AGENT_NAME
+{% endif %}
+
+# Memory (Redis si disponible, sino in-memory)
+import redis.asyncio as aioredis
+_redis = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _redis
+    redis_url = os.getenv("REDIS_URL", "")
+    if redis_url:
+        _redis = await aioredis.from_url(redis_url, decode_responses=True)
+    yield
+    if _redis:
+        await _redis.aclose()
+
+
+app = FastAPI(title=AGENT_NAME, lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+class InvokeRequest(BaseModel):
+    input: str
+    session_id: str = "default"
+
+
+async def _load_history(session_id: str) -> list:
+    if not _redis:
+        return []
+    raw = await _redis.get(f"mem:{AGENT_ID}:{session_id}")
+    return json.loads(raw) if raw else []
+
+
+async def _save_history(session_id: str, user_input: str, output: str):
+    if not _redis:
+        return
+    history = await _load_history(session_id)
+    history += [
+        {"role": "user",      "content": user_input},
+        {"role": "assistant", "content": output},
+    ]
+    history = history[-100:]  # ventana máx 50 turnos
+    await _redis.setex(f"mem:{AGENT_ID}:{session_id}", {{ memory_ttl }}, json.dumps(history))
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "agent_id": AGENT_ID, "agent_name": AGENT_NAME}
+
+
+@app.post("/invoke")
+async def invoke(req: InvokeRequest):
+    start = time.monotonic()
+    history = await _load_history(req.session_id)
+
+    {% if framework == "langchain" %}
+    result = await executor.ainvoke({"input": req.input, "chat_history": history})
+    output = result.get("output", "")
+    steps  = [{"tool": str(s[0]), "result": str(s[1])} for s in result.get("intermediate_steps", [])]
+    {% else %}
+    result = await asyncio.to_thread(crew.kickoff, inputs={"input": req.input})
+    output = str(result)
+    steps  = []
+    {% endif %}
+
+    await _save_history(req.session_id, req.input, output)
+    return {
+        "output": output,
+        "steps": steps,
+        "latency_ms": (time.monotonic() - start) * 1000,
+        "session_id": req.session_id,
+    }
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
+    session_id = ws.query_params.get("session_id", "ws_default")
+    try:
+        while True:
+            data = await ws.receive_text()
+            msg  = json.loads(data) if data.startswith("{") else {"input": data}
+            user_input = msg.get("input", "")
+            history = await _load_history(session_id)
+
+            {% if framework == "langchain" %}
+            collected = []
+            async for chunk in executor.astream({"input": user_input, "chat_history": history}):
+                token = ""
+                if isinstance(chunk, dict):
+                    token = chunk.get("output") or chunk.get("token") or ""
+                elif isinstance(chunk, str):
+                    token = chunk
+                if token:
+                    collected.append(token)
+                    await ws.send_json({"type": "token", "content": token})
+            full_output = "".join(collected)
+            {% else %}
+            full_output = await asyncio.to_thread(crew.kickoff, inputs={"input": user_input})
+            full_output = str(full_output)
+            import re
+            for sentence in re.split(r"(?<=[.!?])\s+", full_output):
+                if sentence:
+                    await ws.send_json({"type": "token", "content": sentence + " "})
+                    await asyncio.sleep(0.05)
+            {% endif %}
+
+            await _save_history(session_id, user_input, full_output)
+            await ws.send_json({"type": "done", "session_id": session_id})
+
+    except WebSocketDisconnect:
+        pass

@@ -1,0 +1,58 @@
+"""
+Agente generado automáticamente por AGENTICA.
+Framework: LangChain  |  agent_id: {{ agent_id }}
+NO EDITAR MANUALMENTE — regenerar desde la plataforma.
+"""
+from langchain.agents import AgentExecutor
+{% if agent_type == "openai_functions" %}
+from langchain.agents import create_openai_functions_agent
+{% else %}
+from langchain.agents import create_react_agent
+{% endif %}
+from langchain_anthropic import ChatAnthropic
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
+AGENT_ID   = "{{ agent_id }}"
+AGENT_NAME = "{{ agent_name }}"
+
+SYSTEM_PROMPT = """{{ system_prompt }}"""
+
+llm = ChatAnthropic(
+    model="{{ model }}",
+    temperature={{ temperature }},
+    max_tokens={{ max_tokens }},
+)
+
+# ── Tools ─────────────────────────────────────────────────────────────────────
+from app.components.tools.builtin import get_tool
+
+tools = [
+{% for tool in tools %}
+    get_tool("{{ tool.name }}", {{ tool.config }}),
+{% endfor %}
+]
+
+# ── Prompt ────────────────────────────────────────────────────────────────────
+prompt = ChatPromptTemplate.from_messages([
+    ("system", SYSTEM_PROMPT),
+    MessagesPlaceholder("chat_history"),
+    ("human", "{input}"),
+    MessagesPlaceholder("agent_scratchpad"),
+])
+
+# ── Executor ──────────────────────────────────────────────────────────────────
+{% if agent_type == "openai_functions" %}
+agent = create_openai_functions_agent(llm, tools, prompt)
+{% else %}
+agent = create_react_agent(llm, tools, prompt)
+{% endif %}
+
+executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    verbose=False,
+    max_iterations=10,
+    max_execution_time=120,
+    handle_parsing_errors=True,
+    return_intermediate_steps=True,
+)

@@ -1,0 +1,42 @@
+"""
+Equipo de agentes generado por AGENTICA.
+Framework: CrewAI  |  agent_id: {{ agent_id }}
+"""
+from crewai import Agent, Task, Crew, Process
+from langchain_anthropic import ChatAnthropic
+from app.components.tools.builtin import get_tool
+
+AGENT_ID   = "{{ agent_id }}"
+AGENT_NAME = "{{ agent_name }}"
+
+_llm = ChatAnthropic(model="{{ model }}", temperature={{ temperature }})
+
+# ── Agentes ───────────────────────────────────────────────────────────────────
+{% for ag in agents %}
+{{ ag.name }} = Agent(
+    role="{{ ag.role }}",
+    goal="{{ ag.goal }}",
+    backstory="{{ ag.backstory }}",
+    tools=[{% for t in ag.tools %}get_tool("{{ t.name }}", {{ t.config }}), {% endfor %}],
+    llm=_llm,
+    allow_delegation={{ ag.allow_delegation }},
+    verbose=False,
+)
+{% endfor %}
+
+# ── Tasks (generadas desde el objetivo global) ────────────────────────────────
+{% for ag in agents %}
+task_{{ ag.name }} = Task(
+    description="{{ ag.goal }}\n\nInput del usuario: {input}",
+    expected_output="Resultado del rol {{ ag.role }}",
+    agent={{ ag.name }},
+)
+{% endfor %}
+
+# ── Crew ──────────────────────────────────────────────────────────────────────
+crew = Crew(
+    agents=[{% for ag in agents %}{{ ag.name }}, {% endfor %}],
+    tasks=[{% for ag in agents %}task_{{ ag.name }}, {% endfor %}],
+    process=Process.{{ process }},
+    verbose=False,
+)

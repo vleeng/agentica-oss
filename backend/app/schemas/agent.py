@@ -1,0 +1,161 @@
+from __future__ import annotations
+from enum import Enum
+from typing import Literal, Optional
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel, Field
+
+
+# ── Enumeraciones ────────────────────────────────────────────────────────────
+
+class AgentMode(str, Enum):
+    single = "single"   # Un agente con tools → LangChain
+    crew   = "crew"     # Equipo de agentes con roles → CrewAI
+
+
+class MemoryType(str, Enum):
+    none          = "none"
+    session       = "session"       # Redis, se borra al cerrar sesión
+    persistent    = "persistent"    # PostgreSQL, persiste entre sesiones
+    summary       = "summary"       # Summary buffer sobre persistent
+
+
+class CrewProcess(str, Enum):
+    sequential   = "sequential"
+    hierarchical = "hierarchical"
+    parallel     = "parallel"
+
+
+class AutonomyLevel(str, Enum):
+    reactive   = "reactive"    # Solo responde cuando lo invocan
+    semi       = "semi"        # Puede hacer follow-up, pide confirmación en acciones
+    autonomous = "autonomous"  # Ejecuta sin pedir confirmación
+
+
+class ChannelType(str, Enum):
+    web_chat  = "web_chat"
+    whatsapp  = "whatsapp"
+    telegram  = "telegram"
+    slack     = "slack"
+    rest_api  = "rest_api"
+
+
+# ── Sub-specs ────────────────────────────────────────────────────────────────
+
+class ToolRef(BaseModel):
+    """Referencia a una tool de la Component Library o custom."""
+    name: str
+    source: Literal["library", "custom"] = "library"
+    config: dict = Field(default_factory=dict)  # parámetros específicos de la tool
+
+
+class MemorySpec(BaseModel):
+    type: MemoryType = MemoryType.session
+    ttl_seconds: Optional[int] = None           # None = sin expiración
+    max_messages: int = 50                       # ventana de contexto en memoria
+
+
+class RAGSpec(BaseModel):
+    enabled: bool = False
+    pack: str = "GenericDocsRAG"                # nombre del RAG pack
+    sources: list[str] = Field(default_factory=list)  # URLs, paths, DSNs
+    chunk_size: int = 500
+    chunk_overlap: int = 50
+    top_k: int = 4                               # fragmentos a recuperar por query
+    embedding_model: str = "text-embedding-3-small"
+
+
+class ModelParams(BaseModel):
+    model: str = "claude-3-5-sonnet-20241022"  # o gpt-4o etc
+    temperature: float = Field(0.3, ge=0.0, le=1.0)
+    max_tokens: int = Field(2048, ge=256, le=8192)
+    top_p: float = Field(1.0, ge=0.0, le=1.0)
+    llm_key_id: Optional[str] = None
+
+
+# ── AgentRoleSpec (solo para mode=crew) ─────────────────────────────────────
+
+class AgentRoleSpec(BaseModel):
+    name: str                         # identificador interno, ej: "researcher"
+    role: str                         # título visible, ej: "Investigador Senior"
+    goal: str                         # objetivo del rol
+    backstory: str                    # contexto del rol para CrewAI
+    tools: list[ToolRef] = Field(default_factory=list)
+    allow_delegation: bool = False
+    model_params: Optional[ModelParams] = None  # None = usa el del Crew
+
+
+# ── AgentSpec — el objeto central del Requirement Wizard ────────────────────
+
+class AgentSpec(BaseModel):
+    """
+    Producido por el Requirement Wizard.
+    Es el único input que necesita el resto del pipeline.
+    """
+    # Identidad
+    tenant_id: str
+    name: str
+    description: str
+    goal: str
+
+    # Modo — determina el framework
+    mode: AgentMode
+
+    # Canales de despliegue
+    channels: list[ChannelType] = Field(default_factory=lambda: [ChannelType.web_chat])
+
+    # Configuración del modelo base
+    model_params: ModelParams = Field(default_factory=ModelParams)
+
+    # Restricciones y contexto
+    constraints: list[str] = Field(default_factory=list)
+    expected_inputs: list[str] = Field(default_factory=list)
+    expected_outputs: list[str] = Field(default_factory=list)
+
+    # Memoria y RAG
+    memory: MemorySpec = Field(default_factory=MemorySpec)
+    rag: RAGSpec = Field(default_factory=RAGSpec)
+
+    # Solo para mode=single
+    tools: list[ToolRef] = Field(default_factory=list)
+    autonomy_level: AutonomyLevel = AutonomyLevel.reactive
+
+    # Solo para mode=crew
+    agents: list[AgentRoleSpec] = Field(default_factory=list)
+    process: CrewProcess = CrewProcess.sequential
+    manager_model: Optional[str] = None   # para process=hierarchical
+
+
+# ── FrameworkSelection — output del Framework Selector ──────────────────────
+
+class FrameworkSelection(BaseModel):
+    framework: Literal["langchain", "crewai"]
+    agent_type: Optional[Literal["openai_functions", "react"]] = None  # solo langchain
+    process: Optional[CrewProcess] = None                               # solo crewai
+    justification: str
+    estimated_complexity: Literal["low", "medium", "high"]
+
+
+# ── AgentDesign — output del Design Generator ───────────────────────────────
+
+class AgentDesign(BaseModel):
+    agent_id: UUID = Field(default_factory=uuid4)
+    tenant_id: str
+    spec: AgentSpec
+    framework: FrameworkSelection
+    system_prompt: str
+    graph_blueprint: dict = Field(default_factory=dict)  # nodos y edges del grafo
+    test_cases: list[dict] = Field(default_factory=list) # mín 5, generados por LLM
+    mermaid_diagram: str = ""
+    version: int = 1
+
+
+# ── AgentResponse — output unificado del AgentRuntime ───────────────────────
+
+class AgentResponse(BaseModel):
+    output: str
+    steps: list[dict] = Field(default_factory=list)  # intermediate steps
+    tokens_in: int = 0
+    tokens_out: int = 0
+    latency_ms: float = 0.0
+    session_id: str = ""
