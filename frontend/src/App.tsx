@@ -8,10 +8,13 @@ import { StandaloneChat }    from './components/monitor/StandaloneChat'
 import { Login }             from './components/auth/Login'
 import { ProvidersPanel }    from './components/builder/ProvidersPanel'
 import { CustomToolsPanel } from './components/builder/CustomToolsPanel'
-import { agentsApi, wizardStateToSpec } from './lib/api'
+import { SkillsPanel }        from './components/builder/SkillsPanel'
+import { MCPPanel }           from './components/builder/MCPPanel'
+import { KnowledgeBasesPanel } from './components/builder/KnowledgeBasesPanel'
+import { agentsApi, authApi, wizardStateToSpec } from './lib/api'
 import type { AgentDesign, WizardState } from './types/agent'
 
-type View = 'dashboard' | 'wizard' | 'monitor' | 'keys' | 'usage' | 'providers' | 'custom_tools'
+type View = 'dashboard' | 'wizard' | 'monitor' | 'keys' | 'usage' | 'providers' | 'custom_tools' | 'skills' | 'mcp' | 'knowledge_bases'
 
 export default function App() {
   // Interceptar ruta standalone
@@ -36,9 +39,7 @@ export default function App() {
     setLoading(true)
     setError('')
     try {
-      const me = await fetch('/api/v1/auth/me', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('agentica_token')}` }
-      }).then(r => r.json())
+      const me = await authApi.me()
       const spec = wizardStateToSpec(state, me.tenant_id)
       const agentDesign = await agentsApi.createFromSpec(spec)
       setDesign(agentDesign)
@@ -62,12 +63,15 @@ export default function App() {
     }
   }
 
-  const NAV: Array<{ id: View; label: string }> = [
-    { id: 'dashboard', label: 'Agentes' },
-    { id: 'usage',     label: 'Uso' },
-    { id: 'providers', label: 'Bóveda IA' },
+  const NAV: Array<{ id: View; label: string; group?: string }> = [
+    { id: 'dashboard',   label: 'Agentes' },
+    { id: 'usage',       label: 'Uso' },
+    { id: 'providers',   label: 'Bóveda IA' },
     { id: 'custom_tools', label: 'Mis Tools' },
-    { id: 'keys',      label: 'API Keys' },
+    { id: 'keys',        label: 'API Keys' },
+    { id: 'skills',         label: 'Skills',      group: 'Librería' },
+    { id: 'mcp',            label: 'MCPs',         group: 'Librería' },
+    { id: 'knowledge_bases', label: 'Conocimiento', group: 'Librería' },
   ]
 
   return (
@@ -98,7 +102,8 @@ export default function App() {
         </div>
         
         <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-          {NAV.map(nav => (
+          {/* Navegación principal */}
+          {NAV.filter(n => !n.group).map(nav => (
             <button key={nav.id} onClick={() => { setView(nav.id); setMobileMenuOpen(false); }}
               className={`w-full flex items-center px-4 py-2.5 text-sm rounded-lg transition-colors text-left ${
                 view === nav.id
@@ -108,6 +113,20 @@ export default function App() {
               {nav.label}
             </button>
           ))}
+          {/* Librería */}
+          <div className="pt-4">
+            <p className="px-4 pb-1 text-xs font-semibold text-gray-600 uppercase tracking-wider">Librería</p>
+            {NAV.filter(n => n.group === 'Librería').map(nav => (
+              <button key={nav.id} onClick={() => { setView(nav.id); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center px-4 py-2.5 text-sm rounded-lg transition-colors text-left ${
+                  view === nav.id
+                    ? 'bg-violet-600 text-white font-medium shadow-sm'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                }`}>
+                {nav.label}
+              </button>
+            ))}
+          </div>
         </nav>
         
         <div className="p-4 border-t border-gray-800">
@@ -147,7 +166,25 @@ export default function App() {
         {!loading && !error && view === 'providers' && <ProvidersPanel />}
         {!loading && !error && view === 'keys'      && <APIKeysPanel />}
         {!loading && !error && view === 'usage'     && <UsageDashboard />}
-        {!loading && !error && view === 'custom_tools' && <CustomToolsPanel />}
+        {!loading && !error && view === 'custom_tools'    && <CustomToolsPanel />}
+        {!loading && !error && view === 'skills'          && (
+          <div className="max-w-4xl mx-auto px-6 py-8">
+            <h1 className="text-xl font-semibold text-gray-900 mb-6">Skills</h1>
+            <SkillsPanel />
+          </div>
+        )}
+        {!loading && !error && view === 'mcp'             && (
+          <div className="max-w-4xl mx-auto px-6 py-8">
+            <h1 className="text-xl font-semibold text-gray-900 mb-6">Servidores MCP</h1>
+            <MCPPanel />
+          </div>
+        )}
+        {!loading && !error && view === 'knowledge_bases' && (
+          <div className="max-w-4xl mx-auto px-6 py-8">
+            <h1 className="text-xl font-semibold text-gray-900 mb-6">Bases de Conocimiento</h1>
+            <KnowledgeBasesPanel />
+          </div>
+        )}
         </main>
       </div>
     </div>

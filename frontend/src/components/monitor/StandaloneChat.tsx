@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { createAgentWebSocket } from '../../lib/api'
+import { agentsApi, createAgentWebSocket } from '../../lib/api'
 import { Bot, Send } from 'lucide-react'
 
 interface Props {
@@ -21,14 +21,19 @@ export function StandaloneChat({ agentId }: Props) {
   const sessionId = useRef(`pub_${agentId}_${Date.now()}`)
   const wsRef = useRef<ReturnType<typeof createAgentWebSocket> | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const apiKey = new URLSearchParams(window.location.search).get('api_key') || ''
   
   const [agentReady, setAgentReady] = useState<'loading' | 'ok' | 'error'>('loading')
 
   useEffect(() => {
-    fetch(`/api/v1/agents/${agentId}/state`)
-      .then(r => r.ok ? setAgentReady('ok') : setAgentReady('error'))
+    if (apiKey) {
+      setAgentReady('ok')
+      return
+    }
+    agentsApi.getState(agentId)
+      .then(() => setAgentReady('ok'))
       .catch(() => setAgentReady('error'))
-  }, [agentId])
+  }, [agentId, apiKey])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -89,6 +94,7 @@ export function StandaloneChat({ agentId }: Props) {
           ))
           setSending(false)
         },
+        { apiKey },
       )
     }
 

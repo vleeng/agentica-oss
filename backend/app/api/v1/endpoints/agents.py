@@ -4,11 +4,11 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from app.api.deps import TenantRepo
-from app.core.security import CurrentContext
+from app.core.security import CurrentContext, RequestContext, decode_access_token
 from app.runtime.factory import RuntimeFactory
 from app.runtime.store import get_runtime_store
 from app.schemas.agent import AgentDesign, AgentResponse, AgentSpec
@@ -77,7 +77,7 @@ async def build_agent(
 
     try:
         store = get_runtime_store()
-        runtime = await RuntimeFactory().build(design)
+        runtime = await RuntimeFactory(redis_client=store.redis_client).build(design)
         await store.save_runtime(agent_id, runtime, design)
         await repo.update_build(build_id, "ready")
         await repo.update_agent_status(agent_id, "testing")
@@ -146,6 +146,11 @@ async def invoke_agent(
 
 @router.websocket("/{agent_id}/ws")
 async def agent_websocket(websocket: WebSocket, agent_id: str):
+    ctx = await _get_ws_context(websocket)
+    if ctx is None:
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+
     await websocket.accept()
     try:
         while True:
@@ -168,7 +173,10 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
                 continue
 
             try:
-                runtime, _ = await _get_runtime(agent_id)
+                runtime, design = await _get_runtime(agent_id)
+                if design.tenant_id != ctx.tenant_id:
+                    await websocket.send_json({"type": "error", "message": "Agente no autorizado"})
+                    continue
             except HTTPException as e:
                 await websocket.send_json({"type": "error", "message": e.detail})
                 continue
@@ -240,8 +248,9 @@ async def optimize_agent(
     updated_design, patch = await optimizer_svc.optimize(design, body.eval_report)
 
     if body.auto_rebuild:
-        new_runtime = await RuntimeFactory().build(updated_design)
-        await get_runtime_store().save_runtime(agent_id, new_runtime, updated_design)
+        store = get_runtime_store()
+        new_runtime = await RuntimeFactory(redis_client=store.redis_client).build(updated_design)
+        await store.save_runtime(agent_id, new_runtime, updated_design)
         await repo.create_agent(updated_design)   # upsert nueva versión
 
     return {
@@ -305,9 +314,10 @@ async def get_history(
 # ── DELETE /{id}/session/{sid} ────────────────────────────────────────────────
 
 @router.delete("/{agent_id}/session/{session_id}", status_code=204)
-async def reset_session(agent_id: str, session_id: str, ctx: CurrentContext) -> None:
+async def reset_session(agent_id: str, session_id: str, ctx: CurrentContext) -> Response:
     runtime, _ = await _get_runtime(agent_id)
     runtime.reset(session_id)
+    return Response(status_code=204)
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
@@ -320,3 +330,38 @@ async def _get_runtime(agent_id: str) -> tuple:
     if runtime is None:
         raise HTTPException(409, f"Agente sin build — llamá a /{agent_id}/build")
     return runtime, design
+
+
+async def _get_ws_context(websocket: WebSocket) -> RequestContext | None:
+    token = websocket.query_params.get("token")
+    api_key = websocket.query_params.get("api_key")
+
+    auth_header = websocket.headers.get("authorization")
+    if not token and auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header[7:]
+
+    if token:
+        try:
+            payload = decode_access_token(token)
+            return RequestContext(
+                tenant_id=payload["tenant_id"],
+                user_id=payload["sub"],
+                role=payload["role"],
+            )
+        except Exception:
+            return None
+
+    if api_key:
+        try:
+            from app.api.v1.endpoints.api_keys import resolve_api_key
+            result = await resolve_api_key(api_key)
+            if result and "invoke" in result.get("scopes", []):
+                return RequestContext(
+                    tenant_id=result["tenant_id"],
+                    user_id="api_key",
+                    role="agent_user",
+                )
+        except Exception:
+            return None
+
+    return None

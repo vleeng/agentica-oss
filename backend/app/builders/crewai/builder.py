@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from crewai import Agent, Crew, Process, Task
 from langchain_anthropic import ChatAnthropic
 
 from app.components.tools.builtin import get_tool
@@ -15,12 +14,17 @@ class CrewAIAgentBuilder:
     desde el graph_blueprint del design.
     """
 
+    def __init__(self, session_factory=None):
+        self._session_factory = session_factory
+
     async def build(self, design: AgentDesign, api_key: str = "") -> CrewAIRuntime:
+        from crewai import Crew, Process
+
         spec = design.spec
         llm  = self._make_llm(spec.model_params.model, spec.model_params.temperature, api_key)
 
         # 1. Construir agentes desde los roles del spec
-        crew_agents: dict[str, Agent] = {}
+        crew_agents = {}
         for role_spec in spec.agents:
             agent = await self._build_agent_async(role_spec, llm, api_key, design.tenant_id)
             crew_agents[role_spec.name] = agent
@@ -50,7 +54,12 @@ class CrewAIAgentBuilder:
             memory=spec.memory.type.value != "none",
         )
 
-        return CrewAIRuntime(crew=crew, spec=spec)
+        return CrewAIRuntime(
+            crew=crew,
+            spec=spec,
+            agent_id=str(design.agent_id),
+            session_factory=self._session_factory,
+        )
 
     def _make_llm(self, model: str, temperature: float = 0.3, api_key: str = ""):
         if "gpt" in model:
@@ -58,7 +67,9 @@ class CrewAIAgentBuilder:
             return ChatOpenAI(model=model, temperature=temperature, api_key=api_key)
         return ChatAnthropic(model=model, temperature=temperature, api_key=api_key)
 
-    async def _build_agent_async(self, role_spec: AgentRoleSpec, default_llm, api_key: str = "", tenant_id: str = "") -> Agent:
+    async def _build_agent_async(self, role_spec: AgentRoleSpec, default_llm, api_key: str = "", tenant_id: str = ""):
+        from crewai import Agent
+
         tools = []
         for t in role_spec.tools:
             if t.source == "library":
@@ -67,7 +78,28 @@ class CrewAIAgentBuilder:
                 from app.builders.langchain.builder import _load_custom_tool
                 tools.append(await _load_custom_tool(t.name, t.config, tenant_id))
 
-    def _build_agent(self, role_spec: AgentRoleSpec, default_llm, api_key: str = "") -> Agent:
+        llm = default_llm
+        if role_spec.model_params:
+            llm = self._make_llm(
+                role_spec.model_params.model,
+                role_spec.model_params.temperature,
+                api_key,
+            )
+
+        return Agent(
+            role=role_spec.role,
+            goal=role_spec.goal,
+            backstory=role_spec.backstory,
+            tools=tools,
+            llm=llm,
+            allow_delegation=role_spec.allow_delegation,
+            verbose=True,
+            max_iter=10,
+        )
+
+    def _build_agent(self, role_spec: AgentRoleSpec, default_llm, api_key: str = ""):
+        from crewai import Agent
+
         tools = [get_tool(t.name, t.config) for t in role_spec.tools if t.source == "library"]
 
         llm = default_llm
@@ -89,7 +121,9 @@ class CrewAIAgentBuilder:
             max_iter=10,
         )
 
-    def _build_tasks(self, design: AgentDesign, crew_agents: dict[str, Agent]) -> list[Task]:
+    def _build_tasks(self, design: AgentDesign, crew_agents: dict) -> list:
+        from crewai import Task
+
         """
         Genera Tasks desde el graph_blueprint.
         Nodos de tipo 'agent' se convierten en Tasks; el agente asignado

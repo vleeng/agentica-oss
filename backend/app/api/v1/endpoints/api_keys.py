@@ -5,7 +5,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -113,7 +113,7 @@ async def list_api_keys(ctx: CurrentContext) -> list[APIKeyOut]:
 
 
 @router.delete("/{key_id}", status_code=204)
-async def revoke_api_key(key_id: str, ctx: CurrentContext) -> None:
+async def revoke_api_key(key_id: str, ctx: CurrentContext) -> Response:
     """Revoca (elimina) una API key."""
     ctx.require_developer()
     async with PublicSessionFactory() as db:
@@ -124,6 +124,7 @@ async def revoke_api_key(key_id: str, ctx: CurrentContext) -> None:
         if not result.fetchone():
             raise HTTPException(404, "API key no encontrada")
         await db.commit()
+    return Response(status_code=204)
 
 
 async def resolve_api_key(raw_key: str) -> Optional[dict]:
@@ -144,6 +145,8 @@ async def resolve_api_key(raw_key: str) -> Optional[dict]:
         row = result.fetchone()
 
     if not row:
+        return None
+    if row.expires_at and row.expires_at <= datetime.now(timezone.utc):
         return None
     return {"tenant_id": str(row.tenant_id), "scopes": list(row.scopes)}
 
@@ -185,6 +188,11 @@ async def create_llm_key(body: LLMProviderKeyCreate, ctx: CurrentContext) -> LLM
     """Guarda una nueva credencial en la bóveda de forma cifrada."""
     ctx.require_developer()
     enc_key = encrypt_provider_key(body.raw_key)
+    truncated_key = (
+        f"{body.raw_key[:6]}...{body.raw_key[-4:]}"
+        if len(body.raw_key) > 10
+        else "********"
+    )
 
     async with PublicSessionFactory() as db:
         # Si es la primera para este provider, la hacemos default
@@ -197,8 +205,10 @@ async def create_llm_key(body: LLMProviderKeyCreate, ctx: CurrentContext) -> LLM
 
         result = await db.execute(
             text("""
-                INSERT INTO llm_provider_keys (tenant_id, provider, name, encrypted_key, is_default)
-                VALUES (:tid, :prov, :name, :enc, :is_def)
+                INSERT INTO llm_provider_keys
+                    (tenant_id, provider, name, encrypted_key, truncated_key, is_default)
+                VALUES
+                    (:tid, :prov, :name, :enc, :truncated, :is_def)
                 RETURNING id, created_at
             """),
             {
@@ -206,6 +216,7 @@ async def create_llm_key(body: LLMProviderKeyCreate, ctx: CurrentContext) -> LLM
                 "prov": body.provider,
                 "name": body.name,
                 "enc": enc_key,
+                "truncated": truncated_key,
                 "is_def": is_def,
             }
         )
@@ -218,7 +229,7 @@ async def create_llm_key(body: LLMProviderKeyCreate, ctx: CurrentContext) -> LLM
         name=body.name,
         is_default=is_def,
         created_at=row.created_at,
-        truncated_key="sk-...********"
+        truncated_key=truncated_key
     )
 
 
@@ -240,7 +251,7 @@ async def set_default_llm_key(key_id: str, provider: str, ctx: CurrentContext) -
 
 
 @router.delete("/llm/{key_id}", status_code=204)
-async def delete_llm_key(key_id: str, ctx: CurrentContext) -> None:
+async def delete_llm_key(key_id: str, ctx: CurrentContext) -> Response:
     """Elimina una credencial de la bóveda."""
     ctx.require_developer()
     async with PublicSessionFactory() as db:
@@ -249,3 +260,4 @@ async def delete_llm_key(key_id: str, ctx: CurrentContext) -> None:
             {"id": key_id, "tid": ctx.tenant_id}
         )
         await db.commit()
+    return Response(status_code=204)

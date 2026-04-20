@@ -62,6 +62,10 @@ class LangChainAgentBuilder:
             from app.components.rag.rag_tool import RAGTool
             tools.append(RAGTool(agent_id=str(design.agent_id), top_k=spec.rag.top_k))
 
+        extra_tools = getattr(design, "_extra_lc_tools", [])
+        if extra_tools:
+            tools.extend(extra_tools)
+
         # 3. Prompt
         prompt = self._build_prompt(design.system_prompt, has_tools=bool(tools))
 
@@ -85,7 +89,13 @@ class LangChainAgentBuilder:
         # 5. Memory adapter
         memory = self._build_memory(design)
 
-        return LangChainRuntime(executor=executor, memory_adapter=memory, spec=spec)
+        return LangChainRuntime(
+            executor=executor,
+            memory_adapter=memory,
+            spec=spec,
+            agent_id=str(design.agent_id),
+            session_factory=self._session_factory,
+        )
 
     def _build_prompt(self, system_prompt: str, has_tools: bool) -> ChatPromptTemplate:
         messages = [

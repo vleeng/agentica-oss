@@ -251,7 +251,9 @@ class AgenticaChat extends HTMLElement {
     this.isConnecting = true
     this.setStatus('Conectando...')
 
-    this.ws = new WebSocket(`${this.wsUrl}?session_id=${this.sessionId}`)
+    const params = new URLSearchParams({ session_id: this.sessionId })
+    if (this.apiKey) params.set('api_key', this.apiKey)
+    this.ws = new WebSocket(`${this.wsUrl}?${params.toString()}`)
 
     this.ws.onopen = () => {
       this.isConnecting = false

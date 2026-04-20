@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { AgentDesign } from '../../types/agent'
 import { agentsApi, createAgentWebSocket } from '../../lib/api'
 import { KnowledgePanel } from './KnowledgePanel'
+import { AgentConfigPanel } from './AgentConfigPanel'
 
 interface Props {
   design: AgentDesign
@@ -22,7 +23,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
   const [evalReport, setEvalReport]   = useState<any>(null)
   const [optimizeResult, setOptimize] = useState<any>(null)
   const [error, setError]             = useState<string>('')
-  const [activeTab, setActiveTab]     = useState<'sandbox' | 'eval' | 'design' | 'knowledge'>('sandbox')
+  const [activeTab, setActiveTab]     = useState<'sandbox' | 'eval' | 'design' | 'knowledge' | 'config'>('sandbox')
 
   // Sandbox chat
   const [messages, setMessages]   = useState<ChatMessage[]>([])
@@ -187,7 +188,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-4 border-b border-gray-200">
-        {(['sandbox', 'eval', 'design', 'knowledge'] as const).map(tab => (
+        {(['sandbox', 'eval', 'design', 'knowledge', 'config'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -197,7 +198,11 @@ export function AgentMonitor({ design, onOptimized }: Props) {
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            {tab === 'sandbox' ? 'Sandbox' : tab === 'eval' ? 'Evaluación' : tab === 'knowledge' ? 'Conocimiento' : 'Diseño'}
+            {tab === 'sandbox' ? 'Sandbox'
+              : tab === 'eval' ? 'Evaluación'
+              : tab === 'knowledge' ? 'Conocimiento'
+              : tab === 'config' ? '⚙ Configurar'
+              : 'Diseño'}
           </button>
         ))}
       </div>
@@ -298,6 +303,11 @@ export function AgentMonitor({ design, onOptimized }: Props) {
       {/* ── Tab: Conocimiento ───────────────────────────────────────────────── */}
       {activeTab === 'knowledge' && (
         <KnowledgePanel agentId={agentId} />
+      )}
+
+      {/* ── Tab: Configurar ─────────────────────────────────────────────────── */}
+      {activeTab === 'config' && (
+        <AgentConfigPanel agentId={agentId} />
       )}
     </div>
   )

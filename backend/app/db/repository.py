@@ -416,3 +416,366 @@ class AgentRepository:
         )
         await self._db.commit()
         return result.fetchone() is not None
+
+    # ── Skills ────────────────────────────────────────────────────────────────
+
+    async def list_skills(self) -> list[dict]:
+        result = await self._db.execute(
+            text("SELECT * FROM skills ORDER BY created_at DESC")
+        )
+        return [dict(r._mapping) for r in result.fetchall()]
+
+    async def get_skill(self, skill_id: str) -> Optional[dict]:
+        result = await self._db.execute(
+            text("SELECT * FROM skills WHERE id = :id::uuid"), {"id": skill_id}
+        )
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def create_skill(self, data: dict) -> dict:
+        result = await self._db.execute(
+            text("""
+                INSERT INTO skills
+                    (name, description, objective, usage_conditions, tools_json,
+                     procedure, quality_rules, output_format, guardrails_json)
+                VALUES
+                    (:name, :description, :objective, :usage_conditions, :tools_json::jsonb,
+                     :procedure, :quality_rules, :output_format, :guardrails_json::jsonb)
+                RETURNING *
+            """),
+            data,
+        )
+        await self._db.commit()
+        return dict(result.fetchone()._mapping)
+
+    async def update_skill(self, skill_id: str, data: dict) -> Optional[dict]:
+        sets, params = [], {"id": skill_id}
+        for field in ("name", "description", "objective", "usage_conditions",
+                      "procedure", "quality_rules", "output_format", "is_active"):
+            if field in data:
+                sets.append(f"{field} = :{field}")
+                params[field] = data[field]
+        for jfield in ("tools_json", "guardrails_json"):
+            if jfield in data:
+                sets.append(f"{jfield} = :{jfield}::jsonb")
+                params[jfield] = data[jfield]
+        if not sets:
+            return await self.get_skill(skill_id)
+        sets.append("updated_at = NOW()")
+        result = await self._db.execute(
+            text(f"UPDATE skills SET {', '.join(sets)} WHERE id = :id::uuid RETURNING *"),
+            params,
+        )
+        await self._db.commit()
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def delete_skill(self, skill_id: str) -> bool:
+        result = await self._db.execute(
+            text("DELETE FROM skills WHERE id = :id::uuid RETURNING id"), {"id": skill_id}
+        )
+        await self._db.commit()
+        return result.fetchone() is not None
+
+    async def assign_skill_to_agent(self, agent_id: str, skill_id: str) -> None:
+        await self._db.execute(
+            text("""
+                INSERT INTO agent_skills (agent_id, skill_id)
+                VALUES (:agent_id::uuid, :skill_id::uuid)
+                ON CONFLICT DO NOTHING
+            """),
+            {"agent_id": agent_id, "skill_id": skill_id},
+        )
+        await self._db.commit()
+
+    async def unassign_skill_from_agent(self, agent_id: str, skill_id: str) -> None:
+        await self._db.execute(
+            text("DELETE FROM agent_skills WHERE agent_id = :a::uuid AND skill_id = :s::uuid"),
+            {"a": agent_id, "s": skill_id},
+        )
+        await self._db.commit()
+
+    async def get_agent_skills(self, agent_id: str) -> list[dict]:
+        result = await self._db.execute(
+            text("""
+                SELECT s.* FROM skills s
+                JOIN agent_skills asg ON asg.skill_id = s.id
+                WHERE asg.agent_id = :agent_id::uuid AND s.is_active = TRUE
+                ORDER BY asg.assigned_at
+            """),
+            {"agent_id": agent_id},
+        )
+        return [dict(r._mapping) for r in result.fetchall()]
+
+    # ── MCP Servers ───────────────────────────────────────────────────────────
+
+    async def list_mcp_servers(self) -> list[dict]:
+        result = await self._db.execute(
+            text("SELECT * FROM mcp_servers ORDER BY created_at DESC")
+        )
+        return [dict(r._mapping) for r in result.fetchall()]
+
+    async def get_mcp_server(self, server_id: str) -> Optional[dict]:
+        result = await self._db.execute(
+            text("SELECT * FROM mcp_servers WHERE id = :id::uuid"), {"id": server_id}
+        )
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def create_mcp_server(self, data: dict) -> dict:
+        result = await self._db.execute(
+            text("""
+                INSERT INTO mcp_servers
+                    (name, endpoint, transport, auth_type, auth_config_json, discovered_tools_json)
+                VALUES
+                    (:name, :endpoint, :transport, :auth_type, :auth_config_json::jsonb, :discovered_tools_json::jsonb)
+                RETURNING *
+            """),
+            data,
+        )
+        await self._db.commit()
+        return dict(result.fetchone()._mapping)
+
+    async def update_mcp_server(self, server_id: str, data: dict) -> Optional[dict]:
+        sets, params = [], {"id": server_id}
+        for field in ("name", "endpoint", "transport", "auth_type", "is_active", "last_tested_at"):
+            if field in data:
+                sets.append(f"{field} = :{field}")
+                params[field] = data[field]
+        for jfield in ("auth_config_json", "discovered_tools_json"):
+            if jfield in data:
+                sets.append(f"{jfield} = :{jfield}::jsonb")
+                params[jfield] = data[jfield]
+        if not sets:
+            return await self.get_mcp_server(server_id)
+        result = await self._db.execute(
+            text(f"UPDATE mcp_servers SET {', '.join(sets)} WHERE id = :id::uuid RETURNING *"),
+            params,
+        )
+        await self._db.commit()
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def delete_mcp_server(self, server_id: str) -> bool:
+        result = await self._db.execute(
+            text("DELETE FROM mcp_servers WHERE id = :id::uuid RETURNING id"), {"id": server_id}
+        )
+        await self._db.commit()
+        return result.fetchone() is not None
+
+    async def assign_mcp_to_agent(self, agent_id: str, server_id: str) -> None:
+        await self._db.execute(
+            text("""
+                INSERT INTO agent_mcp_servers (agent_id, mcp_server_id)
+                VALUES (:agent_id::uuid, :server_id::uuid)
+                ON CONFLICT DO NOTHING
+            """),
+            {"agent_id": agent_id, "server_id": server_id},
+        )
+        await self._db.commit()
+
+    async def unassign_mcp_from_agent(self, agent_id: str, server_id: str) -> None:
+        await self._db.execute(
+            text("DELETE FROM agent_mcp_servers WHERE agent_id = :a::uuid AND mcp_server_id = :s::uuid"),
+            {"a": agent_id, "s": server_id},
+        )
+        await self._db.commit()
+
+    async def get_agent_mcp_servers(self, agent_id: str) -> list[dict]:
+        result = await self._db.execute(
+            text("""
+                SELECT m.* FROM mcp_servers m
+                JOIN agent_mcp_servers ams ON ams.mcp_server_id = m.id
+                WHERE ams.agent_id = :agent_id::uuid AND m.is_active = TRUE
+                ORDER BY ams.assigned_at
+            """),
+            {"agent_id": agent_id},
+        )
+        return [dict(r._mapping) for r in result.fetchall()]
+
+    # ── Knowledge Bases ───────────────────────────────────────────────────────
+
+    async def list_knowledge_bases(self) -> list[dict]:
+        result = await self._db.execute(
+            text("SELECT * FROM knowledge_bases ORDER BY created_at DESC")
+        )
+        return [dict(r._mapping) for r in result.fetchall()]
+
+    async def get_knowledge_base(self, kb_id: str) -> Optional[dict]:
+        result = await self._db.execute(
+            text("SELECT * FROM knowledge_bases WHERE id = :id::uuid"), {"id": kb_id}
+        )
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def create_knowledge_base(self, data: dict) -> dict:
+        result = await self._db.execute(
+            text("""
+                INSERT INTO knowledge_bases (name, description, rag_spec_json)
+                VALUES (:name, :description, :rag_spec_json::jsonb)
+                RETURNING *
+            """),
+            data,
+        )
+        await self._db.commit()
+        return dict(result.fetchone()._mapping)
+
+    async def update_knowledge_base(self, kb_id: str, data: dict) -> Optional[dict]:
+        sets, params = [], {"id": kb_id}
+        for field in ("name", "description", "status"):
+            if field in data:
+                sets.append(f"{field} = :{field}")
+                params[field] = data[field]
+        if "rag_spec_json" in data:
+            sets.append("rag_spec_json = :rag_spec_json::jsonb")
+            params["rag_spec_json"] = data["rag_spec_json"]
+        if not sets:
+            return await self.get_knowledge_base(kb_id)
+        sets.append("updated_at = NOW()")
+        result = await self._db.execute(
+            text(f"UPDATE knowledge_bases SET {', '.join(sets)} WHERE id = :id::uuid RETURNING *"),
+            params,
+        )
+        await self._db.commit()
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def delete_knowledge_base(self, kb_id: str) -> bool:
+        result = await self._db.execute(
+            text("DELETE FROM knowledge_bases WHERE id = :id::uuid RETURNING id"), {"id": kb_id}
+        )
+        await self._db.commit()
+        return result.fetchone() is not None
+
+    async def assign_kb_to_agent(self, agent_id: str, kb_id: str) -> None:
+        await self._db.execute(
+            text("""
+                INSERT INTO agent_knowledge_bases (agent_id, kb_id)
+                VALUES (:agent_id::uuid, :kb_id::uuid)
+                ON CONFLICT DO NOTHING
+            """),
+            {"agent_id": agent_id, "kb_id": kb_id},
+        )
+        await self._db.commit()
+
+    async def unassign_kb_from_agent(self, agent_id: str, kb_id: str) -> None:
+        await self._db.execute(
+            text("DELETE FROM agent_knowledge_bases WHERE agent_id = :a::uuid AND kb_id = :k::uuid"),
+            {"a": agent_id, "k": kb_id},
+        )
+        await self._db.commit()
+
+    async def get_agent_knowledge_bases(self, agent_id: str) -> list[dict]:
+        result = await self._db.execute(
+            text("""
+                SELECT kb.* FROM knowledge_bases kb
+                JOIN agent_knowledge_bases akb ON akb.kb_id = kb.id
+                WHERE akb.agent_id = :agent_id::uuid
+                ORDER BY akb.assigned_at
+            """),
+            {"agent_id": agent_id},
+        )
+        return [dict(r._mapping) for r in result.fetchall()]
+
+    # ── Behavior Policies ─────────────────────────────────────────────────────
+
+    async def get_agent_policy(self, agent_id: str) -> Optional[dict]:
+        result = await self._db.execute(
+            text("SELECT * FROM behavior_policies WHERE agent_id = :agent_id::uuid"),
+            {"agent_id": agent_id},
+        )
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def upsert_agent_policy(self, agent_id: str, data: dict) -> dict:
+        result = await self._db.execute(
+            text("""
+                INSERT INTO behavior_policies
+                    (agent_id, tone, escalation_conditions_json, confirmation_triggers_json,
+                     format_requirements, custom_rules_json)
+                VALUES
+                    (:agent_id::uuid, :tone, :escalation_conditions_json::jsonb,
+                     :confirmation_triggers_json::jsonb, :format_requirements, :custom_rules_json::jsonb)
+                ON CONFLICT (agent_id) DO UPDATE SET
+                    tone = EXCLUDED.tone,
+                    escalation_conditions_json = EXCLUDED.escalation_conditions_json,
+                    confirmation_triggers_json = EXCLUDED.confirmation_triggers_json,
+                    format_requirements = EXCLUDED.format_requirements,
+                    custom_rules_json = EXCLUDED.custom_rules_json,
+                    updated_at = NOW()
+                RETURNING *
+            """),
+            {"agent_id": agent_id, **data},
+        )
+        await self._db.commit()
+        return dict(result.fetchone()._mapping)
+
+    async def delete_agent_policy(self, agent_id: str) -> None:
+        await self._db.execute(
+            text("DELETE FROM behavior_policies WHERE agent_id = :agent_id::uuid"),
+            {"agent_id": agent_id},
+        )
+        await self._db.commit()
+
+    # ── Guardrail Rules ───────────────────────────────────────────────────────
+
+    async def list_guardrail_rules(self, agent_id: str) -> list[dict]:
+        result = await self._db.execute(
+            text("""
+                SELECT * FROM guardrail_rules
+                WHERE agent_id = :agent_id::uuid
+                ORDER BY priority DESC, created_at
+            """),
+            {"agent_id": agent_id},
+        )
+        return [dict(r._mapping) for r in result.fetchall()]
+
+    async def create_guardrail_rule(self, agent_id: str, data: dict) -> dict:
+        result = await self._db.execute(
+            text("""
+                INSERT INTO guardrail_rules
+                    (agent_id, name, rule_type, condition_json, action, priority)
+                VALUES
+                    (:agent_id::uuid, :name, :rule_type, :condition_json::jsonb, :action, :priority)
+                RETURNING *
+            """),
+            {"agent_id": agent_id, **data},
+        )
+        await self._db.commit()
+        return dict(result.fetchone()._mapping)
+
+    async def update_guardrail_rule(self, rule_id: str, data: dict) -> Optional[dict]:
+        sets, params = [], {"id": rule_id}
+        for field in ("name", "rule_type", "action", "priority", "is_active"):
+            if field in data:
+                sets.append(f"{field} = :{field}")
+                params[field] = data[field]
+        if "condition_json" in data:
+            sets.append("condition_json = :condition_json::jsonb")
+            params["condition_json"] = data["condition_json"]
+        if not sets:
+            return None
+        result = await self._db.execute(
+            text(f"UPDATE guardrail_rules SET {', '.join(sets)} WHERE id = :id::uuid RETURNING *"),
+            params,
+        )
+        await self._db.commit()
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def toggle_guardrail_rule(self, rule_id: str, is_active: bool) -> Optional[dict]:
+        result = await self._db.execute(
+            text("UPDATE guardrail_rules SET is_active = :active WHERE id = :id::uuid RETURNING *"),
+            {"active": is_active, "id": rule_id},
+        )
+        await self._db.commit()
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def delete_guardrail_rule(self, rule_id: str) -> bool:
+        result = await self._db.execute(
+            text("DELETE FROM guardrail_rules WHERE id = :id::uuid RETURNING id"),
+            {"id": rule_id},
+        )
+        await self._db.commit()
+        return result.fetchone() is not None
