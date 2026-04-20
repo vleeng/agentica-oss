@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { AgentRoleSpec, ToolRef, WizardState } from '../../types/agent'
-import { AVAILABLE_TOOLS } from '../../types/agent'
+import { AVAILABLE_MODELS, AVAILABLE_TOOLS } from '../../types/agent'
 
 interface Props {
   state: WizardState
@@ -173,11 +173,22 @@ export function StepCrew({ state, update }: Props) {
           </p>
           <select
             value={state.model_params.model}
-            onChange={e => update({ model_params: { ...state.model_params, model: e.target.value } })}
+            onChange={e => {
+              const model = AVAILABLE_MODELS.find(m => m.id === e.target.value)
+              update({
+                model_params: {
+                  ...state.model_params,
+                  model: e.target.value,
+                  provider: model?.providerId,
+                  llm_key_id: undefined,
+                },
+              })
+            }}
             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
           >
-            <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (recomendado)</option>
-            <option value="claude-opus-4-6">Claude Opus 4.6 (más potente)</option>
+            {AVAILABLE_MODELS.map(model => (
+              <option key={model.id} value={model.id}>{model.name} — {model.provider}</option>
+            ))}
           </select>
         </div>
       )}

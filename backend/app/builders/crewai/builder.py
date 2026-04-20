@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from langchain_anthropic import ChatAnthropic
-
 from app.components.tools.builtin import get_tool
 from app.runtime.crewai.runtime import CrewAIRuntime
+from app.runtime.llm import LLMConfig, create_chat_llm
 from app.schemas.agent import AgentDesign, AgentRoleSpec, CrewProcess
 
 
@@ -17,16 +16,17 @@ class CrewAIAgentBuilder:
     def __init__(self, session_factory=None):
         self._session_factory = session_factory
 
-    async def build(self, design: AgentDesign, api_key: str = "") -> CrewAIRuntime:
+    async def build(self, design: AgentDesign, api_key: str = "", llm_config: LLMConfig | None = None) -> CrewAIRuntime:
         from crewai import Crew, Process
 
         spec = design.spec
-        llm  = self._make_llm(spec.model_params.model, spec.model_params.temperature, api_key)
+        llm_config = llm_config or LLMConfig(provider="anthropic", api_key=api_key)
+        llm = self._make_llm(spec.model_params, llm_config)
 
         # 1. Construir agentes desde los roles del spec
         crew_agents = {}
         for role_spec in spec.agents:
-            agent = await self._build_agent_async(role_spec, llm, api_key, design.tenant_id)
+            agent = await self._build_agent_async(role_spec, llm, llm_config, design.tenant_id)
             crew_agents[role_spec.name] = agent
 
         # 2. Construir tasks desde el graph_blueprint
@@ -43,7 +43,8 @@ class CrewAIAgentBuilder:
         # 4. Manager LLM (solo para hierarchical)
         manager_llm = None
         if spec.process == CrewProcess.hierarchical and spec.manager_model:
-            manager_llm = self._make_llm(spec.manager_model, 0.1, api_key)
+            manager_params = spec.model_params.model_copy(update={"model": spec.manager_model, "temperature": 0.1})
+            manager_llm = self._make_llm(manager_params, llm_config)
 
         crew = Crew(
             agents=list(crew_agents.values()),
@@ -61,13 +62,16 @@ class CrewAIAgentBuilder:
             session_factory=self._session_factory,
         )
 
-    def _make_llm(self, model: str, temperature: float = 0.3, api_key: str = ""):
-        if "gpt" in model:
-            from langchain_openai import ChatOpenAI
-            return ChatOpenAI(model=model, temperature=temperature, api_key=api_key)
-        return ChatAnthropic(model=model, temperature=temperature, api_key=api_key)
+    def _make_llm(self, params, llm_config: LLMConfig):
+        return create_chat_llm(params, llm_config)
 
-    async def _build_agent_async(self, role_spec: AgentRoleSpec, default_llm, api_key: str = "", tenant_id: str = ""):
+    async def _build_agent_async(
+        self,
+        role_spec: AgentRoleSpec,
+        default_llm,
+        llm_config: LLMConfig,
+        tenant_id: str = "",
+    ):
         from crewai import Agent
 
         tools = []
@@ -80,11 +84,7 @@ class CrewAIAgentBuilder:
 
         llm = default_llm
         if role_spec.model_params:
-            llm = self._make_llm(
-                role_spec.model_params.model,
-                role_spec.model_params.temperature,
-                api_key,
-            )
+            llm = self._make_llm(role_spec.model_params, llm_config)
 
         return Agent(
             role=role_spec.role,
@@ -104,11 +104,7 @@ class CrewAIAgentBuilder:
 
         llm = default_llm
         if role_spec.model_params:
-            llm = self._make_llm(
-                role_spec.model_params.model,
-                role_spec.model_params.temperature,
-                api_key
-            )
+            llm = self._make_llm(role_spec.model_params, LLMConfig(provider="anthropic", api_key=api_key))
 
         return Agent(
             role=role_spec.role,

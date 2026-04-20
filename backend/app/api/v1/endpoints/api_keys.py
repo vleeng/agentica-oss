@@ -159,16 +159,13 @@ async def list_llm_keys(ctx: CurrentContext) -> list[LLMProviderKeyOut]:
     async with PublicSessionFactory() as db:
         result = await db.execute(
             text("""
-                SELECT id, provider, name, is_default, created_at, encrypted_key
+                SELECT id, provider, name, is_default, created_at, truncated_key
                 FROM llm_provider_keys
                 WHERE tenant_id = :tid ORDER BY created_at DESC
             """),
             {"tid": ctx.tenant_id},
         )
         rows = result.fetchall()
-
-    def get_truncated(enc_key: str) -> str:
-        return "sk-...********"
 
     return [
         LLMProviderKeyOut(
@@ -177,7 +174,7 @@ async def list_llm_keys(ctx: CurrentContext) -> list[LLMProviderKeyOut]:
             name=r.name,
             is_default=r.is_default,
             created_at=r.created_at,
-            truncated_key=get_truncated(r.encrypted_key)
+            truncated_key=r.truncated_key,
         )
         for r in rows
     ]

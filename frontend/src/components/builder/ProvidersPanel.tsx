@@ -9,6 +9,8 @@ interface ProviderKey {
   truncated_key: string
 }
 
+const API_BASE = import.meta.env.VITE_API_URL || ''
+
 export function ProvidersPanel() {
   const [keys, setKeys] = useState<ProviderKey[]>([])
   const [loading, setLoading] = useState(true)
@@ -26,7 +28,7 @@ export function ProvidersPanel() {
 
   const loadKeys = async () => {
     try {
-      const r = await fetch('/api/v1/keys/llm', { headers: headers() })
+      const r = await fetch(`${API_BASE}/api/v1/keys/llm`, { headers: headers() })
       if (!r.ok) throw new Error('Network response was not ok')
       const data = await r.json()
       setKeys(Array.isArray(data) ? data : [])
@@ -43,7 +45,7 @@ export function ProvidersPanel() {
     if (!newRawKey.trim() || !newName.trim()) return
     setCreating(true)
     try {
-      const r = await fetch('/api/v1/keys/llm', {
+      const r = await fetch(`${API_BASE}/api/v1/keys/llm`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({ provider: newProv, name: newName, raw_key: newRawKey }),
@@ -65,7 +67,7 @@ export function ProvidersPanel() {
 
   const setDefault = async (keyId: string, provider: string) => {
     try {
-      const r = await fetch(`/api/v1/keys/llm/${keyId}/default?provider=${provider}`, { method: 'PUT', headers: headers() })
+      const r = await fetch(`${API_BASE}/api/v1/keys/llm/${keyId}/default?provider=${provider}`, { method: 'PUT', headers: headers() })
       if (!r.ok) throw new Error('No se pudo establecer la clave por defecto')
       await loadKeys()
     } catch (e) {
@@ -76,7 +78,7 @@ export function ProvidersPanel() {
   const removeKey = async (keyId: string) => {
     if (!confirm('¿Eliminar esta clave? Los agentes que la usen fallarán.')) return
     try {
-      const r = await fetch(`/api/v1/keys/llm/${keyId}`, { method: 'DELETE', headers: headers() })
+      const r = await fetch(`${API_BASE}/api/v1/keys/llm/${keyId}`, { method: 'DELETE', headers: headers() })
       if (!r.ok) throw new Error('No se pudo eliminar la clave')
       setKeys(keys.filter(k => k.id !== keyId))
     } catch (e) {
@@ -88,7 +90,7 @@ export function ProvidersPanel() {
     <div className="max-w-3xl mx-auto px-4 py-8">
       <h2 className="text-2xl font-bold text-gray-900 mb-2">Bóveda de IA (Providers)</h2>
       <p className="text-gray-500 mb-8 text-sm">
-        Administra tus llaves de OpenAI, Anthropic u otros proveedores. Las llaves se guardan cifradas.
+        Administra tus llaves de Anthropic, OpenAI, OpenRouter y proveedores compatibles con OpenAI. Las llaves se guardan cifradas.
       </p>
 
       {/* Agregar Nueva */}
@@ -101,6 +103,12 @@ export function ProvidersPanel() {
           >
             <option value="openai">OpenAI (ChatGPT)</option>
             <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="qwen">Qwen / Alibaba</option>
+            <option value="moonshot">Moonshot / Kimi</option>
+            <option value="zhipu">Zhipu / GLM</option>
+            <option value="custom_openai">OpenAI compatible custom</option>
           </select>
         </div>
         <div className="flex-1 min-w-[200px]">
@@ -152,8 +160,8 @@ export function ProvidersPanel() {
           keys.map(key => (
             <div key={key.id} className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:border-violet-200 transition-colors">
               <div className="flex items-center gap-4">
-                <div className={`flex items-center justify-center w-10 h-10 rounded-lg text-white font-bold text-xs ${key.provider === 'openai' ? 'bg-emerald-500' : 'bg-orange-500'}`}>
-                  {key.provider === 'openai' ? 'OA' : 'AN'}
+                <div className={`flex items-center justify-center w-10 h-10 rounded-lg text-white font-bold text-xs ${key.provider === 'openai' ? 'bg-emerald-500' : key.provider === 'anthropic' ? 'bg-orange-500' : 'bg-indigo-500'}`}>
+                  {key.provider.slice(0, 2).toUpperCase()}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">

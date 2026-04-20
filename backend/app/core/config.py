@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: Optional[str] = None
     builder_model: str = "claude-sonnet-4-5"        # modelo para generar diseño y código
+    builder_provider: str = "anthropic"
+    builder_base_url: Optional[str] = None
+    builder_api_key: Optional[str] = None
     builder_temperature: float = 0.2                 # baja temp para generación de código
 
     # Celery

@@ -67,6 +67,8 @@ class RAGSpec(BaseModel):
 
 class ModelParams(BaseModel):
     model: str = "claude-3-5-sonnet-20241022"  # o gpt-4o etc
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
     temperature: float = Field(0.3, ge=0.0, le=1.0)
     max_tokens: int = Field(2048, ge=256, le=8192)
     top_p: float = Field(1.0, ge=0.0, le=1.0)
