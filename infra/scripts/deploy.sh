@@ -56,6 +56,9 @@ check_requirements() {
     [[ -n "${ANTHROPIC_API_KEY:-}" ]] || err "ANTHROPIC_API_KEY no definida en .env"
     [[ -n "${JWT_SECRET:-}" ]]        || err "JWT_SECRET no definida en .env"
     [[ -n "${POSTGRES_PASSWORD:-}" ]] || err "POSTGRES_PASSWORD no definida en .env"
+    [[ -n "${REDIS_PASSWORD:-}" ]]    || err "REDIS_PASSWORD no definida en .env"
+    [[ -n "${ADMIN_PASSWORD:-}" ]]    || err "ADMIN_PASSWORD no definida en .env"
+    [[ -n "${ENCRYPTION_KEY:-}" ]]    || err "ENCRYPTION_KEY no definida en .env"
     log "Requisitos OK"
 }
 
@@ -65,7 +68,7 @@ backup_database() {
     source "$ENV_FILE"
 
     BACKUP_FILE="$BACKUP_DIR/agentica_${TIMESTAMP}.sql.gz"
-    docker exec agentica-postgres pg_dumpall -U agentica 2>/dev/null \
+    docker compose -f "$COMPOSE_FILE" exec -T postgres pg_dumpall -U agentica 2>/dev/null \
         | gzip > "$BACKUP_FILE" \
         && log "Backup guardado: $BACKUP_FILE" \
         || warn "No se pudo hacer backup (¿primera vez?)"
@@ -127,7 +130,15 @@ health_check() {
     local wait=4
 
     for i in $(seq 1 $retries); do
-        if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+        if docker compose -f "$COMPOSE_FILE" exec -T backend python - <<'PY' > /dev/null 2>&1
+import json
+import urllib.request
+
+with urllib.request.urlopen("http://localhost:8000/health", timeout=3) as response:
+    payload = json.loads(response.read().decode("utf-8"))
+    raise SystemExit(0 if payload.get("status") == "ok" else 1)
+PY
+        then
             log "Backend healthy ✓"
             return 0
         fi
@@ -181,6 +192,7 @@ if [[ -z "$ONLY" ]]; then
     log "=== Deploy completado ✓ ==="
 else
     # Deploy parcial
+    pull_latest
     build_images "$ONLY"
     deploy_services "$ONLY"
     [[ "$ONLY" == "backend" ]] && health_check

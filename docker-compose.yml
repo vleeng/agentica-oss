@@ -57,7 +57,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       JWT_SECRET: ${JWT_SECRET:-super_secret_dev_key_change_in_prod} # ⚠️ SOLO DESARROLLO — usar docker-compose.prod.yml en producción
       ENVIRONMENT: ${ENVIRONMENT:-development}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:5173"]}'
     ports:
       - "8000:8000"
     depends_on:

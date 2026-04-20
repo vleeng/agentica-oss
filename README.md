@@ -14,17 +14,27 @@ Plataforma de construcción, prueba y despliegue automático de agentes IA.
 ```bash
 # 1. Clonar y configurar variables
 cp .env.example .env
-# Editar .env con ANTHROPIC_API_KEY y JWT_SECRET
+# Editar .env:
+# - ANTHROPIC_API_KEY=...
+# - JWT_SECRET=...
+# - POSTGRES_PASSWORD=agentica_dev
+# - CORS_ORIGINS='["http://localhost:5173"]'
+#
+# El backend corre desde backend/, así que necesita ver el .env también.
+cp .env backend/.env
 
 # 2. Levantar infra
 docker compose up -d postgres redis qdrant
 
-# 3. Backend
+# 3. Backend, en una terminal
 cd backend
+python -m venv .venv
+source .venv/bin/activate
+# Windows PowerShell: .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 
-# 4. Frontend
+# 4. Frontend, en otra terminal desde la raíz del repo
 cd frontend
 npm install
 npm run dev
@@ -34,17 +44,36 @@ npm run dev
 ## Deploy en producción (VPS Axenova)
 
 ```bash
-# Primera vez
-bash infra/scripts/setup_vps.sh
+# Primera vez en el VPS
+sudo REPO_URL=https://github.com/vleeng/agentica.git bash infra/scripts/setup_vps.sh
+
+# Editar variables reales antes del primer deploy
+sudo nano /opt/agentica/.env
+#
+# Mínimas:
+# - ANTHROPIC_API_KEY
+# - POSTGRES_PASSWORD
+# - REDIS_PASSWORD
+# - JWT_SECRET
+# - ADMIN_PASSWORD
+# - ENCRYPTION_KEY
+# - BASE_DOMAIN=axenova.com
+# - CORS_ORIGINS='["https://www.axenova.com"]'
+# - VITE_API_URL=/agentica
+# - VITE_WS_URL=wss://www.axenova.com/agentica
 
 # Deploys siguientes
-bash infra/scripts/deploy.sh
+cd /opt/agentica
+sudo bash infra/scripts/deploy.sh
 
 # Solo backend
-bash infra/scripts/deploy.sh --only backend
+sudo bash infra/scripts/deploy.sh --only backend
+
+# Solo frontend
+sudo bash infra/scripts/deploy.sh --only frontend
 
 # Rollback
-bash infra/scripts/deploy.sh --rollback
+sudo bash infra/scripts/deploy.sh --rollback
 ```
 
 ## Estructura del proyecto
