@@ -3,10 +3,9 @@ from __future__ import annotations
 import json
 from uuid import uuid4
 
-from anthropic import AsyncAnthropic
-
 from app.core.config import get_settings
 from app.schemas.agent import AgentDesign, AgentSpec, FrameworkSelection
+from app.services.llm_client import TextGenerationClient
 
 settings = get_settings()
 
@@ -18,7 +17,7 @@ class DesignGeneratorService:
     """
 
     def __init__(self):
-        self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self._client = TextGenerationClient()
 
     async def generate(
         self,
@@ -71,13 +70,11 @@ NIVEL DE AUTONOMÍA: {spec.autonomy_level.value if hasattr(spec, 'autonomy_level
 
 Respondé únicamente con el system prompt, sin explicaciones adicionales."""
 
-        message = await self._client.messages.create(
-            model=settings.builder_model,
+        return await self._client.complete(
+            prompt,
             max_tokens=800,
             temperature=settings.builder_temperature,
-            messages=[{"role": "user", "content": prompt}],
         )
-        return message.content[0].text.strip()
 
     # ── Generación del graph blueprint ───────────────────────────────────────
 
@@ -107,14 +104,9 @@ PROCESO: {framework.process.value if framework.process else 'N/A'}
 
 Respondé SOLO con el JSON válido, sin markdown, sin explicaciones."""
 
-        message = await self._client.messages.create(
-            model=settings.builder_model,
-            max_tokens=1000,
-            temperature=0.1,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        content = await self._client.complete(prompt, max_tokens=1000, temperature=0.1)
         try:
-            return json.loads(message.content[0].text.strip())
+            return json.loads(content)
         except json.JSONDecodeError:
             # Fallback a blueprint mínimo si el LLM no devuelve JSON válido
             return {
@@ -149,14 +141,9 @@ OUTPUTS ESPERADOS: {spec.expected_outputs}
 
 Respondé SOLO con el JSON array, sin markdown."""
 
-        message = await self._client.messages.create(
-            model=settings.builder_model,
-            max_tokens=1200,
-            temperature=0.3,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        content = await self._client.complete(prompt, max_tokens=1200, temperature=0.3)
         try:
-            return json.loads(message.content[0].text.strip())
+            return json.loads(content)
         except json.JSONDecodeError:
             return [
                 {

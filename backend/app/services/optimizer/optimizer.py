@@ -3,11 +3,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from anthropic import AsyncAnthropic
-
 from app.core.config import get_settings
-from app.schemas.agent import AgentDesign, ModelParams
+from app.schemas.agent import AgentDesign
 from app.schemas.eval import EvalReport
+from app.services.llm_client import TextGenerationClient
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -36,7 +35,7 @@ class OptimizerService:
     """
 
     def __init__(self):
-        self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self._client = TextGenerationClient()
 
     async def optimize(
         self,
@@ -124,13 +123,7 @@ Generá un system prompt mejorado que:
 
 Respondé SOLO con el nuevo system prompt, sin explicaciones."""
 
-        message = await self._client.messages.create(
-            model=settings.builder_model,
-            max_tokens=600,
-            temperature=0.2,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return message.content[0].text.strip()
+        return await self._client.complete(prompt, max_tokens=600, temperature=0.2)
 
     def _apply_patch(self, design: AgentDesign, patch: OptimizationPatch) -> AgentDesign:
         """Aplica el patch al design y retorna una copia actualizada."""

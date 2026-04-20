@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from langchain.agents import AgentExecutor, create_openai_functions_agent, create_react_agent
 from langchain.tools import BaseTool
-from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from app.components.memory.adapters import (
@@ -13,6 +12,7 @@ from app.components.memory.adapters import (
 )
 from app.components.tools.builtin import get_tool
 from app.runtime.langchain.runtime import LangChainRuntime
+from app.runtime.llm import LLMConfig, create_chat_llm
 from app.schemas.agent import AgentDesign, MemoryType
 
 
@@ -27,26 +27,13 @@ class LangChainAgentBuilder:
         self._redis = redis_client
         self._session_factory = session_factory
 
-    async def build(self, design: AgentDesign, api_key: str = "") -> LangChainRuntime:
+    async def build(self, design: AgentDesign, api_key: str = "", llm_config: LLMConfig | None = None) -> LangChainRuntime:
         spec   = design.spec
         fw     = design.framework
 
         # 1. LLM
-        if "gpt" in spec.model_params.model:
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(
-                model=spec.model_params.model,
-                temperature=spec.model_params.temperature,
-                max_tokens=spec.model_params.max_tokens,
-                api_key=api_key,
-            )
-        else:
-            llm = ChatAnthropic(
-                model=spec.model_params.model,
-                temperature=spec.model_params.temperature,
-                max_tokens=spec.model_params.max_tokens,
-                api_key=api_key,
-            )
+        llm_config = llm_config or LLMConfig(provider="anthropic", api_key=api_key)
+        llm = create_chat_llm(spec.model_params, llm_config)
 
         # 2. Tools (library + custom)
         tools: list[BaseTool] = []

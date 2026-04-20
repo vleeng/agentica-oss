@@ -35,6 +35,8 @@ export interface RAGSpec {
 
 export interface ModelParams {
   model: string
+  provider?: string
+  base_url?: string
   temperature: number
   max_tokens: number
   top_p: number
@@ -246,10 +248,16 @@ export const AVAILABLE_TOOLS: Array<{ name: string; description: string; categor
   { name: 'send_email',    description: 'Enviar emails via SMTP',                  category: 'comunicación' },
 ]
 
-export const AVAILABLE_MODELS: Array<{ id: string; name: string; provider: string }> = [
-  { id: 'claude-sonnet-4-5',        name: 'Claude Sonnet 4.5',  provider: 'Anthropic' },
-  { id: 'claude-opus-4-6',          name: 'Claude Opus 4.6',    provider: 'Anthropic' },
-  { id: 'claude-haiku-4-5-20251001',name: 'Claude Haiku 4.5',   provider: 'Anthropic' },
-  { id: 'gpt-4o',                   name: 'GPT-4o',             provider: 'OpenAI' },
-  { id: 'gpt-4o-mini',              name: 'GPT-4o Mini',        provider: 'OpenAI' },
+export const AVAILABLE_MODELS: Array<{ id: string; name: string; provider: string; providerId: string }> = [
+  { id: 'claude-sonnet-4-5',        name: 'Claude Sonnet 4.5',  provider: 'Anthropic', providerId: 'anthropic' },
+  { id: 'claude-opus-4-6',          name: 'Claude Opus 4.6',    provider: 'Anthropic', providerId: 'anthropic' },
+  { id: 'claude-haiku-4-5-20251001',name: 'Claude Haiku 4.5',   provider: 'Anthropic', providerId: 'anthropic' },
+  { id: 'gpt-4o',                   name: 'GPT-4o',             provider: 'OpenAI',    providerId: 'openai' },
+  { id: 'gpt-4o-mini',              name: 'GPT-4o Mini',        provider: 'OpenAI',    providerId: 'openai' },
+  { id: 'openrouter:anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'OpenRouter', providerId: 'openrouter' },
+  { id: 'openrouter:deepseek/deepseek-chat',      name: 'DeepSeek Chat',     provider: 'OpenRouter', providerId: 'openrouter' },
+  { id: 'deepseek-chat',                         name: 'DeepSeek Chat',      provider: 'DeepSeek',   providerId: 'deepseek' },
+  { id: 'qwen-plus',                             name: 'Qwen Plus',          provider: 'Qwen',       providerId: 'qwen' },
+  { id: 'moonshot-v1-8k',                        name: 'Kimi Moonshot',      provider: 'Moonshot',   providerId: 'moonshot' },
+  { id: 'glm-4-plus',                            name: 'GLM-4 Plus',         provider: 'Zhipu',      providerId: 'zhipu' },
 ]

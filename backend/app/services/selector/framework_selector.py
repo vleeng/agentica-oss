@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from anthropic import AsyncAnthropic
-
 from app.core.config import get_settings
 from app.schemas.agent import AgentMode, AgentSpec, CrewProcess, FrameworkSelection
+from app.services.llm_client import TextGenerationClient
 
 settings = get_settings()
 
@@ -25,7 +24,7 @@ class FrameworkSelectorService:
     """
 
     def __init__(self):
-        self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self._client = TextGenerationClient()
 
     async def select(self, spec: AgentSpec) -> FrameworkSelection:
         framework = "langchain" if spec.mode == AgentMode.single else "crewai"
@@ -91,9 +90,4 @@ Complejidad estimada: {complexity}
 
 Respondé directamente la justificación, sin saludos ni intro."""
 
-        message = await self._client.messages.create(
-            model=settings.builder_model,
-            max_tokens=200,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return message.content[0].text.strip()
+        return await self._client.complete(prompt, max_tokens=200, temperature=settings.builder_temperature)

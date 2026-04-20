@@ -426,10 +426,11 @@ function StepMemoryChannels({ state, update }: StepProps) {
 
 function StepModel({ state, update }: StepProps) {
   const [keys, setKeys] = useState<any[]>([])
+  const apiBase = import.meta.env.VITE_API_URL || ''
 
   // Cargar llaves para mostrar
   useEffect(() => {
-    fetch('/api/v1/keys/llm', {
+    fetch(`${apiBase}/api/v1/keys/llm`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('agentica_token')}` }
     })
       .then(r => r.json())
@@ -440,7 +441,8 @@ function StepModel({ state, update }: StepProps) {
   }, [])
 
   // Filtrar llaves segun el proveedor del modelo seleccionado
-  const selectedProvider = state.model_params.model.startsWith('gpt') ? 'openai' : 'anthropic'
+  const selectedModel = AVAILABLE_MODELS.find(m => m.id === state.model_params.model)
+  const selectedProvider = state.model_params.provider || selectedModel?.providerId || 'anthropic'
   const availableKeys = keys.filter(k => k.provider === selectedProvider)
 
   return (
@@ -448,7 +450,17 @@ function StepModel({ state, update }: StepProps) {
       <Field label="Modelo LLM">
         <select
           value={state.model_params.model}
-          onChange={e => update({ model_params: { ...state.model_params, model: e.target.value } })}
+          onChange={e => {
+            const model = AVAILABLE_MODELS.find(m => m.id === e.target.value)
+            update({
+              model_params: {
+                ...state.model_params,
+                model: e.target.value,
+                provider: model?.providerId,
+                llm_key_id: undefined,
+              },
+            })
+          }}
           className={inputCls}
         >
           {AVAILABLE_MODELS.map(m => (
