@@ -16,6 +16,7 @@ from app.runtime.store import init_runtime_store
 from app.api.v1.endpoints import (
     auth, tenants, agents, builds, channels,
     knowledge, api_keys, usage, custom_tools,
+    skills, mcp, knowledge_bases, policies, guardrails,
 )
 
 settings = get_settings()
@@ -123,6 +124,11 @@ app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledg
 app.include_router(api_keys.router,  prefix="/api/v1/keys",      tags=["api-keys"])
 app.include_router(usage.router,        prefix="/api/v1/usage",        tags=["usage"])
 app.include_router(custom_tools.router, prefix="/api/v1/tools/custom",  tags=["custom-tools"])
+app.include_router(skills.router,        prefix="/api/v1",               tags=["skills"])
+app.include_router(mcp.router,           prefix="/api/v1",               tags=["mcp"])
+app.include_router(knowledge_bases.router, prefix="/api/v1",             tags=["knowledge-bases"])
+app.include_router(policies.router,      prefix="/api/v1",               tags=["policies"])
+app.include_router(guardrails.router,    prefix="/api/v1",               tags=["guardrails"])
 
 
 @app.get("/health")

@@ -1,5 +1,8 @@
 import axios, { type AxiosInstance } from 'axios'
-import type { AgentDesign, AgentResponse, AgentSpec, WizardState } from '../types/agent'
+import type {
+  AgentDesign, AgentResponse, AgentSpec, WizardState,
+  Skill, MCPServer, KnowledgeBase, BehaviorPolicy, GuardrailRule,
+} from '../types/agent'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -85,12 +88,18 @@ export function createAgentWebSocket(
   onToken: (token: string) => void,
   onDone: (sessionId: string) => void,
   onError: (msg: string) => void,
+  options: { apiKey?: string } = {},
 ): {
   send: (input: string, sessionId: string) => void
   close: () => void
 } {
   const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000'
-  const ws = new WebSocket(`${WS_URL}/api/v1/agents/${agentId}/ws`)
+  const params = new URLSearchParams()
+  const token = localStorage.getItem('agentica_token')
+  if (token) params.set('token', token)
+  if (options.apiKey) params.set('api_key', options.apiKey)
+  const query = params.toString()
+  const ws = new WebSocket(`${WS_URL}/api/v1/agents/${agentId}/ws${query ? `?${query}` : ''}`)
 
   ws.onmessage = (ev) => {
     try {
@@ -199,3 +208,145 @@ export const customToolsApi = {
     api.post(`/tools/custom/${id}/test`, { input, config }).then(r => r.data),
 }
 
+
+// ── Skills ────────────────────────────────────────────────────────────────────
+
+export const skillsApi = {
+  list: (): Promise<Skill[]> =>
+    api.get('/skills/').then(r => r.data),
+
+  get: (id: string): Promise<Skill> =>
+    api.get(`/skills/${id}`).then(r => r.data),
+
+  create: (data: Omit<Skill, 'id' | 'is_active' | 'created_at'>): Promise<Skill> =>
+    api.post('/skills/', data).then(r => r.data),
+
+  update: (id: string, data: Omit<Skill, 'id' | 'is_active' | 'created_at'>): Promise<Skill> =>
+    api.put(`/skills/${id}`, data).then(r => r.data),
+
+  delete: (id: string) =>
+    api.delete(`/skills/${id}`),
+
+  forAgent: (agentId: string): Promise<Skill[]> =>
+    api.get(`/agents/${agentId}/skills`).then(r => r.data),
+
+  assignToAgent: (agentId: string, skillId: string) =>
+    api.post(`/agents/${agentId}/skills/${skillId}`),
+
+  unassignFromAgent: (agentId: string, skillId: string) =>
+    api.delete(`/agents/${agentId}/skills/${skillId}`),
+}
+
+
+// ── MCP Servers ───────────────────────────────────────────────────────────────
+
+export const mcpApi = {
+  list: (): Promise<MCPServer[]> =>
+    api.get('/mcp/').then(r => r.data),
+
+  get: (id: string): Promise<MCPServer> =>
+    api.get(`/mcp/${id}`).then(r => r.data),
+
+  create: (data: Pick<MCPServer, 'name' | 'endpoint' | 'transport' | 'auth_type' | 'auth_config'>): Promise<MCPServer> =>
+    api.post('/mcp/', data).then(r => r.data),
+
+  update: (id: string, data: Pick<MCPServer, 'name' | 'endpoint' | 'transport' | 'auth_type' | 'auth_config'>): Promise<MCPServer> =>
+    api.put(`/mcp/${id}`, data).then(r => r.data),
+
+  delete: (id: string) =>
+    api.delete(`/mcp/${id}`),
+
+  test: (id: string): Promise<MCPServer> =>
+    api.post(`/mcp/${id}/test`).then(r => r.data),
+
+  forAgent: (agentId: string): Promise<MCPServer[]> =>
+    api.get(`/agents/${agentId}/mcp`).then(r => r.data),
+
+  assignToAgent: (agentId: string, serverId: string) =>
+    api.post(`/agents/${agentId}/mcp/${serverId}`),
+
+  unassignFromAgent: (agentId: string, serverId: string) =>
+    api.delete(`/agents/${agentId}/mcp/${serverId}`),
+}
+
+
+// ── Knowledge Bases ───────────────────────────────────────────────────────────
+
+export const knowledgeBasesApi = {
+  list: (): Promise<KnowledgeBase[]> =>
+    api.get('/knowledge-bases/').then(r => r.data),
+
+  get: (id: string): Promise<KnowledgeBase> =>
+    api.get(`/knowledge-bases/${id}`).then(r => r.data),
+
+  create: (data: Pick<KnowledgeBase, 'name' | 'description' | 'rag_spec'>): Promise<KnowledgeBase> =>
+    api.post('/knowledge-bases/', data).then(r => r.data),
+
+  update: (id: string, data: Pick<KnowledgeBase, 'name' | 'description' | 'rag_spec'>): Promise<KnowledgeBase> =>
+    api.put(`/knowledge-bases/${id}`, data).then(r => r.data),
+
+  delete: (id: string) =>
+    api.delete(`/knowledge-bases/${id}`),
+
+  ingest: (id: string) =>
+    api.post(`/knowledge-bases/${id}/ingest`).then(r => r.data),
+
+  ingestFile: (id: string, file: File, chunk_size = 500, chunk_overlap = 50) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('chunk_size', chunk_size.toString())
+    formData.append('chunk_overlap', chunk_overlap.toString())
+    return api.post(`/knowledge-bases/${id}/ingest/file`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
+
+  getSources: (id: string) =>
+    api.get(`/knowledge-bases/${id}/sources`).then(r => r.data),
+
+  deleteSource: (id: string, source: string) =>
+    api.delete(`/knowledge-bases/${id}/sources`, { data: { source } }).then(r => r.data),
+
+  forAgent: (agentId: string): Promise<KnowledgeBase[]> =>
+    api.get(`/agents/${agentId}/knowledge-bases`).then(r => r.data),
+
+  assignToAgent: (agentId: string, kbId: string) =>
+    api.post(`/agents/${agentId}/knowledge-bases/${kbId}`),
+
+  unassignFromAgent: (agentId: string, kbId: string) =>
+    api.delete(`/agents/${agentId}/knowledge-bases/${kbId}`),
+}
+
+
+// ── Behavior Policies ─────────────────────────────────────────────────────────
+
+export const policiesApi = {
+  get: (agentId: string): Promise<BehaviorPolicy> =>
+    api.get(`/agents/${agentId}/policy`).then(r => r.data),
+
+  upsert: (agentId: string, data: Omit<BehaviorPolicy, 'id' | 'agent_id'>): Promise<BehaviorPolicy> =>
+    api.put(`/agents/${agentId}/policy`, data).then(r => r.data),
+
+  delete: (agentId: string) =>
+    api.delete(`/agents/${agentId}/policy`),
+}
+
+
+// ── Guardrails ────────────────────────────────────────────────────────────────
+
+export const guardrailsApi = {
+  list: (agentId: string): Promise<GuardrailRule[]> =>
+    api.get(`/agents/${agentId}/guardrails`).then(r => r.data),
+
+  create: (agentId: string, data: Omit<GuardrailRule, 'id' | 'agent_id' | 'is_active'>): Promise<GuardrailRule> =>
+    api.post(`/agents/${agentId}/guardrails`, data).then(r => r.data),
+
+  update: (agentId: string, ruleId: string, data: Omit<GuardrailRule, 'id' | 'agent_id' | 'is_active'>): Promise<GuardrailRule> =>
+    api.put(`/agents/${agentId}/guardrails/${ruleId}`, data).then(r => r.data),
+
+  toggle: (agentId: string, ruleId: string): Promise<GuardrailRule> =>
+    api.patch(`/agents/${agentId}/guardrails/${ruleId}/toggle`).then(r => r.data),
+
+  delete: (agentId: string, ruleId: string) =>
+    api.delete(`/agents/${agentId}/guardrails/${ruleId}`),
+}

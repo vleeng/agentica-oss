@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import tempfile
 from pathlib import Path
 from typing import AsyncIterator
 from uuid import UUID
@@ -119,7 +120,7 @@ class KnowledgeBuilderService:
         return [Document(page_content=source, metadata={"source": "inline"})]
 
     async def _download_file(self, url: str) -> Path:
-        tmp = Path("/tmp") / hashlib.md5(url.encode()).hexdigest()
+        tmp = Path(tempfile.gettempdir()) / hashlib.md5(url.encode()).hexdigest()
         async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
             resp = await client.get(url)
             resp.raise_for_status()

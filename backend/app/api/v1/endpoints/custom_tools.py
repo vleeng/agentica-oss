@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.api.deps import TenantRepo
@@ -159,11 +159,12 @@ async def delete_custom_tool(
     tool_id: str,
     ctx: CurrentContext,
     repo: TenantRepo,
-) -> None:
+) -> Response:
     ctx.require_developer()
     deleted = await repo.delete_custom_tool(tool_id)
     if not deleted:
         raise HTTPException(404, "Tool no encontrada")
+    return Response(status_code=204)
 
 
 @router.post("/validate", status_code=200)

@@ -109,6 +109,10 @@ class RuntimeStore:
         """Retorna los agent_ids cargados en memoria en este proceso."""
         return list(self._memory.keys())
 
+    @property
+    def redis_client(self):
+        return self._redis
+
     async def list_all(self) -> list[str]:
         """Retorna todos los agent_ids persistidos en Redis."""
         if not self._redis:

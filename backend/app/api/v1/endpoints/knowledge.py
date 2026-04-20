@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Response, UploadFile, File, Form
 from pydantic import BaseModel
 
 from app.api.deps import TenantRepo
@@ -82,10 +83,11 @@ async def retrieve_from_kb(
 
 
 @router.delete("/{agent_id}", status_code=204)
-async def delete_kb(agent_id: str, ctx: CurrentContext) -> None:
+async def delete_kb(agent_id: str, ctx: CurrentContext) -> Response:
     """Elimina la colección RAG completa del agente."""
     ctx.require_developer()
     await kb_svc.delete_collection(agent_id)
+    return Response(status_code=204)
 
 @router.get("/{agent_id}/sources")
 async def get_kb_sources(agent_id: str, ctx: CurrentContext) -> dict:
@@ -94,9 +96,10 @@ async def get_kb_sources(agent_id: str, ctx: CurrentContext) -> dict:
     return {"agent_id": agent_id, "sources": sources}
 
 @router.delete("/{agent_id}/source", status_code=204)
-async def delete_kb_source(agent_id: str, body: DeleteSourceRequest, ctx: CurrentContext) -> None:
+async def delete_kb_source(agent_id: str, body: DeleteSourceRequest, ctx: CurrentContext) -> Response:
     ctx.require_developer()
     await kb_svc.delete_source(agent_id, body.source)
+    return Response(status_code=204)
 
 @router.post("/{agent_id}/ingest/file", status_code=202)
 async def ingest_knowledge_file(
@@ -112,7 +115,8 @@ async def ingest_knowledge_file(
     if not agent:
         raise HTTPException(404, f"Agente '{agent_id}' no encontrado")
         
-    temp_path = Path("/tmp") / file.filename
+    safe_filename = Path(file.filename or "upload.bin").name
+    temp_path = Path(tempfile.gettempdir()) / safe_filename
     temp_path.write_bytes(await file.read())
 
     rag_spec = RAGSpec(
@@ -129,4 +133,3 @@ async def ingest_knowledge_file(
         "file": file.filename,
         "message":  "Ingesta de archivo iniciada en background."
     }
-

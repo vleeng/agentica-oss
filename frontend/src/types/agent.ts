@@ -160,6 +160,82 @@ export const WIZARD_DEFAULTS: WizardState = {
 }
 
 
+// ── Skills ────────────────────────────────────────────────────────────────────
+
+export interface Skill {
+  id: string
+  name: string
+  description: string
+  objective: string
+  usage_conditions: string
+  tools: ToolRef[]
+  procedure: string
+  quality_rules: string
+  output_format: string
+  guardrails: string[]
+  is_active: boolean
+  created_at: string
+}
+
+// ── MCP Servers ───────────────────────────────────────────────────────────────
+
+export interface DiscoveredTool {
+  name: string
+  description: string
+  input_schema: Record<string, unknown>
+}
+
+export interface MCPServer {
+  id: string
+  name: string
+  endpoint: string
+  transport: 'sse' | 'http'
+  auth_type: 'none' | 'bearer' | 'basic'
+  auth_config: Record<string, string>
+  discovered_tools: DiscoveredTool[]
+  is_active: boolean
+  last_tested_at?: string
+}
+
+// ── Knowledge Bases ───────────────────────────────────────────────────────────
+
+export interface KnowledgeBase {
+  id: string
+  name: string
+  description: string
+  rag_spec: RAGSpec
+  status: 'empty' | 'indexing' | 'ready' | 'error'
+  created_at: string
+}
+
+// ── Behavior Policy ───────────────────────────────────────────────────────────
+
+export interface BehaviorPolicy {
+  id?: string
+  agent_id?: string
+  tone: string
+  escalation_conditions: string[]
+  confirmation_triggers: string[]
+  format_requirements: string
+  custom_rules: string[]
+}
+
+// ── Guardrail Rules ───────────────────────────────────────────────────────────
+
+export type GuardrailRuleType = 'input_block' | 'output_filter' | 'length_limit' | 'topic_restrict'
+export type GuardrailAction = 'block' | 'warn' | 'transform'
+
+export interface GuardrailRule {
+  id?: string
+  agent_id?: string
+  name: string
+  rule_type: GuardrailRuleType
+  condition: Record<string, unknown>
+  action: GuardrailAction
+  priority: number
+  is_active: boolean
+}
+
 // ── Available tools en la Component Library ──────────────────────────────────
 
 export const AVAILABLE_TOOLS: Array<{ name: string; description: string; category: string }> = [

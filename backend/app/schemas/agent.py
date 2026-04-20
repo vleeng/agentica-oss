@@ -76,6 +76,8 @@ class ModelParams(BaseModel):
 # ── AgentRoleSpec (solo para mode=crew) ─────────────────────────────────────
 
 class AgentRoleSpec(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     name: str                         # identificador interno, ej: "researcher"
     role: str                         # título visible, ej: "Investigador Senior"
     goal: str                         # objetivo del rol
@@ -88,6 +90,8 @@ class AgentRoleSpec(BaseModel):
 # ── AgentSpec — el objeto central del Requirement Wizard ────────────────────
 
 class AgentSpec(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     """
     Producido por el Requirement Wizard.
     Es el único input que necesita el resto del pipeline.
@@ -124,6 +128,11 @@ class AgentSpec(BaseModel):
     agents: list[AgentRoleSpec] = Field(default_factory=list)
     process: CrewProcess = CrewProcess.sequential
     manager_model: Optional[str] = None   # para process=hierarchical
+
+    # Referencias a entidades de la librería (asignadas post-creación)
+    skill_ids: list[str] = Field(default_factory=list)
+    mcp_server_ids: list[str] = Field(default_factory=list)
+    knowledge_base_ids: list[str] = Field(default_factory=list)
 
 
 # ── FrameworkSelection — output del Framework Selector ──────────────────────

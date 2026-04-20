@@ -190,6 +190,98 @@ CREATE TABLE IF NOT EXISTS {schema}.custom_tools (
 
 CREATE INDEX IF NOT EXISTS idx_custom_tools_name
     ON {schema}.custom_tools(name);
+
+CREATE TABLE IF NOT EXISTS {schema}.skills (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name             TEXT NOT NULL,
+    description      TEXT,
+    objective        TEXT NOT NULL,
+    usage_conditions TEXT,
+    tools_json       JSONB NOT NULL DEFAULT '[]',
+    procedure        TEXT NOT NULL,
+    quality_rules    TEXT,
+    output_format    TEXT,
+    guardrails_json  JSONB NOT NULL DEFAULT '[]',
+    is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (name)
+);
+
+CREATE TABLE IF NOT EXISTS {schema}.mcp_servers (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name                  TEXT NOT NULL,
+    endpoint              TEXT NOT NULL,
+    transport             TEXT NOT NULL DEFAULT 'sse',
+    auth_type             TEXT NOT NULL DEFAULT 'none',
+    auth_config_json      JSONB NOT NULL DEFAULT '{{}}',
+    discovered_tools_json JSONB NOT NULL DEFAULT '[]',
+    is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+    last_tested_at        TIMESTAMPTZ,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (name)
+);
+
+CREATE TABLE IF NOT EXISTS {schema}.knowledge_bases (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name          TEXT NOT NULL,
+    description   TEXT,
+    rag_spec_json JSONB NOT NULL DEFAULT '{{}}',
+    status        TEXT NOT NULL DEFAULT 'empty',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (name)
+);
+
+CREATE TABLE IF NOT EXISTS {schema}.agent_skills (
+    agent_id    UUID NOT NULL REFERENCES {schema}.agents(id) ON DELETE CASCADE,
+    skill_id    UUID NOT NULL REFERENCES {schema}.skills(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (agent_id, skill_id)
+);
+
+CREATE TABLE IF NOT EXISTS {schema}.agent_mcp_servers (
+    agent_id      UUID NOT NULL REFERENCES {schema}.agents(id) ON DELETE CASCADE,
+    mcp_server_id UUID NOT NULL REFERENCES {schema}.mcp_servers(id) ON DELETE CASCADE,
+    assigned_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (agent_id, mcp_server_id)
+);
+
+CREATE TABLE IF NOT EXISTS {schema}.agent_knowledge_bases (
+    agent_id    UUID NOT NULL REFERENCES {schema}.agents(id) ON DELETE CASCADE,
+    kb_id       UUID NOT NULL REFERENCES {schema}.knowledge_bases(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (agent_id, kb_id)
+);
+
+CREATE TABLE IF NOT EXISTS {schema}.behavior_policies (
+    id                         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id                   UUID NOT NULL UNIQUE REFERENCES {schema}.agents(id) ON DELETE CASCADE,
+    tone                       TEXT NOT NULL DEFAULT 'profesional',
+    escalation_conditions_json JSONB NOT NULL DEFAULT '[]',
+    confirmation_triggers_json JSONB NOT NULL DEFAULT '[]',
+    format_requirements        TEXT,
+    custom_rules_json          JSONB NOT NULL DEFAULT '[]',
+    updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS {schema}.guardrail_rules (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id       UUID NOT NULL REFERENCES {schema}.agents(id) ON DELETE CASCADE,
+    name           TEXT NOT NULL,
+    rule_type      TEXT NOT NULL,
+    condition_json JSONB NOT NULL DEFAULT '{{}}',
+    action         TEXT NOT NULL DEFAULT 'block',
+    priority       INTEGER NOT NULL DEFAULT 0,
+    is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_skills_agent    ON {schema}.agent_skills(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_mcp_agent       ON {schema}.agent_mcp_servers(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_kb_agent        ON {schema}.agent_knowledge_bases(agent_id);
+CREATE INDEX IF NOT EXISTS idx_guardrails_agent      ON {schema}.guardrail_rules(agent_id);
+CREATE INDEX IF NOT EXISTS idx_behavior_policy_agent ON {schema}.behavior_policies(agent_id);
 """
 
 
