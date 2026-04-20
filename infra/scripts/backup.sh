@@ -5,6 +5,7 @@
 set -euo pipefail
 
 DEPLOY_DIR="/opt/agentica"
+COMPOSE_FILE="$DEPLOY_DIR/docker-compose.prod.yml"
 BACKUP_DIR="/opt/agentica-backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 KEEP_DAYS=7
@@ -16,7 +17,7 @@ echo "[$(date)] Iniciando backup..."
 
 # PostgreSQL
 PG_FILE="$BACKUP_DIR/pg_${TIMESTAMP}.sql.gz"
-docker exec agentica-postgres pg_dumpall -U agentica 2>/dev/null \
+docker compose -f "$COMPOSE_FILE" exec -T postgres pg_dumpall -U agentica 2>/dev/null \
     | gzip > "$PG_FILE" \
     && echo "PostgreSQL: $PG_FILE ($(du -sh $PG_FILE | cut -f1))" \
     || echo "WARN: Error en backup PostgreSQL"
@@ -24,7 +25,7 @@ docker exec agentica-postgres pg_dumpall -U agentica 2>/dev/null \
 # Qdrant snapshot
 QDRANT_FILE="$BACKUP_DIR/qdrant_${TIMESTAMP}.tar.gz"
 docker run --rm \
-    --volumes-from agentica-qdrant-1 \
+    --volumes-from "$(docker compose -f "$COMPOSE_FILE" ps -q qdrant)" \
     -v "$BACKUP_DIR:/backup" \
     alpine tar czf "/backup/qdrant_${TIMESTAMP}.tar.gz" /qdrant/storage \
     && echo "Qdrant: $QDRANT_FILE" \

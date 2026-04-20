@@ -16,7 +16,7 @@ log()  { echo -e "${GREEN}[SETUP]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 
 DEPLOY_DIR="/opt/agentica"
-REPO_URL="${REPO_URL:-https://github.com/axenova/agentica.git}"
+REPO_URL="${REPO_URL:-https://github.com/vleeng/agentica.git}"
 
 log "=== Setup inicial AGENTICA en VPS Axenova ==="
 
@@ -24,7 +24,7 @@ log "=== Setup inicial AGENTICA en VPS Axenova ==="
 
 log "Instalando dependencias del sistema..."
 apt-get update -qq
-apt-get install -y -qq git curl unzip
+apt-get install -y -qq git curl unzip openssl python3
 
 # ── 2. Docker (si no está instalado) ─────────────────────────────────────────
 
@@ -66,15 +66,22 @@ if [[ ! -f "$DEPLOY_DIR/.env" ]]; then
     REDIS_PASS=$(openssl rand -hex 16)
     sed -i "s/REDIS_PASSWORD=.*/REDIS_PASSWORD=$REDIS_PASS/" "$DEPLOY_DIR/.env"
 
-    # Generar ENCRYPTION_KEY
-    ENC_KEY=$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+    # Generar ENCRYPTION_KEY compatible con Fernet sin depender de paquetes externos.
+    ENC_KEY=$(python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())")
     sed -i "s/ENCRYPTION_KEY=.*/ENCRYPTION_KEY=$ENC_KEY/" "$DEPLOY_DIR/.env"
+
+    sed -i "s|ENVIRONMENT=.*|ENVIRONMENT=production|" "$DEPLOY_DIR/.env"
+    sed -i "s|BASE_DOMAIN=.*|BASE_DOMAIN=axenova.com|" "$DEPLOY_DIR/.env"
+    sed -i "s|CORS_ORIGINS=.*|CORS_ORIGINS='[\"https://www.axenova.com\"]'|" "$DEPLOY_DIR/.env"
+    sed -i "s|VITE_API_URL=.*|VITE_API_URL=/agentica|" "$DEPLOY_DIR/.env"
+    sed -i "s|VITE_WS_URL=.*|VITE_WS_URL=wss://www.axenova.com/agentica|" "$DEPLOY_DIR/.env"
 
     warn "=== IMPORTANTE: editá $DEPLOY_DIR/.env y completá: ==="
     warn "  - ANTHROPIC_API_KEY"
     warn "  - ADMIN_PASSWORD"
     warn "  - BASE_DOMAIN (ej: axenova.com)"
-    warn "  - CORS_ORIGINS (ej: https://agentica.axenova.com)"
+    warn "  - CORS_ORIGINS (ej: '[\"https://www.axenova.com\"]')"
+    warn "  - VITE_WS_URL si el frontend no vive en https://www.axenova.com/agentica"
     warn "  - Opcionales: TWILIO_*, TELEGRAM_BOT_TOKEN, OPENAI_API_KEY"
     warn ""
     warn "⚠️  Verifica que definiste ADMIN_PASSWORD de lo contrario la aplicacion crasheara preventivamente."
@@ -107,4 +114,4 @@ log "=== Setup completado ==="
 log "Próximos pasos:"
 log "  1. Editá $DEPLOY_DIR/.env con tus credenciales"
 log "  2. cd $DEPLOY_DIR && bash infra/scripts/deploy.sh"
-log "  3. Accedé a https://agentica.tudominio.com"
+log "  3. Accedé a https://www.axenova.com/agentica"

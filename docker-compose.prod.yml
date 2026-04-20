@@ -68,7 +68,7 @@ services:
       ADMIN_PASSWORD:    ${ADMIN_PASSWORD}
       ENCRYPTION_KEY:    ${ENCRYPTION_KEY}
       ENVIRONMENT:       production
-      CORS_ORIGINS:      ${CORS_ORIGINS:-https://agentica.axenova.com}
+      CORS_ORIGINS:      '${CORS_ORIGINS:-["https://www.${BASE_DOMAIN:-axenova.com}"]}'
       BASE_DOMAIN:       ${BASE_DOMAIN:-axenova.com}
       CELERY_BROKER:     redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/1
       CELERY_BACKEND:    redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/2
@@ -129,6 +129,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/agentica}
+        VITE_WS_URL: ${VITE_WS_URL:-wss://www.${BASE_DOMAIN:-axenova.com}/agentica}
     restart: unless-stopped
     networks:
       - traefik_public

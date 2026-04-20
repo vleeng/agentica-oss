@@ -1,4 +1,5 @@
 from functools import lru_cache
+import json
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -37,7 +38,7 @@ class Settings(BaseSettings):
     celery_backend: str = "redis://localhost:6379/2"
 
     # CORS
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: str | list[str] = "http://localhost:5173"
 
     # Agent builds
     builds_path: str = "/app/builds"
@@ -65,6 +66,23 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        if isinstance(self.cors_origins, list):
+            return self.cors_origins
+
+        value = self.cors_origins.strip()
+        if not value:
+            return []
+        if value.startswith("["):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return [str(origin) for origin in parsed]
+            except json.JSONDecodeError:
+                pass
+        return [origin.strip() for origin in value.split(",") if origin.strip()]
 
 
 @lru_cache
