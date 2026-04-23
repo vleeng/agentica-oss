@@ -10,7 +10,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.session import PublicSessionFactory, engine, provision_tenant
-from app.schemas.tenant import TokenOut, UserCreate
+from app.schemas.tenant import LoginInput, TokenOut, UserCreate
 
 router = APIRouter()
 
@@ -78,7 +78,7 @@ async def register(body: UserCreate, request: Request) -> TokenOut:
 
 
 @router.post("/login", response_model=TokenOut)
-async def login(body: UserCreate, request: Request) -> TokenOut:
+async def login(body: LoginInput, request: Request) -> TokenOut:
     from app.core.rate_limiter import get_rate_limiter
     client_ip = request.client.host if request.client else "unknown"
     await get_rate_limiter().check(

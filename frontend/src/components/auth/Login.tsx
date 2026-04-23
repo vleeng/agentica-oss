@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { authApi } from '../../lib/api'
 import { Bot, LockKeyhole } from 'lucide-react'
+
+import { authApi } from '../../lib/api'
+import { formatApiError } from '../../lib/errors'
 
 export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [email, setEmail] = useState('')
@@ -26,7 +28,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       }
     } catch (e: any) {
       console.error('[Agentica][Login] login error', e)
-      setError(e.response?.data?.detail || 'Error al iniciar sesión')
+      setError(formatApiError(e.response?.data?.detail, 'Error al iniciar sesión'))
     } finally {
       setLoading(false)
     }
@@ -40,13 +42,13 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             <Bot size={32} className="text-white" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight">Agentica</h1>
-          <p className="text-violet-200 mt-2 text-sm">Plataforma de despliegue IA Privada</p>
+          <p className="text-violet-200 mt-2 text-sm">Plataforma de despliegue IA privada</p>
         </div>
-        
+
         <div className="p-8">
           <div className="flex items-center gap-2 mb-6">
             <LockKeyhole size={18} className="text-violet-600" />
-            <h2 className="text-lg font-semibold text-gray-800">Acceso Seguro</h2>
+            <h2 className="text-lg font-semibold text-gray-800">Acceso seguro</h2>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
@@ -55,10 +57,10 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                 {error}
               </div>
             )}
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Usuario / Correo
+                Usuario o correo
               </label>
               <input
                 type="text"
@@ -69,7 +71,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                 placeholder="admin"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Contraseña
@@ -92,7 +94,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
               {loading ? 'Validando...' : 'Ingresar'}
             </button>
           </form>
-          
+
           <p className="mt-8 text-center text-xs text-gray-400">
             Alojado y protegido por Axenova VPS
           </p>
