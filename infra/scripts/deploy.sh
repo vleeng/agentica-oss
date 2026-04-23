@@ -53,7 +53,8 @@ check_requirements() {
 
     # Verificar variables críticas
     source "$ENV_FILE"
-    [[ -n "${ANTHROPIC_API_KEY:-}" ]] || err "ANTHROPIC_API_KEY no definida en .env"
+    [[ -n "${ANTHROPIC_API_KEY:-}" || -n "${OPENROUTER_API_KEY:-}" || -n "${OPENAI_API_KEY:-}" || -n "${BUILDER_API_KEY:-}" ]] \
+        || err "No hay ninguna API key LLM definida en .env (ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY o BUILDER_API_KEY)"
     [[ -n "${JWT_SECRET:-}" ]]        || err "JWT_SECRET no definida en .env"
     [[ -n "${POSTGRES_PASSWORD:-}" ]] || err "POSTGRES_PASSWORD no definida en .env"
     [[ -n "${REDIS_PASSWORD:-}" ]]    || err "REDIS_PASSWORD no definida en .env"
