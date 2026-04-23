@@ -111,6 +111,12 @@ export interface AgentDesign {
   version: number
 }
 
+export interface AgentResponse {
+  output: string
+  session_id?: string
+  metadata?: Record<string, unknown>
+}
+
 
 // ── Wizard state (frontend) ───────────────────────────────────────────────────
 
