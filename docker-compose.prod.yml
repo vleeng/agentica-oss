@@ -63,6 +63,7 @@ services:
       REDIS_URL:         redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/0
       QDRANT_URL:        http://qdrant:6333
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY:    ${OPENAI_API_KEY:-}
       JWT_SECRET:        ${JWT_SECRET}
       ADMIN_PASSWORD:    ${ADMIN_PASSWORD}
@@ -70,6 +71,10 @@ services:
       ENVIRONMENT:       production
       CORS_ORIGINS:      '${CORS_ORIGINS:-["https://www.${BASE_DOMAIN:-axenova.com}"]}'
       BASE_DOMAIN:       ${BASE_DOMAIN:-axenova.com}
+      BUILDER_PROVIDER:  ${BUILDER_PROVIDER:-anthropic}
+      BUILDER_MODEL:     ${BUILDER_MODEL:-claude-sonnet-4-5}
+      BUILDER_BASE_URL:  ${BUILDER_BASE_URL:-}
+      BUILDER_API_KEY:   ${BUILDER_API_KEY:-}
       CELERY_BROKER:     redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/1
       CELERY_BACKEND:    redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/2
       TWILIO_ACCOUNT_SID:  ${TWILIO_ACCOUNT_SID:-}
@@ -109,8 +114,14 @@ services:
       DATABASE_URL:      postgresql+asyncpg://agentica:${POSTGRES_PASSWORD}@postgres:5432/agentica
       REDIS_URL:         redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/0
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY:    ${OPENAI_API_KEY:-}
       ENCRYPTION_KEY:    ${ENCRYPTION_KEY}
       ENVIRONMENT:       production
+      BUILDER_PROVIDER:  ${BUILDER_PROVIDER:-anthropic}
+      BUILDER_MODEL:     ${BUILDER_MODEL:-claude-sonnet-4-5}
+      BUILDER_BASE_URL:  ${BUILDER_BASE_URL:-}
+      BUILDER_API_KEY:   ${BUILDER_API_KEY:-}
       CELERY_BROKER:     redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/1
       CELERY_BACKEND:    redis://:${REDIS_PASSWORD:-agentica_redis}@redis:6379/2
     volumes:
