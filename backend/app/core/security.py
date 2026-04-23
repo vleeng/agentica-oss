@@ -15,7 +15,7 @@ settings = get_settings()
 # ── Password hashing ─────────────────────────────────────────────────────────
 
 pwd_context = CryptContext(
-    schemes=["bcrypt_sha256", "bcrypt"],
+    schemes=["pbkdf2_sha256"],
     deprecated="auto",
 )
 
