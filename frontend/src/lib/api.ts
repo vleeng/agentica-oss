@@ -5,6 +5,7 @@ import type {
 } from '../types/agent'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const APP_BASE = import.meta.env.BASE_URL || '/'
 
 // ── Instancia axios con interceptor de JWT ────────────────────────────────────
 
@@ -22,7 +23,7 @@ function createClient(): AxiosInstance {
     err => {
       if (err.response?.status === 401) {
         localStorage.removeItem('agentica_token')
-        window.location.href = '/login'
+        window.location.href = APP_BASE
       }
       return Promise.reject(err)
     }

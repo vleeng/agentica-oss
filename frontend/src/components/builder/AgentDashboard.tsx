@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { agentsApi } from '../../lib/api'
 
+const API_BASE = import.meta.env.VITE_API_URL || ''
+
 interface AgentSummary {
   agent_id: string
   name: string
@@ -36,13 +38,21 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
   const loadData = async () => {
     setLoading(true)
     try {
+      const token = localStorage.getItem('agentica_token')
+      const headers = { Authorization: `Bearer ${token}` }
+
+      const [agentsRes, billingRes] = await Promise.all([
+        fetch(`${API_BASE}/api/v1/tenants/me/agents`, { headers }),
+        fetch(`${API_BASE}/api/v1/tenants/me/billing`, { headers }),
+      ])
+
+      if (!agentsRes.ok || !billingRes.ok) {
+        throw new Error('No se pudieron cargar los datos del dashboard')
+      }
+
       const [agentList, billingData] = await Promise.all([
-        fetch('/api/v1/tenants/me/agents', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('agentica_token')}` }
-        }).then(r => r.json()),
-        fetch('/api/v1/tenants/me/billing', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('agentica_token')}` }
-        }).then(r => r.json()),
+        agentsRes.json(),
+        billingRes.json(),
       ])
       setAgents(Array.isArray(agentList) ? agentList : [])
       setBilling(billingData)
