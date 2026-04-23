@@ -15,12 +15,30 @@ function createClient(): AxiosInstance {
   client.interceptors.request.use(cfg => {
     const token = localStorage.getItem('agentica_token')
     if (token) cfg.headers.Authorization = `Bearer ${token}`
+    console.log('[Agentica][API] request', {
+      method: cfg.method,
+      baseURL: cfg.baseURL,
+      url: cfg.url,
+      hasToken: !!token,
+    })
     return cfg
   })
 
   client.interceptors.response.use(
-    r => r,
+    r => {
+      console.log('[Agentica][API] response', {
+        status: r.status,
+        url: r.config?.url,
+      })
+      return r
+    },
     err => {
+      console.error('[Agentica][API] error', {
+        status: err.response?.status,
+        url: err.config?.url,
+        data: err.response?.data,
+        message: err.message,
+      })
       if (err.response?.status === 401) {
         localStorage.removeItem('agentica_token')
         window.location.href = APP_BASE

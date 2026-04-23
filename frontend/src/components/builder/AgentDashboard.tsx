@@ -32,19 +32,29 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
   const [error, setError]       = useState('')
 
   useEffect(() => {
+    console.log('[Agentica][Dashboard] mounted', { apiBase: API_BASE })
     loadData()
   }, [])
 
   const loadData = async () => {
+    console.log('[Agentica][Dashboard] loadData start')
     setLoading(true)
     try {
       const token = localStorage.getItem('agentica_token')
       const headers = { Authorization: `Bearer ${token}` }
+      console.log('[Agentica][Dashboard] request headers ready', { hasToken: !!token })
 
       const [agentsRes, billingRes] = await Promise.all([
         fetch(`${API_BASE}/api/v1/tenants/me/agents`, { headers }),
         fetch(`${API_BASE}/api/v1/tenants/me/billing`, { headers }),
       ])
+
+      console.log('[Agentica][Dashboard] responses', {
+        agentsStatus: agentsRes.status,
+        billingStatus: billingRes.status,
+        agentsOk: agentsRes.ok,
+        billingOk: billingRes.ok,
+      })
 
       if (!agentsRes.ok || !billingRes.ok) {
         throw new Error('No se pudieron cargar los datos del dashboard')
@@ -54,11 +64,18 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
         agentsRes.json(),
         billingRes.json(),
       ])
+      console.log('[Agentica][Dashboard] payloads', {
+        agentListType: Array.isArray(agentList) ? 'array' : typeof agentList,
+        agentCount: Array.isArray(agentList) ? agentList.length : -1,
+        billingKeys: billingData && typeof billingData === 'object' ? Object.keys(billingData) : [],
+      })
       setAgents(Array.isArray(agentList) ? agentList : [])
       setBilling(billingData)
     } catch (e: any) {
+      console.error('[Agentica][Dashboard] loadData error', e)
       setError('Error al cargar los datos')
     } finally {
+      console.log('[Agentica][Dashboard] loadData end')
       setLoading(false)
     }
   }

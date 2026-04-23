@@ -17,10 +17,18 @@ import type { AgentDesign, WizardState } from './types/agent'
 type View = 'dashboard' | 'wizard' | 'monitor' | 'keys' | 'usage' | 'providers' | 'custom_tools' | 'skills' | 'mcp' | 'knowledge_bases'
 
 export default function App() {
+  console.log('[Agentica][App] render start', {
+    pathname: window.location.pathname,
+    baseUrl: import.meta.env.BASE_URL,
+    apiUrl: import.meta.env.VITE_API_URL,
+    wsUrl: import.meta.env.VITE_WS_URL,
+    hasToken: !!localStorage.getItem('agentica_token'),
+  })
   // Interceptar ruta standalone
   const path = window.location.pathname
   if (path.startsWith('/c/')) {
     const standaloneAgentId = path.split('/')[2]
+    console.log('[Agentica][App] standalone route detected', { standaloneAgentId })
     if (standaloneAgentId) return <StandaloneChat agentId={standaloneAgentId} />
   }
 
@@ -31,20 +39,35 @@ export default function App() {
   const [authed, setAuthed]   = useState(!!localStorage.getItem('agentica_token'))
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
+  useEffect(() => {
+    console.log('[Agentica][App] auth state changed', { authed })
+  }, [authed])
+
+  useEffect(() => {
+    console.log('[Agentica][App] view changed', { view, hasDesign: !!design, loading, error })
+  }, [view, design, loading, error])
+
   if (!authed) {
-    return <Login onLoginSuccess={() => setAuthed(true)} />
+    return <Login onLoginSuccess={() => {
+      console.log('[Agentica][App] login success callback')
+      setAuthed(true)
+    }} />
   }
 
   const handleWizardComplete = async (state: WizardState) => {
+    console.log('[Agentica][App] handleWizardComplete start', { name: state.name, mode: state.mode })
     setLoading(true)
     setError('')
     try {
       const me = await authApi.me()
+      console.log('[Agentica][App] authApi.me success', me)
       const spec = wizardStateToSpec(state, me.tenant_id)
       const agentDesign = await agentsApi.createFromSpec(spec)
+      console.log('[Agentica][App] createFromSpec success', { agentId: agentDesign.agent_id })
       setDesign(agentDesign)
       setView('monitor')
     } catch (e: any) {
+      console.error('[Agentica][App] handleWizardComplete error', e)
       setError(e.response?.data?.detail || e.message || 'Error al crear el agente')
     } finally {
       setLoading(false)
@@ -52,11 +75,14 @@ export default function App() {
   }
 
   const handleSelectAgent = async (agentId: string) => {
+    console.log('[Agentica][App] handleSelectAgent start', { agentId })
     try {
       const d = await agentsApi.getDesign(agentId)
+      console.log('[Agentica][App] getDesign success', { agentId })
       setDesign(d)
       setView('monitor')
-    } catch {
+    } catch (e) {
+      console.error('[Agentica][App] handleSelectAgent error', e)
       // El agente existe en DB pero no tiene runtime activo todavía
       // Mostrar un mensaje claro en lugar de pantalla en blanco
       setError(`El agente seleccionado necesita ser buildeado primero. Crealo nuevamente desde el wizard.`)

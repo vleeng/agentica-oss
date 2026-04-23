@@ -10,15 +10,22 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    console.log('[Agentica][Login] submit', { email })
     setError('')
     setLoading(true)
     try {
       const data = await authApi.login(email, password)
+      console.log('[Agentica][Login] login response', {
+        hasAccessToken: !!data?.access_token,
+        keys: data ? Object.keys(data) : [],
+      })
       if (data.access_token) {
         localStorage.setItem('agentica_token', data.access_token)
+        console.log('[Agentica][Login] token stored')
         onLoginSuccess()
       }
     } catch (e: any) {
+      console.error('[Agentica][Login] login error', e)
       setError(e.response?.data?.detail || 'Error al iniciar sesión')
     } finally {
       setLoading(false)
