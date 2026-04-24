@@ -61,19 +61,12 @@ async def lifespan(app: FastAPI):
             async with engine.begin() as conn:
                 await provision_tenant(tenant_id, conn)
         else:
-            # Garantizar que el schema del tenant admin siempre existe
+            # Siempre re-provisionar (CREATE TABLE IF NOT EXISTS es idempotente)
             tenant_id = str(row.tenant_id)
-            from app.db.session import _make_tenant_schema
-            schema = _make_tenant_schema(tenant_id)
+            print(f"[STARTUP] Verificando schema del tenant admin ({tenant_id})...")
             async with engine.begin() as conn:
-                schema_check = await conn.execute(
-                    text("SELECT schema_name FROM information_schema.schemata WHERE schema_name = :s"),
-                    {"s": schema},
-                )
-                if not schema_check.fetchone():
-                    print(f"[STARTUP] Schema {schema} no existe — provisionando...")
-                    await provision_tenant(tenant_id, conn)
-                    print(f"[STARTUP] Schema {schema} creado correctamente")
+                await provision_tenant(tenant_id, conn)
+            print("[STARTUP] Schema del tenant admin verificado OK")
 
     # Conectar Redis
     try:
