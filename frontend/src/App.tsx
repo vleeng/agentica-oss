@@ -29,21 +29,21 @@ import type { AgentDesign, WizardState } from './types/agent'
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginRoute />} />
-      <Route path="/c/:agentId" element={<StandaloneRoute />} />
+      <Route path="login" element={<LoginRoute />} />
+      <Route path="c/:agentId" element={<StandaloneRoute />} />
       <Route element={<ProtectedLayout />}>
         <Route element={<AppShell />}>
           <Route index element={<DashboardRoute />} />
-          <Route path="/wizard" element={<WizardRoute />} />
-          <Route path="/agents/:agentId" element={<MonitorRoute />} />
-          <Route path="/usage" element={<UsageDashboard />} />
-          <Route path="/providers" element={<ProvidersPanel />} />
-          <Route path="/custom-tools" element={<CustomToolsPanel />} />
-          <Route path="/keys" element={<APIKeysPanel />} />
-          <Route path="/skills" element={<PanelPage title="Skills"><SkillsPanel /></PanelPage>} />
-          <Route path="/mcp" element={<PanelPage title="Servidores MCP"><MCPPanel /></PanelPage>} />
+          <Route path="wizard" element={<WizardRoute />} />
+          <Route path="agents/:agentId" element={<MonitorRoute />} />
+          <Route path="usage" element={<UsageDashboard />} />
+          <Route path="providers" element={<ProvidersPanel />} />
+          <Route path="custom-tools" element={<CustomToolsPanel />} />
+          <Route path="keys" element={<APIKeysPanel />} />
+          <Route path="skills" element={<PanelPage title="Skills"><SkillsPanel /></PanelPage>} />
+          <Route path="mcp" element={<PanelPage title="Servidores MCP"><MCPPanel /></PanelPage>} />
           <Route
-            path="/knowledge-bases"
+            path="knowledge-bases"
             element={<PanelPage title="Bases de conocimiento"><KnowledgeBasesPanel /></PanelPage>}
           />
         </Route>
