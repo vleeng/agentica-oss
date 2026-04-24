@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import uuid
@@ -34,7 +34,7 @@ class AgentRepository:
         await self._db.execute(
             text("""
                 INSERT INTO agents (id, name, description, mode, framework, status, spec_json, design_json)
-                VALUES (:id, :name, :desc, :mode, :fw, 'draft', :spec::jsonb, :design::jsonb)
+                VALUES (:id, :name, :desc, :mode, :fw, 'draft', CAST(:spec AS jsonb), CAST(:design AS jsonb))
                 ON CONFLICT (id) DO UPDATE SET
                     design_json = EXCLUDED.design_json,
                     updated_at  = NOW()
@@ -257,7 +257,7 @@ class AgentRepository:
         await self._db.execute(
             text("""
                 INSERT INTO eval_runs (id, agent_id, build_id, score, passed, report_json)
-                VALUES (:id, :agent_id, :build_id, :score, :passed, :report::jsonb)
+                VALUES (:id, :agent_id, :build_id, :score, :passed, CAST(:report AS jsonb))
             """),
             {
                 "id":       run_id,
@@ -305,7 +305,7 @@ class AgentRepository:
                     COALESCE(SUM(tokens_out), 0) as total_tokens_out,
                     COALESCE(SUM(cost_usd), 0)   as total_cost_usd
                 FROM billing_events
-                WHERE (:agent_id IS NULL OR agent_id = :agent_id::uuid)
+                WHERE (:agent_id IS NULL OR agent_id = CAST(:agent_id AS uuid))
             """),
             {"agent_id": agent_id},
         )
@@ -341,7 +341,7 @@ class AgentRepository:
 
     async def get_custom_tool_by_id(self, tool_id: str) -> dict | None:
         result = await self._db.execute(
-            text("SELECT * FROM custom_tools WHERE id = :id::uuid"),
+            text("SELECT * FROM custom_tools WHERE id = CAST(:id AS uuid)"),
             {"id": tool_id},
         )
         row = result.fetchone()
@@ -360,7 +360,7 @@ class AgentRepository:
                 INSERT INTO custom_tools
                     (name, description, source_code, config_schema, test_input)
                 VALUES
-                    (:name, :desc, :code, :schema::jsonb, :test)
+                    (:name, :desc, :code, CAST(:schema AS jsonb), :test)
                 RETURNING id, name, description, config_schema,
                           is_active, test_input, created_at, updated_at
             """),
@@ -389,7 +389,7 @@ class AgentRepository:
         sets, params = [], {"id": tool_id}
         if description  is not None: sets.append("description = :desc");    params["desc"]   = description
         if source_code  is not None: sets.append("source_code = :code");    params["code"]   = source_code
-        if config_schema is not None: sets.append("config_schema = :schema::jsonb"); params["schema"] = json.dumps(config_schema)
+        if config_schema is not None: sets.append("config_schema = CAST(:schema AS jsonb)"); params["schema"] = json.dumps(config_schema)
         if is_active    is not None: sets.append("is_active = :active");    params["active"] = is_active
         if test_input   is not None: sets.append("test_input = :test");     params["test"]   = test_input
         if last_error   is not None: sets.append("last_error = :err");      params["err"]    = last_error
@@ -399,7 +399,7 @@ class AgentRepository:
         result = await self._db.execute(
             text(f"""
                 UPDATE custom_tools SET {', '.join(sets)}
-                WHERE id = :id::uuid
+                WHERE id = CAST(:id AS uuid)
                 RETURNING id, name, description, config_schema,
                           is_active, test_input, last_error, created_at, updated_at
             """),
@@ -411,7 +411,7 @@ class AgentRepository:
 
     async def delete_custom_tool(self, tool_id: str) -> bool:
         result = await self._db.execute(
-            text("DELETE FROM custom_tools WHERE id = :id::uuid RETURNING id"),
+            text("DELETE FROM custom_tools WHERE id = CAST(:id AS uuid) RETURNING id"),
             {"id": tool_id},
         )
         await self._db.commit()
@@ -427,7 +427,7 @@ class AgentRepository:
 
     async def get_skill(self, skill_id: str) -> Optional[dict]:
         result = await self._db.execute(
-            text("SELECT * FROM skills WHERE id = :id::uuid"), {"id": skill_id}
+            text("SELECT * FROM skills WHERE id = CAST(:id AS uuid)"), {"id": skill_id}
         )
         row = result.fetchone()
         return dict(row._mapping) if row else None
@@ -439,8 +439,8 @@ class AgentRepository:
                     (name, description, objective, usage_conditions, tools_json,
                      procedure, quality_rules, output_format, guardrails_json)
                 VALUES
-                    (:name, :description, :objective, :usage_conditions, :tools_json::jsonb,
-                     :procedure, :quality_rules, :output_format, :guardrails_json::jsonb)
+                    (:name, :description, :objective, :usage_conditions, CAST(:tools_json AS jsonb),
+                     :procedure, :quality_rules, :output_format, CAST(:guardrails_json AS jsonb))
                 RETURNING *
             """),
             data,
@@ -457,13 +457,13 @@ class AgentRepository:
                 params[field] = data[field]
         for jfield in ("tools_json", "guardrails_json"):
             if jfield in data:
-                sets.append(f"{jfield} = :{jfield}::jsonb")
+                sets.append(f"{jfield} = CAST(:{jfield} AS jsonb)")
                 params[jfield] = data[jfield]
         if not sets:
             return await self.get_skill(skill_id)
         sets.append("updated_at = NOW()")
         result = await self._db.execute(
-            text(f"UPDATE skills SET {', '.join(sets)} WHERE id = :id::uuid RETURNING *"),
+            text(f"UPDATE skills SET {', '.join(sets)} WHERE id = CAST(:id AS uuid) RETURNING *"),
             params,
         )
         await self._db.commit()
@@ -472,7 +472,7 @@ class AgentRepository:
 
     async def delete_skill(self, skill_id: str) -> bool:
         result = await self._db.execute(
-            text("DELETE FROM skills WHERE id = :id::uuid RETURNING id"), {"id": skill_id}
+            text("DELETE FROM skills WHERE id = CAST(:id AS uuid) RETURNING id"), {"id": skill_id}
         )
         await self._db.commit()
         return result.fetchone() is not None
@@ -481,7 +481,7 @@ class AgentRepository:
         await self._db.execute(
             text("""
                 INSERT INTO agent_skills (agent_id, skill_id)
-                VALUES (:agent_id::uuid, :skill_id::uuid)
+                VALUES (CAST(:agent_id AS uuid), CAST(:skill_id AS uuid))
                 ON CONFLICT DO NOTHING
             """),
             {"agent_id": agent_id, "skill_id": skill_id},
@@ -490,7 +490,7 @@ class AgentRepository:
 
     async def unassign_skill_from_agent(self, agent_id: str, skill_id: str) -> None:
         await self._db.execute(
-            text("DELETE FROM agent_skills WHERE agent_id = :a::uuid AND skill_id = :s::uuid"),
+            text("DELETE FROM agent_skills WHERE agent_id = CAST(:a AS uuid) AND skill_id = CAST(:s AS uuid)"),
             {"a": agent_id, "s": skill_id},
         )
         await self._db.commit()
@@ -500,7 +500,7 @@ class AgentRepository:
             text("""
                 SELECT s.* FROM skills s
                 JOIN agent_skills asg ON asg.skill_id = s.id
-                WHERE asg.agent_id = :agent_id::uuid AND s.is_active = TRUE
+                WHERE asg.agent_id = CAST(:agent_id AS uuid) AND s.is_active = TRUE
                 ORDER BY asg.assigned_at
             """),
             {"agent_id": agent_id},
@@ -517,7 +517,7 @@ class AgentRepository:
 
     async def get_mcp_server(self, server_id: str) -> Optional[dict]:
         result = await self._db.execute(
-            text("SELECT * FROM mcp_servers WHERE id = :id::uuid"), {"id": server_id}
+            text("SELECT * FROM mcp_servers WHERE id = CAST(:id AS uuid)"), {"id": server_id}
         )
         row = result.fetchone()
         return dict(row._mapping) if row else None
@@ -528,7 +528,7 @@ class AgentRepository:
                 INSERT INTO mcp_servers
                     (name, endpoint, transport, auth_type, auth_config_json, discovered_tools_json)
                 VALUES
-                    (:name, :endpoint, :transport, :auth_type, :auth_config_json::jsonb, :discovered_tools_json::jsonb)
+                    (:name, :endpoint, :transport, :auth_type, CAST(:auth_config_json AS jsonb), CAST(:discovered_tools_json AS jsonb))
                 RETURNING *
             """),
             data,
@@ -544,12 +544,12 @@ class AgentRepository:
                 params[field] = data[field]
         for jfield in ("auth_config_json", "discovered_tools_json"):
             if jfield in data:
-                sets.append(f"{jfield} = :{jfield}::jsonb")
+                sets.append(f"{jfield} = CAST(:{jfield} AS jsonb)")
                 params[jfield] = data[jfield]
         if not sets:
             return await self.get_mcp_server(server_id)
         result = await self._db.execute(
-            text(f"UPDATE mcp_servers SET {', '.join(sets)} WHERE id = :id::uuid RETURNING *"),
+            text(f"UPDATE mcp_servers SET {', '.join(sets)} WHERE id = CAST(:id AS uuid) RETURNING *"),
             params,
         )
         await self._db.commit()
@@ -558,7 +558,7 @@ class AgentRepository:
 
     async def delete_mcp_server(self, server_id: str) -> bool:
         result = await self._db.execute(
-            text("DELETE FROM mcp_servers WHERE id = :id::uuid RETURNING id"), {"id": server_id}
+            text("DELETE FROM mcp_servers WHERE id = CAST(:id AS uuid) RETURNING id"), {"id": server_id}
         )
         await self._db.commit()
         return result.fetchone() is not None
@@ -567,7 +567,7 @@ class AgentRepository:
         await self._db.execute(
             text("""
                 INSERT INTO agent_mcp_servers (agent_id, mcp_server_id)
-                VALUES (:agent_id::uuid, :server_id::uuid)
+                VALUES (CAST(:agent_id AS uuid), CAST(:server_id AS uuid))
                 ON CONFLICT DO NOTHING
             """),
             {"agent_id": agent_id, "server_id": server_id},
@@ -576,7 +576,7 @@ class AgentRepository:
 
     async def unassign_mcp_from_agent(self, agent_id: str, server_id: str) -> None:
         await self._db.execute(
-            text("DELETE FROM agent_mcp_servers WHERE agent_id = :a::uuid AND mcp_server_id = :s::uuid"),
+            text("DELETE FROM agent_mcp_servers WHERE agent_id = CAST(:a AS uuid) AND mcp_server_id = CAST(:s AS uuid)"),
             {"a": agent_id, "s": server_id},
         )
         await self._db.commit()
@@ -586,7 +586,7 @@ class AgentRepository:
             text("""
                 SELECT m.* FROM mcp_servers m
                 JOIN agent_mcp_servers ams ON ams.mcp_server_id = m.id
-                WHERE ams.agent_id = :agent_id::uuid AND m.is_active = TRUE
+                WHERE ams.agent_id = CAST(:agent_id AS uuid) AND m.is_active = TRUE
                 ORDER BY ams.assigned_at
             """),
             {"agent_id": agent_id},
@@ -603,7 +603,7 @@ class AgentRepository:
 
     async def get_knowledge_base(self, kb_id: str) -> Optional[dict]:
         result = await self._db.execute(
-            text("SELECT * FROM knowledge_bases WHERE id = :id::uuid"), {"id": kb_id}
+            text("SELECT * FROM knowledge_bases WHERE id = CAST(:id AS uuid)"), {"id": kb_id}
         )
         row = result.fetchone()
         return dict(row._mapping) if row else None
@@ -612,7 +612,7 @@ class AgentRepository:
         result = await self._db.execute(
             text("""
                 INSERT INTO knowledge_bases (name, description, rag_spec_json)
-                VALUES (:name, :description, :rag_spec_json::jsonb)
+                VALUES (:name, :description, CAST(:rag_spec_json AS jsonb))
                 RETURNING *
             """),
             data,
@@ -627,13 +627,13 @@ class AgentRepository:
                 sets.append(f"{field} = :{field}")
                 params[field] = data[field]
         if "rag_spec_json" in data:
-            sets.append("rag_spec_json = :rag_spec_json::jsonb")
+            sets.append("rag_spec_json = CAST(:rag_spec_json AS jsonb)")
             params["rag_spec_json"] = data["rag_spec_json"]
         if not sets:
             return await self.get_knowledge_base(kb_id)
         sets.append("updated_at = NOW()")
         result = await self._db.execute(
-            text(f"UPDATE knowledge_bases SET {', '.join(sets)} WHERE id = :id::uuid RETURNING *"),
+            text(f"UPDATE knowledge_bases SET {', '.join(sets)} WHERE id = CAST(:id AS uuid) RETURNING *"),
             params,
         )
         await self._db.commit()
@@ -642,7 +642,7 @@ class AgentRepository:
 
     async def delete_knowledge_base(self, kb_id: str) -> bool:
         result = await self._db.execute(
-            text("DELETE FROM knowledge_bases WHERE id = :id::uuid RETURNING id"), {"id": kb_id}
+            text("DELETE FROM knowledge_bases WHERE id = CAST(:id AS uuid) RETURNING id"), {"id": kb_id}
         )
         await self._db.commit()
         return result.fetchone() is not None
@@ -651,7 +651,7 @@ class AgentRepository:
         await self._db.execute(
             text("""
                 INSERT INTO agent_knowledge_bases (agent_id, kb_id)
-                VALUES (:agent_id::uuid, :kb_id::uuid)
+                VALUES (CAST(:agent_id AS uuid), CAST(:kb_id AS uuid))
                 ON CONFLICT DO NOTHING
             """),
             {"agent_id": agent_id, "kb_id": kb_id},
@@ -660,7 +660,7 @@ class AgentRepository:
 
     async def unassign_kb_from_agent(self, agent_id: str, kb_id: str) -> None:
         await self._db.execute(
-            text("DELETE FROM agent_knowledge_bases WHERE agent_id = :a::uuid AND kb_id = :k::uuid"),
+            text("DELETE FROM agent_knowledge_bases WHERE agent_id = CAST(:a AS uuid) AND kb_id = CAST(:k AS uuid)"),
             {"a": agent_id, "k": kb_id},
         )
         await self._db.commit()
@@ -670,7 +670,7 @@ class AgentRepository:
             text("""
                 SELECT kb.* FROM knowledge_bases kb
                 JOIN agent_knowledge_bases akb ON akb.kb_id = kb.id
-                WHERE akb.agent_id = :agent_id::uuid
+                WHERE akb.agent_id = CAST(:agent_id AS uuid)
                 ORDER BY akb.assigned_at
             """),
             {"agent_id": agent_id},
@@ -681,7 +681,7 @@ class AgentRepository:
 
     async def get_agent_policy(self, agent_id: str) -> Optional[dict]:
         result = await self._db.execute(
-            text("SELECT * FROM behavior_policies WHERE agent_id = :agent_id::uuid"),
+            text("SELECT * FROM behavior_policies WHERE agent_id = CAST(:agent_id AS uuid)"),
             {"agent_id": agent_id},
         )
         row = result.fetchone()
@@ -694,8 +694,8 @@ class AgentRepository:
                     (agent_id, tone, escalation_conditions_json, confirmation_triggers_json,
                      format_requirements, custom_rules_json)
                 VALUES
-                    (:agent_id::uuid, :tone, :escalation_conditions_json::jsonb,
-                     :confirmation_triggers_json::jsonb, :format_requirements, :custom_rules_json::jsonb)
+                    (CAST(:agent_id AS uuid), :tone, CAST(:escalation_conditions_json AS jsonb),
+                     CAST(:confirmation_triggers_json AS jsonb), :format_requirements, CAST(:custom_rules_json AS jsonb))
                 ON CONFLICT (agent_id) DO UPDATE SET
                     tone = EXCLUDED.tone,
                     escalation_conditions_json = EXCLUDED.escalation_conditions_json,
@@ -712,7 +712,7 @@ class AgentRepository:
 
     async def delete_agent_policy(self, agent_id: str) -> None:
         await self._db.execute(
-            text("DELETE FROM behavior_policies WHERE agent_id = :agent_id::uuid"),
+            text("DELETE FROM behavior_policies WHERE agent_id = CAST(:agent_id AS uuid)"),
             {"agent_id": agent_id},
         )
         await self._db.commit()
@@ -723,7 +723,7 @@ class AgentRepository:
         result = await self._db.execute(
             text("""
                 SELECT * FROM guardrail_rules
-                WHERE agent_id = :agent_id::uuid
+                WHERE agent_id = CAST(:agent_id AS uuid)
                 ORDER BY priority DESC, created_at
             """),
             {"agent_id": agent_id},
@@ -736,7 +736,7 @@ class AgentRepository:
                 INSERT INTO guardrail_rules
                     (agent_id, name, rule_type, condition_json, action, priority)
                 VALUES
-                    (:agent_id::uuid, :name, :rule_type, :condition_json::jsonb, :action, :priority)
+                    (CAST(:agent_id AS uuid), :name, :rule_type, CAST(:condition_json AS jsonb), :action, :priority)
                 RETURNING *
             """),
             {"agent_id": agent_id, **data},
@@ -751,12 +751,12 @@ class AgentRepository:
                 sets.append(f"{field} = :{field}")
                 params[field] = data[field]
         if "condition_json" in data:
-            sets.append("condition_json = :condition_json::jsonb")
+            sets.append("condition_json = CAST(:condition_json AS jsonb)")
             params["condition_json"] = data["condition_json"]
         if not sets:
             return None
         result = await self._db.execute(
-            text(f"UPDATE guardrail_rules SET {', '.join(sets)} WHERE id = :id::uuid RETURNING *"),
+            text(f"UPDATE guardrail_rules SET {', '.join(sets)} WHERE id = CAST(:id AS uuid) RETURNING *"),
             params,
         )
         await self._db.commit()
@@ -765,7 +765,7 @@ class AgentRepository:
 
     async def toggle_guardrail_rule(self, rule_id: str, is_active: bool) -> Optional[dict]:
         result = await self._db.execute(
-            text("UPDATE guardrail_rules SET is_active = :active WHERE id = :id::uuid RETURNING *"),
+            text("UPDATE guardrail_rules SET is_active = :active WHERE id = CAST(:id AS uuid) RETURNING *"),
             {"active": is_active, "id": rule_id},
         )
         await self._db.commit()
@@ -774,7 +774,7 @@ class AgentRepository:
 
     async def delete_guardrail_rule(self, rule_id: str) -> bool:
         result = await self._db.execute(
-            text("DELETE FROM guardrail_rules WHERE id = :id::uuid RETURNING id"),
+            text("DELETE FROM guardrail_rules WHERE id = CAST(:id AS uuid) RETURNING id"),
             {"id": rule_id},
         )
         await self._db.commit()
