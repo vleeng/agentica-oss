@@ -297,18 +297,27 @@ class AgentRepository:
         await self._db.commit()
 
     async def get_billing_summary(self, agent_id: str | None = None) -> dict:
-        result = await self._db.execute(
-            text("""
+        if agent_id is None:
+            sql = text("""
                 SELECT
                     COUNT(*) as calls,
                     COALESCE(SUM(tokens_in), 0)  as total_tokens_in,
                     COALESCE(SUM(tokens_out), 0) as total_tokens_out,
                     COALESCE(SUM(cost_usd), 0)   as total_cost_usd
                 FROM billing_events
-                WHERE (:agent_id IS NULL OR agent_id = CAST(:agent_id AS uuid))
-            """),
-            {"agent_id": agent_id},
-        )
+            """)
+            result = await self._db.execute(sql)
+        else:
+            sql = text("""
+                SELECT
+                    COUNT(*) as calls,
+                    COALESCE(SUM(tokens_in), 0)  as total_tokens_in,
+                    COALESCE(SUM(tokens_out), 0) as total_tokens_out,
+                    COALESCE(SUM(cost_usd), 0)   as total_cost_usd
+                FROM billing_events
+                WHERE agent_id = CAST(:agent_id AS uuid)
+            """)
+            result = await self._db.execute(sql, {"agent_id": agent_id})
         row = result.fetchone()
         return {
             "calls":            row.calls,
