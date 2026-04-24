@@ -10,6 +10,8 @@ interface APIKey {
   created_at: string
 }
 
+const API_BASE = import.meta.env.VITE_API_URL || ''
+
 export function APIKeysPanel() {
   const [keys, setKeys]         = useState<APIKey[]>([])
   const [loading, setLoading]   = useState(true)
@@ -23,7 +25,7 @@ export function APIKeysPanel() {
   })
 
   const loadKeys = async () => {
-    const r = await fetch('/api/v1/keys/', { headers: headers() })
+    const r = await fetch(`${API_BASE}/api/v1/keys/`, { headers: headers() })
     const data = await r.json()
     setKeys(Array.isArray(data) ? data : [])
     setLoading(false)
@@ -35,7 +37,7 @@ export function APIKeysPanel() {
     if (!newKeyName.trim()) return
     setCreating(true)
     try {
-      const r = await fetch('/api/v1/keys/', {
+      const r = await fetch(`${API_BASE}/api/v1/keys/`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({ name: newKeyName, scopes: ['invoke'] }),
@@ -51,7 +53,7 @@ export function APIKeysPanel() {
 
   const revokeKey = async (keyId: string) => {
     if (!confirm('¿Revocar esta API key? No se puede deshacer.')) return
-    await fetch(`/api/v1/keys/${keyId}`, { method: 'DELETE', headers: headers() })
+    await fetch(`${API_BASE}/api/v1/keys/${keyId}`, { method: 'DELETE', headers: headers() })
     setKeys(keys.filter(k => k.id !== keyId))
   }
 

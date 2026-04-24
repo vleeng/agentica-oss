@@ -1,220 +1,242 @@
-import { useEffect, useState } from 'react'
-import { agentsApi } from '../../lib/api'
+import { ArrowRight, Bot, Cpu, Search, Sparkles, Wallet } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
-const API_BASE = import.meta.env.VITE_API_URL || ''
-
-interface AgentSummary {
-  agent_id: string
-  name: string
-  mode: 'single' | 'crew'
-  framework: string
-  status: string
-  created_at: string
-}
+import { type AgentSummary, type TenantBillingSummary, tenantsApi } from '../../lib/api'
+import { formatCurrency, formatNumber } from '../../lib/utils'
+import { Badge } from '../ui/badge'
+import { Button } from '../ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { Input } from '../ui/input'
 
 interface Props {
   onSelectAgent: (agentId: string) => void
   onNewAgent: () => void
 }
 
-const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
-  draft:    { label: 'Borrador',   cls: 'bg-gray-100 text-gray-600' },
-  building: { label: 'Building',   cls: 'bg-blue-100 text-blue-700' },
-  testing:  { label: 'En prueba',  cls: 'bg-amber-100 text-amber-700' },
-  deployed: { label: 'Desplegado', cls: 'bg-green-100 text-green-700' },
-  archived: { label: 'Archivado',  cls: 'bg-gray-100 text-gray-400' },
+const STATUS_CONFIG: Record<string, { label: string; tone: 'slate' | 'blue' | 'amber' | 'green' }> = {
+  draft: { label: 'Borrador', tone: 'slate' },
+  building: { label: 'Building', tone: 'blue' },
+  testing: { label: 'En prueba', tone: 'amber' },
+  deployed: { label: 'Desplegado', tone: 'green' },
+  archived: { label: 'Archivado', tone: 'slate' },
 }
 
 export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
-  const [agents, setAgents]     = useState<AgentSummary[]>([])
-  const [billing, setBilling]   = useState<any>(null)
-  const [loading, setLoading]   = useState(true)
-  const [error, setError]       = useState('')
+  const [agents, setAgents] = useState<AgentSummary[]>([])
+  const [billing, setBilling] = useState<TenantBillingSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
-    console.log('[Agentica][Dashboard] mounted', { apiBase: API_BASE })
-    loadData()
+    setLoading(true)
+    Promise.all([tenantsApi.listAgents(), tenantsApi.billing()])
+      .then(([agentList, billingData]) => {
+        setAgents(Array.isArray(agentList) ? agentList : [])
+        setBilling(billingData)
+        setError('')
+      })
+      .catch(() => setError('No pudimos cargar el dashboard. Revisá el backend e intentá de nuevo.'))
+      .finally(() => setLoading(false))
   }, [])
 
-  const loadData = async () => {
-    console.log('[Agentica][Dashboard] loadData start')
-    setLoading(true)
-    try {
-      const token = localStorage.getItem('agentica_token')
-      const headers = { Authorization: `Bearer ${token}` }
-      console.log('[Agentica][Dashboard] request headers ready', { hasToken: !!token })
-
-      const [agentsRes, billingRes] = await Promise.all([
-        fetch(`${API_BASE}/api/v1/tenants/me/agents`, { headers }),
-        fetch(`${API_BASE}/api/v1/tenants/me/billing`, { headers }),
-      ])
-
-      console.log('[Agentica][Dashboard] responses', {
-        agentsStatus: agentsRes.status,
-        billingStatus: billingRes.status,
-        agentsOk: agentsRes.ok,
-        billingOk: billingRes.ok,
-      })
-
-      if (!agentsRes.ok || !billingRes.ok) {
-        throw new Error('No se pudieron cargar los datos del dashboard')
-      }
-
-      const [agentList, billingData] = await Promise.all([
-        agentsRes.json(),
-        billingRes.json(),
-      ])
-      console.log('[Agentica][Dashboard] payloads', {
-        agentListType: Array.isArray(agentList) ? 'array' : typeof agentList,
-        agentCount: Array.isArray(agentList) ? agentList.length : -1,
-        billingKeys: billingData && typeof billingData === 'object' ? Object.keys(billingData) : [],
-      })
-      setAgents(Array.isArray(agentList) ? agentList : [])
-      setBilling(billingData)
-    } catch (e: any) {
-      console.error('[Agentica][Dashboard] loadData error', e)
-      setError('Error al cargar los datos')
-    } finally {
-      console.log('[Agentica][Dashboard] loadData end')
-      setLoading(false)
-    }
-  }
+  const filteredAgents = useMemo(() => {
+    const term = query.trim().toLowerCase()
+    if (!term) return agents
+    return agents.filter((agent) => {
+      return [agent.name, agent.framework, agent.status, agent.mode].some((value) =>
+        value.toLowerCase().includes(term)
+      )
+    })
+  }, [agents, query])
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <div className="w-6 h-6 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-violet-600 border-t-transparent" />
       </div>
     )
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
-
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Mis agentes</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {agents.length} agente{agents.length !== 1 ? 's' : ''} en tu workspace
-          </p>
-        </div>
-        <button
-          onClick={onNewAgent}
-          className="px-4 py-2 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 transition-colors"
-        >
-          + Nuevo agente
-        </button>
-      </div>
-
-      {/* Billing summary */}
-      {billing && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-          {[
-            { label: 'Invocaciones',   value: billing.calls?.toLocaleString() ?? '0' },
-            { label: 'Tokens entrada', value: (billing.total_tokens_in ?? 0).toLocaleString() },
-            { label: 'Tokens salida',  value: (billing.total_tokens_out ?? 0).toLocaleString() },
-            { label: 'Costo total',    value: `$${(billing.total_cost_usd ?? 0).toFixed(4)}` },
-          ].map(stat => (
-            <div key={stat.label} className="bg-white border border-gray-200 rounded-xl p-4">
-              <div className="text-xs text-gray-500">{stat.label}</div>
-              <div className="text-xl font-semibold text-gray-900 mt-1">{stat.value}</div>
+    <div className="space-y-6">
+      <section className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
+        <Card className="overflow-hidden border-slate-200 bg-[linear-gradient(135deg,#111827_0%,#1e1b4b_45%,#312e81_100%)] text-white shadow-[0_22px_65px_rgba(49,46,129,0.25)]">
+          <CardContent className="flex h-full flex-col justify-between gap-6 p-8">
+            <div className="space-y-4">
+              <Badge className="w-fit border-none bg-white/10 text-violet-100" tone="slate">
+                Control room
+              </Badge>
+              <div>
+                <h1 className="max-w-2xl text-3xl font-semibold tracking-tight md:text-4xl">
+                  Diseñá, operá y ajustá tus agentes desde una sola consola.
+                </h1>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-200">
+                  Tenés una vista unificada de agentes, consumo y estado operativo, con un flujo listo para ir de idea a monitor sin perder contexto.
+                </p>
+              </div>
             </div>
-          ))}
-        </div>
-      )}
 
-      {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
-          {error}
-        </div>
-      )}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={onNewAgent} size="lg">
+                <Sparkles className="h-4 w-4" />
+                Crear agente
+              </Button>
+              <Button variant="secondary" size="lg" onClick={() => setQuery('deployed')}>
+                Ver desplegados
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Agent list */}
-      {agents.length === 0 ? (
-        <EmptyState onNew={onNewAgent} />
-      ) : (
-        <div className="space-y-3">
-          {agents.map(agent => (
-            <AgentCard
-              key={agent.agent_id}
-              agent={agent}
-              onSelect={() => onSelectAgent(agent.agent_id)}
+        <Card className="border-slate-200 bg-white/80">
+          <CardHeader>
+            <CardTitle>Panorama rápido</CardTitle>
+            <CardDescription>Lectura operativa del workspace actual.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <MetricLine icon={<Bot className="h-4 w-4" />} label="Agentes totales" value={String(agents.length)} />
+            <MetricLine
+              icon={<Cpu className="h-4 w-4" />}
+              label="Desplegados"
+              value={String(agents.filter((agent) => agent.status === 'deployed').length)}
             />
-          ))}
-        </div>
-      )}
+            <MetricLine
+              icon={<Wallet className="h-4 w-4" />}
+              label="Costo acumulado"
+              value={formatCurrency(billing?.total_cost_usd)}
+            />
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-4">
+        <StatCard label="Invocaciones" value={formatNumber(billing?.calls)} />
+        <StatCard label="Tokens de entrada" value={formatNumber(billing?.total_tokens_in)} />
+        <StatCard label="Tokens de salida" value={formatNumber(billing?.total_tokens_out)} />
+        <StatCard label="Costo total" value={formatCurrency(billing?.total_cost_usd)} />
+      </section>
+
+      <Card>
+        <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <CardTitle>Agentes</CardTitle>
+            <CardDescription>Buscá, abrí y retomá cualquier agente del workspace.</CardDescription>
+          </div>
+          <div className="relative w-full md:max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar por nombre, framework o estado"
+              className="pl-9"
+            />
+          </div>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {error}
+            </div>
+          )}
+
+          {filteredAgents.length === 0 ? (
+            <EmptyState onNew={onNewAgent} filtered={!!query} />
+          ) : (
+            <div className="grid gap-3">
+              {filteredAgents.map((agent) => (
+                <button
+                  key={agent.agent_id}
+                  onClick={() => onSelectAgent(agent.agent_id)}
+                  className="group rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left transition hover:border-violet-300 hover:bg-violet-50/40 hover:shadow-sm"
+                >
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div className="flex min-w-0 items-start gap-4">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                        {agent.mode === 'crew' ? '◫' : '◉'}
+                      </div>
+                      <div className="min-w-0 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="truncate text-base font-semibold text-slate-950">{agent.name}</h3>
+                          <Badge tone={STATUS_CONFIG[agent.status]?.tone || 'slate'}>
+                            {STATUS_CONFIG[agent.status]?.label || agent.status}
+                          </Badge>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                          <span>{agent.framework}</span>
+                          <span>•</span>
+                          <span>{agent.mode === 'crew' ? 'Equipo de agentes' : 'Agente simple'}</span>
+                          <span>•</span>
+                          <span>{new Date(agent.created_at).toLocaleDateString('es-AR')}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-sm font-medium text-violet-700">
+                      Abrir monitor
+                      <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
 
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <Card className="bg-white/90">
+      <CardContent className="p-5">
+        <div className="text-sm text-slate-500">{label}</div>
+        <div className="mt-2 text-2xl font-semibold text-slate-950">{value}</div>
+      </CardContent>
+    </Card>
+  )
+}
 
-// ── AgentCard ─────────────────────────────────────────────────────────────────
-
-function AgentCard({
-  agent,
-  onSelect,
+function MetricLine({
+  icon,
+  label,
+  value,
 }: {
-  agent: AgentSummary
-  onSelect: () => void
+  icon: ReactNode
+  label: string
+  value: string
 }) {
-  const status = STATUS_CONFIG[agent.status] ?? { label: agent.status, cls: 'bg-gray-100 text-gray-600' }
-  const date = new Date(agent.created_at).toLocaleDateString('es-AR', {
-    day: '2-digit', month: 'short', year: 'numeric'
-  })
-
   return (
-    <div
-      onClick={onSelect}
-      className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-xl hover:border-violet-300 hover:shadow-sm cursor-pointer transition-all"
-    >
-      {/* Mode icon */}
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg flex-shrink-0 ${
-        agent.mode === 'crew' ? 'bg-teal-50 text-teal-600' : 'bg-violet-50 text-violet-600'
-      }`}>
-        {agent.mode === 'crew' ? '⬡' : '◎'}
+    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="flex items-center gap-3 text-slate-600">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white">{icon}</span>
+        <span className="text-sm">{label}</span>
       </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-gray-900 truncate">{agent.name}</span>
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${status.cls}`}>
-            {status.label}
-          </span>
-        </div>
-        <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-3">
-          <span>{agent.framework}</span>
-          <span>·</span>
-          <span>{agent.mode === 'crew' ? 'Equipo' : 'Agente simple'}</span>
-          <span>·</span>
-          <span>{date}</span>
-        </div>
-      </div>
-
-      {/* Arrow */}
-      <span className="text-gray-400 flex-shrink-0">→</span>
+      <span className="text-lg font-semibold text-slate-950">{value}</span>
     </div>
   )
 }
 
-
-// ── Empty state ───────────────────────────────────────────────────────────────
-
-function EmptyState({ onNew }: { onNew: () => void }) {
+function EmptyState({ onNew, filtered }: { onNew: () => void; filtered: boolean }) {
   return (
-    <div className="text-center py-20 border-2 border-dashed border-gray-200 rounded-2xl">
-      <div className="text-4xl mb-4">◎</div>
-      <h3 className="text-lg font-medium text-gray-700 mb-2">No tenés agentes todavía</h3>
-      <p className="text-sm text-gray-500 mb-6 max-w-xs mx-auto">
-        Creá tu primer agente IA en minutos con el wizard guiado.
+    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-2xl text-violet-700">
+        ◉
+      </div>
+      <h3 className="mt-5 text-lg font-semibold text-slate-900">
+        {filtered ? 'No encontramos agentes con ese criterio' : 'Todavía no creaste agentes'}
+      </h3>
+      <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
+        {filtered
+          ? 'Probá otra búsqueda o limpiá el filtro para ver todo el workspace.'
+          : 'Arrancá desde el wizard y pasá de idea a monitor con un flujo guiado y listo para operar.'}
       </p>
-      <button
-        onClick={onNew}
-        className="px-5 py-2.5 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 transition-colors"
-      >
-        Crear mi primer agente
-      </button>
+      {!filtered && (
+        <Button onClick={onNew} className="mt-6">
+          Crear mi primer agente
+        </Button>
+      )}
     </div>
   )
 }

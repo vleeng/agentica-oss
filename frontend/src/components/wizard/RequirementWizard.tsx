@@ -233,15 +233,16 @@ function StepIdentity({ state, update }: StepProps) {
 
 function StepTools({ state, update }: StepProps) {
   const [customTools, setCustomTools] = useState<Array<{ id: string; name: string; description: string; is_active: boolean }>>([])
+  const apiBase = import.meta.env.VITE_API_URL || ''
 
   useEffect(() => {
-    fetch('/api/v1/tools/custom/', {
+    fetch(`${apiBase}/api/v1/tools/custom/`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('agentica_token')}` }
     })
       .then(r => r.json())
       .then(data => { if (Array.isArray(data)) setCustomTools(data.filter((t: any) => t.is_active)) })
       .catch(() => {})
-  }, [])
+  }, [apiBase])
 
   const toggleTool = (name: string, source: 'library' | 'custom') => {
     const exists = state.tools.find(t => t.name === name)

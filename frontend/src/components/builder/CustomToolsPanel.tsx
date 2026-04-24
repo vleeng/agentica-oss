@@ -55,6 +55,7 @@ const headers = () => ({
   Authorization: `Bearer ${localStorage.getItem('agentica_token')}`,
   'Content-Type': 'application/json',
 })
+const API_BASE = import.meta.env.VITE_API_URL || ''
 
 export function CustomToolsPanel() {
   const [tools, setTools]         = useState<CustomTool[]>([])
@@ -81,7 +82,7 @@ export function CustomToolsPanel() {
   const loadTools = async () => {
     setLoading(true)
     try {
-      const r = await fetch('/api/v1/tools/custom/', { headers: headers() })
+      const r = await fetch(`${API_BASE}/api/v1/tools/custom/`, { headers: headers() })
       const data = await r.json()
       setTools(Array.isArray(data) ? data : [])
     } catch {
@@ -100,7 +101,7 @@ export function CustomToolsPanel() {
     validateTimer.current = setTimeout(async () => {
       setValidating(true)
       try {
-        const r = await fetch('/api/v1/tools/custom/validate', {
+        const r = await fetch(`${API_BASE}/api/v1/tools/custom/validate`, {
           method: 'POST', headers: headers(),
           body: JSON.stringify({ source_code: formCode }),
         })
@@ -129,7 +130,7 @@ export function CustomToolsPanel() {
     setFormTestConfig('{}')
     setValidation(null); setTestResult(null); setError('')
     // Cargar source_code completo
-    fetch(`/api/v1/tools/custom/${tool.id}`, { headers: headers() })
+    fetch(`${API_BASE}/api/v1/tools/custom/${tool.id}`, { headers: headers() })
       .then(r => r.json())
       .then(d => {
         // El endpoint actual no retorna source_code en el listado por seguridad
@@ -149,7 +150,7 @@ export function CustomToolsPanel() {
 
     setSaving(true); setError('')
     try {
-      const url = isNew ? '/api/v1/tools/custom/' : `/api/v1/tools/custom/${selected?.id}`
+      const url = isNew ? `${API_BASE}/api/v1/tools/custom/` : `${API_BASE}/api/v1/tools/custom/${selected?.id}`
       const method = isNew ? 'POST' : 'PUT'
       const r = await fetch(url, {
         method, headers: headers(),
@@ -181,7 +182,7 @@ export function CustomToolsPanel() {
 
     setTesting(true); setTestResult(null); setError('')
     try {
-      const r = await fetch(`/api/v1/tools/custom/${selected.id}/test`, {
+      const r = await fetch(`${API_BASE}/api/v1/tools/custom/${selected.id}/test`, {
         method: 'POST', headers: headers(),
         body: JSON.stringify({ input: formTestInput, config }),
       })
@@ -194,7 +195,7 @@ export function CustomToolsPanel() {
   }
 
   const handleToggleActive = async (tool: CustomTool) => {
-    await fetch(`/api/v1/tools/custom/${tool.id}`, {
+    await fetch(`${API_BASE}/api/v1/tools/custom/${tool.id}`, {
       method: 'PUT', headers: headers(),
       body: JSON.stringify({ is_active: !tool.is_active }),
     })
@@ -203,7 +204,7 @@ export function CustomToolsPanel() {
 
   const handleDelete = async (tool: CustomTool) => {
     if (!confirm(`¿Eliminar la tool "${tool.name}"? Los agentes que la usen dejarán de funcionar.`)) return
-    await fetch(`/api/v1/tools/custom/${tool.id}`, { method: 'DELETE', headers: headers() })
+    await fetch(`${API_BASE}/api/v1/tools/custom/${tool.id}`, { method: 'DELETE', headers: headers() })
     if (selected?.id === tool.id) setSelected(null)
     await loadTools()
   }
