@@ -75,16 +75,16 @@ export function UsageDashboard() {
 
       {summary && (
         <section className="grid gap-4 md:grid-cols-4">
-          <InsightCard icon={<Layers3 className="h-5 w-5" />} label="Agentes activos">
+          <InsightCard icon={<Layers3 className="h-5 w-5" />} label="Agentes activos" color="violet">
             {formatNumber(summary.agents.used)} / {formatNumber(summary.agents.limit)}
           </InsightCard>
-          <InsightCard icon={<BarChart3 className="h-5 w-5" />} label="Invocaciones del mes">
+          <InsightCard icon={<BarChart3 className="h-5 w-5" />} label="Invocaciones del mes" color="blue">
             {formatNumber(summary.invocations.used)} / {formatNumber(summary.invocations.limit)}
           </InsightCard>
-          <InsightCard icon={<Wallet className="h-5 w-5" />} label="Costo acumulado">
+          <InsightCard icon={<Wallet className="h-5 w-5" />} label="Costo acumulado" color="emerald">
             {formatCurrency(billing?.total_cost_usd)}
           </InsightCard>
-          <InsightCard icon={<Gauge className="h-5 w-5" />} label="Features habilitadas">
+          <InsightCard icon={<Gauge className="h-5 w-5" />} label="Features habilitadas" color="amber">
             {[summary.features.rag && 'RAG', summary.features.crew && 'Multi-agente'].filter(Boolean).join(' · ') || 'Base'}
           </InsightCard>
         </section>
@@ -187,21 +187,31 @@ export function UsageDashboard() {
   )
 }
 
+const INSIGHT_COLORS = {
+  violet:  { bg: 'bg-violet-100',  text: 'text-violet-700',  border: 'border-violet-200/60' },
+  blue:    { bg: 'bg-blue-100',    text: 'text-blue-700',    border: 'border-blue-200/60' },
+  emerald: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200/60' },
+  amber:   { bg: 'bg-amber-100',   text: 'text-amber-700',   border: 'border-amber-200/60' },
+}
+
 function InsightCard({
   icon,
   label,
   children,
+  color = 'violet',
 }: {
   icon: ReactNode
   label: string
   children: ReactNode
+  color?: keyof typeof INSIGHT_COLORS
 }) {
+  const c = INSIGHT_COLORS[color]
   return (
-    <Card>
+    <Card className={`border ${c.border}`}>
       <CardContent className="p-5">
-        <div className="flex items-center gap-3 text-slate-600">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">{icon}</span>
-          <span className="text-sm">{label}</span>
+        <div className="flex items-center gap-3">
+          <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${c.bg} ${c.text}`}>{icon}</span>
+          <span className="text-sm text-slate-500">{label}</span>
         </div>
         <div className="mt-4 text-xl font-semibold text-slate-950">{children}</div>
       </CardContent>
