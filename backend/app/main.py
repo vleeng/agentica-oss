@@ -37,8 +37,9 @@ async def lifespan(app: FastAPI):
     from app.db.session import PublicSessionFactory, provision_tenant
     from app.core.security import hash_password
     async with PublicSessionFactory() as db:
-        res = await db.execute(text("SELECT id FROM users WHERE email = 'admin'"))
-        if not res.fetchone():
+        res = await db.execute(text("SELECT id, tenant_id FROM users WHERE email = 'admin'"))
+        row = res.fetchone()
+        if not row:
             admin_pwd = os.getenv("ADMIN_PASSWORD")
             if not admin_pwd:
                 raise RuntimeError(
@@ -52,7 +53,6 @@ async def lifespan(app: FastAPI):
                 text("INSERT INTO tenants (id, name, slug, plan_id) VALUES (:id, :n, :s, 'business')"),
                 {"id": tenant_id, "n": "System Admin", "s": "admin"},
             )
-            # El username usado es explícitamente 'admin' aunque la columna se llame email.
             await db.execute(
                 text("INSERT INTO users (id, tenant_id, email, full_name, password_hash, role) VALUES (:id, :t, :e, :n, :h, 'owner')"),
                 {"id": user_id, "t": tenant_id, "e": "admin", "n": "Super Admin", "h": hash_password(admin_pwd)},
@@ -60,6 +60,20 @@ async def lifespan(app: FastAPI):
             await db.commit()
             async with engine.begin() as conn:
                 await provision_tenant(tenant_id, conn)
+        else:
+            # Garantizar que el schema del tenant admin siempre existe
+            tenant_id = str(row.tenant_id)
+            from app.db.session import _make_tenant_schema
+            schema = _make_tenant_schema(tenant_id)
+            async with engine.begin() as conn:
+                schema_check = await conn.execute(
+                    text("SELECT schema_name FROM information_schema.schemata WHERE schema_name = :s"),
+                    {"s": schema},
+                )
+                if not schema_check.fetchone():
+                    print(f"[STARTUP] Schema {schema} no existe — provisionando...")
+                    await provision_tenant(tenant_id, conn)
+                    print(f"[STARTUP] Schema {schema} creado correctamente")
 
     # Conectar Redis
     try:
