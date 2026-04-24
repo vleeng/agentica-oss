@@ -233,16 +233,15 @@ function StepIdentity({ state, update }: StepProps) {
 
 function StepTools({ state, update }: StepProps) {
   const [customTools, setCustomTools] = useState<Array<{ id: string; name: string; description: string; is_active: boolean }>>([])
-  const apiBase = import.meta.env.VITE_API_URL || ''
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
-    fetch(`${apiBase}/api/v1/tools/custom/`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('agentica_token')}` }
-    })
-      .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setCustomTools(data.filter((t: any) => t.is_active)) })
-      .catch(() => {})
-  }, [apiBase])
+    import('../../lib/api').then(({ customToolsApi }) =>
+      customToolsApi.list()
+        .then(data => { if (Array.isArray(data)) setCustomTools(data.filter((t: any) => t.is_active)) })
+        .catch(() => setLoadError('No se pudieron cargar las custom tools. Las tools de librería siguen disponibles.'))
+    )
+  }, [])
 
   const toggleTool = (name: string, source: 'library' | 'custom') => {
     const exists = state.tools.find(t => t.name === name)
@@ -259,6 +258,12 @@ function StepTools({ state, update }: StepProps) {
       <p className="text-sm text-gray-500">
         Seleccioná las herramientas que el agente puede usar.
       </p>
+
+      {loadError && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          {loadError}
+        </div>
+      )}
 
       {/* Tools de librería */}
       <div>
@@ -427,18 +432,14 @@ function StepMemoryChannels({ state, update }: StepProps) {
 
 function StepModel({ state, update }: StepProps) {
   const [keys, setKeys] = useState<any[]>([])
-  const apiBase = import.meta.env.VITE_API_URL || ''
+  const [keysError, setKeysError] = useState('')
 
-  // Cargar llaves para mostrar
   useEffect(() => {
-    fetch(`${apiBase}/api/v1/keys/llm`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('agentica_token')}` }
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) setKeys(data)
-      })
-      .catch(() => {})
+    import('../../lib/api').then(({ llmKeysApi }) =>
+      llmKeysApi.list()
+        .then(data => { if (Array.isArray(data)) setKeys(data) })
+        .catch(() => setKeysError('No se pudieron cargar las llaves LLM. Podés configurarlas en Bóveda IA.'))
+    )
   }, [])
 
   // Filtrar llaves segun el proveedor del modelo seleccionado
@@ -448,6 +449,11 @@ function StepModel({ state, update }: StepProps) {
 
   return (
     <div className="space-y-5">
+      {keysError && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          {keysError}
+        </div>
+      )}
       <Field label="Modelo LLM">
         <select
           value={state.model_params.model}

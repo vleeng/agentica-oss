@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from sqlalchemy import event, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
     AsyncEngine,
@@ -65,14 +65,8 @@ def get_tenant_session_factory(tenant_id: str) -> async_sessionmaker[AsyncSessio
             max_overflow=5,
             echo=settings.debug,
             future=True,
-            execution_options={"schema_translate_map": None},
+            connect_args={"server_settings": {"search_path": f"{schema},public"}},
         )
-
-        @event.listens_for(engine_with_schema.sync_engine, "connect")
-        def set_search_path(dbapi_conn, connection_record):
-            cursor = dbapi_conn.cursor()
-            cursor.execute(f"SET search_path TO {schema}, public")
-            cursor.close()
 
         _tenant_engines[tenant_id] = engine_with_schema
 

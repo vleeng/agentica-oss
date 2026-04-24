@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
+import { customToolsApi } from '../../lib/api'
+import { useToast } from '../ui/toast'
 
 interface CustomTool {
   id: string
   name: string
   description: string
-  config_schema: Record<string, any>
+  config_schema: Record<string, unknown>
   is_active: boolean
   test_input: string
   last_error: string | null
@@ -43,33 +45,27 @@ async def run(input: str, config: dict) -> str:
     """
     # Ejemplo: llamada a una API externa
     api_url = config.get("api_url", "https://httpbin.org/get")
-    
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(api_url, params={"q": input})
         data = resp.json()
-    
+
     return f"Resultado para '{input}': {json.dumps(data, ensure_ascii=False)[:500]}"
 `
 
-const headers = () => ({
-  Authorization: `Bearer ${localStorage.getItem('agentica_token')}`,
-  'Content-Type': 'application/json',
-})
-const API_BASE = import.meta.env.VITE_API_URL || ''
-
 export function CustomToolsPanel() {
-  const [tools, setTools]         = useState<CustomTool[]>([])
-  const [loading, setLoading]     = useState(true)
-  const [selected, setSelected]   = useState<CustomTool | null>(null)
-  const [isNew, setIsNew]         = useState(false)
-  const [saving, setSaving]       = useState(false)
-  const [testing, setTesting]     = useState(false)
-  const [testResult, setTestResult] = useState<any>(null)
+  const [tools, setTools]           = useState<CustomTool[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [selected, setSelected]     = useState<CustomTool | null>(null)
+  const [isNew, setIsNew]           = useState(false)
+  const [saving, setSaving]         = useState(false)
+  const [testing, setTesting]       = useState(false)
+  const [testResult, setTestResult] = useState<{ success: boolean; output?: string; error?: string } | null>(null)
   const [validation, setValidation] = useState<{ valid: boolean; error: string | null } | null>(null)
   const [validating, setValidating] = useState(false)
-  const [error, setError]         = useState('')
+  const [error, setError]           = useState('')
+  const { push } = useToast()
 
-  // Form state
   const [formName, setFormName]           = useState('')
   const [formDesc, setFormDesc]           = useState('')
   const [formCode, setFormCode]           = useState(TOOL_TEMPLATE)
@@ -82,8 +78,7 @@ export function CustomToolsPanel() {
   const loadTools = async () => {
     setLoading(true)
     try {
-      const r = await fetch(`${API_BASE}/api/v1/tools/custom/`, { headers: headers() })
-      const data = await r.json()
+      const data = await customToolsApi.list()
       setTools(Array.isArray(data) ? data : [])
     } catch {
       setError('Error al cargar tools')
@@ -94,19 +89,15 @@ export function CustomToolsPanel() {
 
   useEffect(() => { loadTools() }, [])
 
-  // Validación en tiempo real con debounce
   useEffect(() => {
     if (!formCode || formCode === TOOL_TEMPLATE) return
     if (validateTimer.current) clearTimeout(validateTimer.current)
     validateTimer.current = setTimeout(async () => {
       setValidating(true)
       try {
-        const r = await fetch(`${API_BASE}/api/v1/tools/custom/validate`, {
-          method: 'POST', headers: headers(),
-          body: JSON.stringify({ source_code: formCode }),
-        })
-        setValidation(await r.json())
-      } catch { /* ignore */ }
+        const result = await customToolsApi.validate(formCode)
+        setValidation(result)
+      } catch { /* ignore transient validation errors */ }
       finally { setValidating(false) }
     }, 800)
   }, [formCode])
@@ -124,19 +115,13 @@ export function CustomToolsPanel() {
     setSelected(tool)
     setFormName(tool.name)
     setFormDesc(tool.description)
-    setFormCode('')   // se carga del server
+    setFormCode('')
     setFormSchema(JSON.stringify(tool.config_schema, null, 2))
     setFormTestInput(tool.test_input || '')
     setFormTestConfig('{}')
     setValidation(null); setTestResult(null); setError('')
-    // Cargar source_code completo
-    fetch(`${API_BASE}/api/v1/tools/custom/${tool.id}`, { headers: headers() })
-      .then(r => r.json())
-      .then(d => {
-        // El endpoint actual no retorna source_code en el listado por seguridad
-        // Para el editor, hacemos un GET al detalle
-        setFormCode(d.source_code || TOOL_TEMPLATE)
-      })
+    customToolsApi.get(tool.id)
+      .then(d => setFormCode(d.source_code || TOOL_TEMPLATE))
       .catch(() => setFormCode(TOOL_TEMPLATE))
   }
 
@@ -145,31 +130,30 @@ export function CustomToolsPanel() {
       setError('Nombre, descripción y código son obligatorios')
       return
     }
-    let schema: Record<string, any> = {}
+    let schema: Record<string, unknown> = {}
     try { schema = JSON.parse(formSchema) } catch { setError('config_schema no es JSON válido'); return }
 
     setSaving(true); setError('')
     try {
-      const url = isNew ? `${API_BASE}/api/v1/tools/custom/` : `${API_BASE}/api/v1/tools/custom/${selected?.id}`
-      const method = isNew ? 'POST' : 'PUT'
-      const r = await fetch(url, {
-        method, headers: headers(),
-        body: JSON.stringify({
-          name: formName, description: formDesc,
-          source_code: formCode, config_schema: schema,
-          test_input: formTestInput,
-        }),
-      })
-      if (!r.ok) {
-        const err = await r.json()
-        setError(err.detail || 'Error al guardar')
-        return
+      const payload = {
+        name: formName, description: formDesc,
+        source_code: formCode, config_schema: schema,
+        test_input: formTestInput,
+      }
+      if (isNew) {
+        await customToolsApi.create(payload)
+        push({ tone: 'success', title: 'Tool creada', description: `"${formName}" fue guardada.` })
+      } else {
+        await customToolsApi.update(selected!.id, payload)
+        push({ tone: 'success', title: 'Cambios guardados', description: `"${formName}" actualizada.` })
       }
       await loadTools()
       setIsNew(false)
       setSelected(null)
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } }; message?: string })
+        ?.response?.data?.detail ?? (e as Error)?.message ?? 'Error al guardar'
+      setError(msg)
     } finally {
       setSaving(false)
     }
@@ -177,36 +161,40 @@ export function CustomToolsPanel() {
 
   const handleTest = async () => {
     if (!selected) return
-    let config: Record<string, any> = {}
+    let config: Record<string, unknown> = {}
     try { config = JSON.parse(formTestConfig) } catch { setError('config de test no es JSON válido'); return }
 
     setTesting(true); setTestResult(null); setError('')
     try {
-      const r = await fetch(`${API_BASE}/api/v1/tools/custom/${selected.id}/test`, {
-        method: 'POST', headers: headers(),
-        body: JSON.stringify({ input: formTestInput, config }),
-      })
-      setTestResult(await r.json())
-    } catch (e: any) {
-      setError(e.message)
+      const result = await customToolsApi.test(selected.id, formTestInput, config)
+      setTestResult(result)
+    } catch (e: unknown) {
+      const msg = (e as Error)?.message ?? 'Error al ejecutar test'
+      setError(msg)
     } finally {
       setTesting(false)
     }
   }
 
   const handleToggleActive = async (tool: CustomTool) => {
-    await fetch(`${API_BASE}/api/v1/tools/custom/${tool.id}`, {
-      method: 'PUT', headers: headers(),
-      body: JSON.stringify({ is_active: !tool.is_active }),
-    })
-    await loadTools()
+    try {
+      await customToolsApi.toggleActive(tool.id, !tool.is_active)
+      await loadTools()
+    } catch {
+      push({ tone: 'error', title: 'Error', description: 'No se pudo cambiar el estado.' })
+    }
   }
 
   const handleDelete = async (tool: CustomTool) => {
-    if (!confirm(`¿Eliminar la tool "${tool.name}"? Los agentes que la usen dejarán de funcionar.`)) return
-    await fetch(`${API_BASE}/api/v1/tools/custom/${tool.id}`, { method: 'DELETE', headers: headers() })
-    if (selected?.id === tool.id) setSelected(null)
-    await loadTools()
+    if (!window.confirm(`¿Eliminar la tool "${tool.name}"? Los agentes que la usen dejarán de funcionar.`)) return
+    try {
+      await customToolsApi.delete(tool.id)
+      if (selected?.id === tool.id) setSelected(null)
+      await loadTools()
+      push({ tone: 'success', title: 'Tool eliminada', description: `"${tool.name}" fue eliminada.` })
+    } catch {
+      push({ tone: 'error', title: 'Error', description: 'No se pudo eliminar la tool.' })
+    }
   }
 
   const isEditing = isNew || selected !== null
@@ -238,7 +226,9 @@ export function CustomToolsPanel() {
         {/* ── Lista de tools ──────────────────────────────────────────────── */}
         <div className="lg:col-span-1 space-y-2">
           {loading ? (
-            <div className="p-4 text-center text-sm text-gray-400">Cargando...</div>
+            <div className="flex justify-center py-8">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet-600 border-t-transparent" />
+            </div>
           ) : tools.length === 0 && !isNew ? (
             <div className="p-6 text-center bg-gray-50 border border-dashed border-gray-300 rounded-xl">
               <p className="text-sm text-gray-500">No tenés tools creadas todavía.</p>
@@ -285,7 +275,6 @@ export function CustomToolsPanel() {
         {isEditing ? (
           <div className="lg:col-span-2 space-y-4">
 
-            {/* Nombre y descripción */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -323,7 +312,6 @@ export function CustomToolsPanel() {
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500 resize-none" />
             </div>
 
-            {/* Editor de código */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-medium text-gray-700">Código Python</label>
@@ -341,7 +329,6 @@ export function CustomToolsPanel() {
                 className="w-full px-4 py-3 text-xs font-mono bg-gray-900 text-gray-100 border border-gray-700 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-violet-500 resize-y leading-relaxed" />
             </div>
 
-            {/* Config schema */}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 Config Schema <span className="text-gray-400">(JSON — parámetros configurables)</span>
@@ -351,7 +338,6 @@ export function CustomToolsPanel() {
                 placeholder='{ "api_url": "https://...", "api_key": "" }' />
             </div>
 
-            {/* Test */}
             <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
               <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Probar tool</h4>
               <div className="grid grid-cols-2 gap-3">
@@ -388,7 +374,6 @@ export function CustomToolsPanel() {
               )}
             </div>
 
-            {/* Acciones */}
             <div className="flex gap-3 pt-2">
               <button onClick={handleSave} disabled={saving || validating || validation?.valid === false}
                 className="px-5 py-2.5 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors shadow-sm">
@@ -411,7 +396,6 @@ export function CustomToolsPanel() {
         )}
       </div>
 
-      {/* Documentación inline */}
       <div className="mt-8 p-5 bg-blue-50 border border-blue-200 rounded-xl">
         <h3 className="text-sm font-semibold text-blue-800 mb-3">📖 Cómo usar una Custom Tool en un agente</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-blue-700">

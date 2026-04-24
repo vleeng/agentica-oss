@@ -245,6 +245,37 @@ export const knowledgeApi = {
     api.post(`/knowledge/${agentId}/retrieve`, { query, top_k }).then((r) => r.data),
 }
 
+export const apiKeysApi = {
+  list: () => api.get('/keys/').then((r) => r.data as APIKey[]),
+  create: (name: string, scopes = ['invoke']) =>
+    api.post('/keys/', { name, scopes }).then((r) => r.data as APIKey),
+  revoke: (keyId: string) => api.delete(`/keys/${keyId}`).then((r) => r.data),
+}
+
+export interface APIKey {
+  id: string
+  name: string
+  key?: string
+  key_prefix: string
+  scopes: string[]
+  expires_at: string | null
+  created_at: string
+}
+
+export const customToolsApi = {
+  list: () => api.get('/tools/custom/').then((r) => r.data),
+  get: (id: string) => api.get(`/tools/custom/${id}`).then((r) => r.data),
+  create: (payload: object) => api.post('/tools/custom/', payload).then((r) => r.data),
+  update: (id: string, payload: object) => api.put(`/tools/custom/${id}`, payload).then((r) => r.data),
+  delete: (id: string) => api.delete(`/tools/custom/${id}`).then((r) => r.data),
+  validate: (source_code: string) =>
+    api.post('/tools/custom/validate', { source_code }).then((r) => r.data),
+  test: (id: string, input: string, config: object) =>
+    api.post(`/tools/custom/${id}/test`, { input, config }).then((r) => r.data),
+  toggleActive: (id: string, is_active: boolean) =>
+    api.put(`/tools/custom/${id}`, { is_active }).then((r) => r.data),
+}
+
 export function wizardStateToSpec(state: WizardState, tenantId: string): AgentSpec {
   return {
     tenant_id: tenantId,
