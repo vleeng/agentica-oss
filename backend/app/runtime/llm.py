@@ -61,7 +61,10 @@ def infer_provider(params: ModelParams) -> str:
         return "zhipu"
     if "gpt" in model or model.startswith("o1") or model.startswith("o3") or model.startswith("o4"):
         return "openai"
-    return "anthropic"
+    if "claude" in model:
+        return "anthropic"
+    # Modelo no reconocido → asumir openrouter como gateway universal
+    return "openrouter"
 
 
 def canonical_provider(provider: str) -> str:

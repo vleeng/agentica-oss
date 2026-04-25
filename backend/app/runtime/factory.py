@@ -122,15 +122,27 @@ class RuntimeFactory:
             
         if not row:
             import os
-            # Fallback a global env vars
-            if provider == "openai" and "OPENAI_API_KEY" in os.environ:
-                return os.environ["OPENAI_API_KEY"], None
-            if provider == "anthropic" and "ANTHROPIC_API_KEY" in os.environ:
-                return os.environ["ANTHROPIC_API_KEY"], None
+            # Fallback a global env vars (solo si no están vacías)
+            def _env(name: str) -> str | None:
+                v = os.environ.get(name, "").strip()
+                return v if v else None
+
+            if provider == "openai":
+                key = _env("OPENAI_API_KEY")
+                if key:
+                    return key, None
+            if provider == "anthropic":
+                key = _env("ANTHROPIC_API_KEY")
+                if key:
+                    return key, None
             env_name = f"{provider.upper()}_API_KEY"
-            if env_name in os.environ:
-                return os.environ[env_name], None
-            
-            raise ValueError(f"No hay una llave configurada para el proveedor {provider} en este tenant y no hay llaves globales.")
+            key = _env(env_name)
+            if key:
+                return key, None
+
+            raise ValueError(
+                f"No hay una llave API configurada para el proveedor '{provider}'. "
+                f"Agregala en la Bóveda IA del tenant o configurá {env_name} en el servidor."
+            )
 
         return decrypt_provider_key(row.encrypted_key), row.provider
