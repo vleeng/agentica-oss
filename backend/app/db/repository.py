@@ -95,7 +95,7 @@ class AgentRepository:
 
     async def delete_agent(self, agent_id: str) -> bool:
         res = await self._db.execute(
-            text("DELETE FROM agents WHERE id = :id"),
+            text("DELETE FROM agents WHERE id = CAST(:id AS uuid)"),
             {"id": agent_id},
         )
         await self._db.commit()
