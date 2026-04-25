@@ -299,26 +299,6 @@ export function wizardStateToSpec(state: WizardState, tenantId: string): AgentSp
   }
 }
 
-export const customToolsApi = {
-  list: () => api.get('/tools/custom/').then((r) => r.data),
-  get: (id: string) => api.get(`/tools/custom/${id}`).then((r) => r.data),
-  create: (data: { name: string; description: string; source_code: string; config_schema?: Record<string, any>; test_input?: string }) =>
-    api.post('/tools/custom/', data).then((r) => r.data),
-  update: (
-    id: string,
-    data: Partial<{
-      description: string
-      source_code: string
-      config_schema: Record<string, any>
-      is_active: boolean
-      test_input: string
-    }>
-  ) => api.put(`/tools/custom/${id}`, data).then((r) => r.data),
-  delete: (id: string) => api.delete(`/tools/custom/${id}`).then((r) => r.data),
-  validate: (source_code: string) => api.post('/tools/custom/validate', { source_code }).then((r) => r.data),
-  test: (id: string, input: string, config: Record<string, any> = {}) =>
-    api.post(`/tools/custom/${id}/test`, { input, config }).then((r) => r.data),
-}
 
 export const skillsApi = {
   list: (): Promise<Skill[]> => api.get('/skills/').then((r) => r.data),
