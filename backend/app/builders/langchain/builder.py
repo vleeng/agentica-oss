@@ -53,14 +53,13 @@ class LangChainAgentBuilder:
         if extra_tools:
             tools.extend(extra_tools)
 
-        # 3. Prompt
-        prompt = self._build_prompt(design.system_prompt, has_tools=bool(tools))
-
-        # 4. AgentExecutor según agent_type
+        # 3. Prompt + 4. AgentExecutor según agent_type
         agent_type = fw.agent_type or "openai_functions"
         if agent_type == "openai_functions":
+            prompt = self._build_prompt(design.system_prompt, has_tools=bool(tools))
             agent = create_openai_functions_agent(llm, tools, prompt)
         else:
+            prompt = self._build_react_prompt(design.system_prompt)
             agent = create_react_agent(llm, tools, prompt)
 
         executor = AgentExecutor(
@@ -93,6 +92,29 @@ class LangChainAgentBuilder:
         if has_tools:
             messages.append(MessagesPlaceholder("agent_scratchpad"))
         return ChatPromptTemplate.from_messages(messages)
+
+    def _build_react_prompt(self, system_prompt: str) -> ChatPromptTemplate:
+        """Prompt para create_react_agent — requiere {tools}, {tool_names}, {input} y {agent_scratchpad}."""
+        react_system = (
+            f"{system_prompt}\n\n"
+            "Tenés acceso a las siguientes herramientas:\n\n"
+            "{tools}\n\n"
+            "Usá el siguiente formato:\n"
+            "Question: la pregunta que debés responder\n"
+            "Thought: siempre pensá qué debés hacer\n"
+            "Action: la acción a tomar, debe ser una de [{tool_names}]\n"
+            "Action Input: el input de la acción\n"
+            "Observation: el resultado de la acción\n"
+            "... (este ciclo Thought/Action/Action Input/Observation puede repetirse N veces)\n"
+            "Thought: ya sé la respuesta final\n"
+            "Final Answer: la respuesta final a la pregunta original"
+        )
+        return ChatPromptTemplate.from_messages([
+            ("system", react_system),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{input}"),
+            MessagesPlaceholder("agent_scratchpad"),
+        ])
 
     def _build_memory(self, design: AgentDesign) -> MemoryAdapter:
         mem_type = design.spec.memory.type

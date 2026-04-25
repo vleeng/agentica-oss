@@ -75,17 +75,29 @@ class RuntimeStore:
 
         # Fallback: buscar design en Redis
         if self._redis:
+            raw = None
             try:
                 raw = await self._redis.get(f"design:{agent_id}")
-                if raw:
+            except Exception as e:
+                logger.error(f"[RuntimeStore] Error al leer Redis: {e}")
+
+            if raw:
+                try:
                     from app.schemas.agent import AgentDesign
                     design = AgentDesign.model_validate_json(raw)
-                    # Reconstruir runtime
+                except Exception as e:
+                    logger.error(f"[RuntimeStore] Error al deserializar design: {e}")
+                    return None
+
+                # Intentar reconstruir runtime — si falla, igual retornamos el design
+                try:
                     runtime = await self._rebuild_runtime(design)
                     self._memory[agent_id] = (runtime, design)
                     return runtime, design
-            except Exception as e:
-                logger.error(f"[RuntimeStore] Error al recuperar design desde Redis: {e}")
+                except Exception as e:
+                    logger.error(f"[RuntimeStore] Error al reconstruir runtime: {e}")
+                    self._memory[agent_id] = (None, design)
+                    return None, design
 
         return None
 
