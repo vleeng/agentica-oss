@@ -269,6 +269,22 @@ async def optimize_agent(
     }
 
 
+# ── DELETE /{id} ─────────────────────────────────────────────────────────────
+
+@router.delete("/{agent_id}", status_code=204)
+async def delete_agent(
+    agent_id: str,
+    ctx: CurrentContext,
+    repo: TenantRepo,
+) -> Response:
+    ctx.require_developer()
+    deleted = await repo.delete_agent(agent_id)
+    if not deleted:
+        raise HTTPException(404, f"Agente '{agent_id}' no encontrado")
+    await get_runtime_store().delete(agent_id)
+    return Response(status_code=204)
+
+
 # ── GET /{id}/design ──────────────────────────────────────────────────────────
 
 @router.get("/{agent_id}/design", response_model=AgentDesign)

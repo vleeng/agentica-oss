@@ -119,6 +119,8 @@ export const agentsApi = {
   optimize: (agentId: string, evalReport: object, autoRebuild = false) =>
     api.post(`/agents/${agentId}/optimize`, { eval_report: evalReport, auto_rebuild: autoRebuild }).then((r) => r.data),
 
+  delete: (agentId: string) => api.delete(`/agents/${agentId}`),
+
   getDesign: (agentId: string): Promise<AgentDesign> =>
     api.get(`/agents/${agentId}/design`).then((r) => r.data),
 

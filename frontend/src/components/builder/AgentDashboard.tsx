@@ -1,7 +1,7 @@
-import { ArrowRight, Bot, Cpu, Search, Sparkles, Wallet } from 'lucide-react'
+import { ArrowRight, Bot, Cpu, Search, Sparkles, Trash2, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
-import { type AgentSummary, type TenantBillingSummary, tenantsApi } from '../../lib/api'
+import { agentsApi, type AgentSummary, type TenantBillingSummary, tenantsApi } from '../../lib/api'
 import { formatCurrency, formatNumber } from '../../lib/utils'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
@@ -27,6 +27,21 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const handleDelete = async (e: React.MouseEvent, agentId: string, name: string) => {
+    e.stopPropagation()
+    if (!window.confirm(`¿Eliminar el agente "${name}"? Esta acción no se puede deshacer.`)) return
+    setDeletingId(agentId)
+    try {
+      await agentsApi.delete(agentId)
+      setAgents((prev) => prev.filter((a) => a.agent_id !== agentId))
+    } catch {
+      setError('No se pudo eliminar el agente.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   useEffect(() => {
     setLoading(true)
@@ -172,9 +187,19 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 text-sm font-medium text-violet-700">
-                      Abrir monitor
-                      <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={(e) => handleDelete(e, agent.agent_id, agent.name)}
+                        disabled={deletingId === agent.agent_id}
+                        className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 transition"
+                        title="Eliminar agente"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                      <span className="flex items-center gap-2 text-sm font-medium text-violet-700">
+                        Abrir monitor
+                        <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                      </span>
                     </div>
                   </div>
                 </button>

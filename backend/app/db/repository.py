@@ -93,6 +93,14 @@ class AgentRepository:
         )
         await self._db.commit()
 
+    async def delete_agent(self, agent_id: str) -> bool:
+        res = await self._db.execute(
+            text("DELETE FROM agents WHERE id = :id"),
+            {"id": agent_id},
+        )
+        await self._db.commit()
+        return res.rowcount > 0
+
     # ── Builds ────────────────────────────────────────────────────────────────
 
     async def create_build(self, agent_id: str, version: int) -> str:
