@@ -94,26 +94,25 @@ class LangChainAgentBuilder:
         return ChatPromptTemplate.from_messages(messages)
 
     def _build_react_prompt(self, system_prompt: str) -> ChatPromptTemplate:
-        """Prompt para create_react_agent — requiere {tools}, {tool_names}, {input} y {agent_scratchpad}."""
+        """Prompt para create_react_agent — requiere {tools}, {tool_names}, {input} y {agent_scratchpad}.
+        Nota: agent_scratchpad es un string en react (no lista), por eso va en human message."""
         react_system = (
             f"{system_prompt}\n\n"
             "Tenés acceso a las siguientes herramientas:\n\n"
             "{tools}\n\n"
             "Usá el siguiente formato:\n"
-            "Question: la pregunta que debés responder\n"
             "Thought: siempre pensá qué debés hacer\n"
             "Action: la acción a tomar, debe ser una de [{tool_names}]\n"
             "Action Input: el input de la acción\n"
             "Observation: el resultado de la acción\n"
-            "... (este ciclo Thought/Action/Action Input/Observation puede repetirse N veces)\n"
+            "... (este ciclo puede repetirse N veces)\n"
             "Thought: ya sé la respuesta final\n"
             "Final Answer: la respuesta final a la pregunta original"
         )
         return ChatPromptTemplate.from_messages([
             ("system", react_system),
             MessagesPlaceholder("chat_history"),
-            ("human", "{input}"),
-            MessagesPlaceholder("agent_scratchpad"),
+            ("human", "{input}\n\n{agent_scratchpad}"),
         ])
 
     def _build_memory(self, design: AgentDesign) -> MemoryAdapter:
