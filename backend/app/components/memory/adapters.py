@@ -135,7 +135,7 @@ class PostgreSQLAdapter(MemoryAdapter):
             await db.execute(
                 text("""
                     INSERT INTO memory_store (agent_id, session_id, key, value)
-                    VALUES (:agent_id, :session_id, 'history', :value::jsonb)
+                    VALUES (:agent_id, :session_id, 'history', CAST(:value AS jsonb))
                     ON CONFLICT (agent_id, session_id, key)
                     DO UPDATE SET value = EXCLUDED.value
                 """),

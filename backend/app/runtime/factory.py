@@ -110,12 +110,12 @@ class RuntimeFactory:
         async with PublicSessionFactory() as db:
             if key_id:
                 res = await db.execute(
-                    text("SELECT provider, encrypted_key FROM llm_provider_keys WHERE id = :id::uuid AND tenant_id = :tid::uuid"),
+                    text("SELECT provider, encrypted_key FROM llm_provider_keys WHERE id = CAST(:id AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
                     {"id": key_id, "tid": tenant_id}
                 )
             else:
                 res = await db.execute(
-                    text("SELECT provider, encrypted_key FROM llm_provider_keys WHERE tenant_id = :tid::uuid AND provider = :prov AND is_default = TRUE"),
+                    text("SELECT provider, encrypted_key FROM llm_provider_keys WHERE tenant_id = CAST(:tid AS uuid) AND provider = :prov AND is_default = TRUE"),
                     {"tid": tenant_id, "prov": provider}
                 )
             row = res.fetchone()
