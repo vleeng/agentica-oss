@@ -379,6 +379,12 @@ export const policiesApi = {
   delete: (agentId: string) => api.delete(`/agents/${agentId}/policy`),
 }
 
+export const systemApi = {
+  getBuilderConfig: () => api.get('/system/builder').then(r => r.data),
+  setBuilderConfig: (body: { provider: string; model: string; llm_key_id?: string }) =>
+    api.put('/system/builder', body).then(r => r.data),
+}
+
 export const guardrailsApi = {
   list: (agentId: string): Promise<GuardrailRule[]> => api.get(`/agents/${agentId}/guardrails`).then((r) => r.data),
   create: (agentId: string, data: Omit<GuardrailRule, 'id' | 'agent_id' | 'is_active'>): Promise<GuardrailRule> =>

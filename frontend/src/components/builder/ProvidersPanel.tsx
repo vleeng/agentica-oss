@@ -2,12 +2,14 @@ import { KeyRound, Plus, ShieldCheck, Star, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { llmKeysApi, type ProviderKey } from '../../lib/api'
+import { getAuthToken } from '../../stores/auth'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { Field } from '../ui/field'
 import { Input, Select } from '../ui/input'
 import { useToast } from '../ui/toast'
+import { BuilderConfigPanel } from './BuilderConfigPanel'
 
 const providers = [
   { value: 'openai', label: 'OpenAI' },
@@ -20,6 +22,17 @@ const providers = [
   { value: 'custom_openai', label: 'OpenAI compatible custom' },
 ]
 
+function getUserRoleFromToken(): string {
+  try {
+    const token = getAuthToken()
+    if (!token) return ''
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.role || ''
+  } catch {
+    return ''
+  }
+}
+
 export function ProvidersPanel() {
   const [keys, setKeys] = useState<ProviderKey[]>([])
   const [loading, setLoading] = useState(true)
@@ -29,6 +42,7 @@ export function ProvidersPanel() {
   const [newName, setNewName] = useState('')
   const [newRawKey, setNewRawKey] = useState('')
   const { push } = useToast()
+  const isOwner = getUserRoleFromToken() === 'owner'
 
   const loadKeys = async () => {
     setLoading(true)
@@ -186,6 +200,8 @@ export function ProvidersPanel() {
           )}
         </CardContent>
       </Card>
+
+      {isOwner && <BuilderConfigPanel />}
     </div>
   )
 }

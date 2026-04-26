@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     auth, tenants, agents, builds, channels,
     knowledge, api_keys, usage, custom_tools,
     skills, mcp, knowledge_bases, policies, guardrails,
+    system_settings,
 )
 
 settings = get_settings()
@@ -35,6 +36,13 @@ async def lifespan(app: FastAPI):
         await conn.execute(_text(
             "ALTER TABLE IF EXISTS public.llm_provider_keys "
             "ADD COLUMN IF NOT EXISTS models JSONB NOT NULL DEFAULT '[]'"
+        ))
+        await conn.execute(_text(
+            "CREATE TABLE IF NOT EXISTS public.system_config ("
+            "  key TEXT PRIMARY KEY,"
+            "  value TEXT NOT NULL,"
+            "  updated_at TIMESTAMPTZ DEFAULT NOW()"
+            ")"
         ))
 
     # Sembrar superusuario admin
@@ -142,6 +150,7 @@ app.include_router(mcp.router,           prefix="/api/v1",               tags=["
 app.include_router(knowledge_bases.router, prefix="/api/v1",             tags=["knowledge-bases"])
 app.include_router(policies.router,      prefix="/api/v1",               tags=["policies"])
 app.include_router(guardrails.router,    prefix="/api/v1",               tags=["guardrails"])
+app.include_router(system_settings.router, prefix="/api/v1",             tags=["system"])
 
 
 @app.get("/health")
