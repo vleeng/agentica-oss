@@ -59,6 +59,8 @@ services:
       BUILDER_MODEL: ${BUILDER_MODEL:-openai/gpt-4o-mini}
       JWT_SECRET: ${JWT_SECRET:-super_secret_dev_key_change_in_prod}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@agentica.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:5173"]}'
       TAVILY_API_KEY: ${TAVILY_API_KEY}
