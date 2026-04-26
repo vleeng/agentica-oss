@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    allowedHosts: ['vleeng.com', 'localhost'],
     proxy: {
       // El Vite dev server reenvía /api al backend container (red Docker interna)
       '/api': {
