@@ -194,9 +194,14 @@ export function createAgentWebSocket(
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (!closedManually) {
-        window.setTimeout(connect, 1500)
+        if (event.code === 1008) {
+          // Auth failure — don't reconnect, surface the error
+          onError('No autorizado: verificá que tu sesión esté activa')
+        } else {
+          window.setTimeout(connect, 1500)
+        }
       }
     }
 

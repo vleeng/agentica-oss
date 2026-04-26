@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import TYPE_CHECKING, AsyncIterator
 
@@ -7,6 +8,8 @@ from fastapi import HTTPException
 from app.runtime.base import AgentRuntime
 from app.schemas.agent import AgentResponse, AgentSpec
 from app.components.guardrails.guardrail_engine import check_input, check_output
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from langchain.agents import AgentExecutor
@@ -99,18 +102,27 @@ class LangChainRuntime(AgentRuntime):
         chat_history = await self._memory.load(session_id)
         collected_output = []
 
-        async for chunk in self._executor.astream(
-            {"input": input, "chat_history": chat_history}
-        ):
-            token = ""
-            if isinstance(chunk, dict):
-                token = chunk.get("output") or chunk.get("token") or ""
-            elif isinstance(chunk, str):
-                token = chunk
+        try:
+            async for chunk in self._executor.astream(
+                {"input": input, "chat_history": chat_history}
+            ):
+                token = ""
+                if isinstance(chunk, dict):
+                    # AgentExecutor yields intermediate steps AND final output
+                    # Final output dict has "output" key; intermediate steps have "actions"/"steps"
+                    token = chunk.get("output") or chunk.get("token") or ""
+                    if not token and "actions" in chunk:
+                        # intermediate step — skip silently (no content to stream yet)
+                        continue
+                elif isinstance(chunk, str):
+                    token = chunk
 
-            if token:
-                collected_output.append(token)
-                yield token
+                if token:
+                    collected_output.append(token)
+                    yield token
+        except Exception as e:
+            logger.exception(f"[STREAM] Error during astream for session {session_id}: {e}")
+            raise
 
         full_output = "".join(collected_output)
 

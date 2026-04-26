@@ -40,6 +40,10 @@ export function AgentMonitor({ design, onOptimized }: Props) {
   const sessionId = useRef(`sandbox_${design.agent_id}_${Date.now()}`)
   const wsRef = useRef<ReturnType<typeof createAgentWebSocket> | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  // Refs so the stable WS callbacks always target the current message
+  const onTokenRef = useRef<(token: string) => void>(() => {})
+  const onDoneRef  = useRef<(sid: string) => void>(() => {})
+  const onErrorRef = useRef<(msg: string) => void>(() => {})
 
   useEffect(() => {
     handleBuild()
@@ -76,30 +80,33 @@ export function AgentMonitor({ design, onOptimized }: Props) {
       { id: assistantId, role: 'assistant', content: '', streaming: true },
     ])
 
+    // Update refs so the stable WS callbacks always point to the current message
+    onTokenRef.current = (token) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + token } : m))
+      )
+    }
+    onDoneRef.current = () => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m))
+      )
+      setSending(false)
+    }
+    onErrorRef.current = (msg) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId ? { ...m, content: `Error: ${msg}`, streaming: false } : m
+        )
+      )
+      setSending(false)
+    }
+
     if (!wsRef.current) {
       wsRef.current = createAgentWebSocket(
         design.agent_id,
-        (token) => {
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId ? { ...message, content: message.content + token } : message
-            )
-          )
-        },
-        () => {
-          setMessages((prev) =>
-            prev.map((message) => (message.id === assistantId ? { ...message, streaming: false } : message))
-          )
-          setSending(false)
-        },
-        (message) => {
-          setMessages((prev) =>
-            prev.map((item) =>
-              item.id === assistantId ? { ...item, content: `Error: ${message}`, streaming: false } : item
-            )
-          )
-          setSending(false)
-        }
+        (token) => onTokenRef.current(token),
+        (sid)   => onDoneRef.current(sid),
+        (msg)   => onErrorRef.current(msg)
       )
     }
 

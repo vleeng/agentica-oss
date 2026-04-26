@@ -22,6 +22,10 @@ export function StandaloneChat({ agentId }: Props) {
   const wsRef = useRef<ReturnType<typeof createAgentWebSocket> | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const apiKey = new URLSearchParams(window.location.search).get('api_key') || ''
+  // Refs so the stable WS callbacks always target the current message
+  const onTokenRef = useRef<(token: string) => void>(() => {})
+  const onDoneRef  = useRef<(sid: string) => void>(() => {})
+  const onErrorRef = useRef<(msg: string) => void>(() => {})
   
   const [agentReady, setAgentReady] = useState<'loading' | 'ok' | 'error'>('loading')
 
@@ -74,26 +78,31 @@ export function StandaloneChat({ agentId }: Props) {
       streaming: true,
     }])
 
+    // Update refs so the stable WS callbacks always point to the current message
+    onTokenRef.current = (token) => {
+      setMessages(prev => prev.map(m =>
+        m.id === assistantId ? { ...m, content: m.content + token } : m
+      ))
+    }
+    onDoneRef.current = () => {
+      setMessages(prev => prev.map(m =>
+        m.id === assistantId ? { ...m, streaming: false } : m
+      ))
+      setSending(false)
+    }
+    onErrorRef.current = (err) => {
+      setMessages(prev => prev.map(m =>
+        m.id === assistantId ? { ...m, content: `Error: ${err}`, streaming: false } : m
+      ))
+      setSending(false)
+    }
+
     if (!wsRef.current) {
       wsRef.current = createAgentWebSocket(
         agentId,
-        (token) => {
-          setMessages(prev => prev.map(m =>
-            m.id === assistantId ? { ...m, content: m.content + token } : m
-          ))
-        },
-        () => {
-          setMessages(prev => prev.map(m =>
-            m.id === assistantId ? { ...m, streaming: false } : m
-          ))
-          setSending(false)
-        },
-        (err) => {
-          setMessages(prev => prev.map(m =>
-            m.id === assistantId ? { ...m, content: `Error: ${err}`, streaming: false } : m
-          ))
-          setSending(false)
-        },
+        (token) => onTokenRef.current(token),
+        (sid)   => onDoneRef.current(sid),
+        (msg)   => onErrorRef.current(msg),
         { apiKey },
       )
     }

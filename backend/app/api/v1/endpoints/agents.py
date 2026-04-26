@@ -184,10 +184,28 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
                 continue
 
             try:
-                async for token in runtime.stream(user_input, session_id):
-                    await websocket.send_json({"type": "token", "content": token})
+                async def _do_stream():
+                    collected = []
+                    async for token in runtime.stream(user_input, session_id):
+                        await websocket.send_json({"type": "token", "content": token})
+                        collected.append(token)
+                    # If the runtime yielded nothing (e.g. model returned empty),
+                    # fall back to a plain invoke so the user always gets a response.
+                    if not collected:
+                        logger.warning(f"[WS] stream yielded no tokens for agent {agent_id} — falling back to invoke")
+                        response = await asyncio.wait_for(
+                            runtime.invoke(user_input, session_id), timeout=90.0
+                        )
+                        if response.output:
+                            await websocket.send_json({"type": "token", "content": response.output})
+
+                await asyncio.wait_for(_do_stream(), timeout=90.0)
                 await websocket.send_json({"type": "done", "session_id": session_id})
+            except asyncio.TimeoutError:
+                logger.warning(f"[WS] stream timed out after 90s for agent {agent_id}")
+                await websocket.send_json({"type": "error", "message": "El agente tardó demasiado en responder (timeout 90s)"})
             except Exception as e:
+                logger.exception(f"[WS] error during stream for agent {agent_id}: {e}")
                 await websocket.send_json({"type": "error", "message": str(e)})
 
     except WebSocketDisconnect:
