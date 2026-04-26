@@ -55,9 +55,13 @@ services:
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      JWT_SECRET: ${JWT_SECRET:-super_secret_dev_key_change_in_prod} # ⚠️ SOLO DESARROLLO — usar docker-compose.prod.yml en producción
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      BUILDER_MODEL: ${BUILDER_MODEL:-openai/gpt-4o-mini}
+      JWT_SECRET: ${JWT_SECRET:-super_secret_dev_key_change_in_prod}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:5173"]}'
+      TAVILY_API_KEY: ${TAVILY_API_KEY}
     ports:
       - "8000:8000"
     depends_on:
@@ -81,6 +85,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://agentica:${POSTGRES_PASSWORD:-agentica_dev}@postgres:5432/agentica
       REDIS_URL: redis://redis:6379/0
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      BUILDER_MODEL: ${BUILDER_MODEL:-openai/gpt-4o-mini}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       ENVIRONMENT: ${ENVIRONMENT:-development}
     depends_on:
       - postgres
