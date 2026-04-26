@@ -63,3 +63,4 @@ class LLMProviderKeyOut(BaseModel):
     is_default: bool
     created_at: datetime
     truncated_key: str
+    models: list[str] = []

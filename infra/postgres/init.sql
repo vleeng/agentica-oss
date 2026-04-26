@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS public.llm_provider_keys (
     encrypted_key TEXT NOT NULL,
     truncated_key TEXT NOT NULL,
     is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    models JSONB NOT NULL DEFAULT '[]',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

@@ -30,6 +30,12 @@ async def lifespan(app: FastAPI):
     # Crear tablas del schema public
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migraciones incrementales (idempotentes)
+        from sqlalchemy import text as _text
+        await conn.execute(_text(
+            "ALTER TABLE IF EXISTS public.llm_provider_keys "
+            "ADD COLUMN IF NOT EXISTS models JSONB NOT NULL DEFAULT '[]'"
+        ))
 
     # Sembrar superusuario admin
     import uuid

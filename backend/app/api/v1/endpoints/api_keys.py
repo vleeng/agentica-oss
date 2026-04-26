@@ -175,6 +175,7 @@ async def list_llm_keys(ctx: CurrentContext) -> list[LLMProviderKeyOut]:
             is_default=r.is_default,
             created_at=r.created_at,
             truncated_key=r.truncated_key,
+            models=list(r.models) if r.models else [],
         )
         for r in rows
     ]
@@ -226,7 +227,8 @@ async def create_llm_key(body: LLMProviderKeyCreate, ctx: CurrentContext) -> LLM
         name=body.name,
         is_default=is_def,
         created_at=row.created_at,
-        truncated_key=truncated_key
+        truncated_key=truncated_key,
+        models=[],
     )
 
 
@@ -245,6 +247,23 @@ async def set_default_llm_key(key_id: str, provider: str, ctx: CurrentContext) -
         )
         await db.commit()
     return {"status": "ok"}
+
+
+class UpdateModelsRequest(BaseModel):
+    models: list[str]
+
+@router.put("/llm/{key_id}/models", status_code=200)
+async def update_llm_key_models(key_id: str, body: UpdateModelsRequest, ctx: CurrentContext) -> dict:
+    """Actualiza la lista de modelos disponibles para una key de la bóveda."""
+    ctx.require_developer()
+    import json
+    async with PublicSessionFactory() as db:
+        await db.execute(
+            text("UPDATE llm_provider_keys SET models = CAST(:models AS jsonb) WHERE id = :id AND tenant_id = :tid"),
+            {"models": json.dumps(body.models), "id": key_id, "tid": ctx.tenant_id}
+        )
+        await db.commit()
+    return {"status": "ok", "models": body.models}
 
 
 @router.delete("/llm/{key_id}", status_code=204)

@@ -433,19 +433,42 @@ function StepMemoryChannels({ state, update }: StepProps) {
 function StepModel({ state, update }: StepProps) {
   const [keys, setKeys] = useState<any[]>([])
   const [keysError, setKeysError] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     import('../../lib/api').then(({ llmKeysApi }) =>
       llmKeysApi.list()
         .then(data => { if (Array.isArray(data)) setKeys(data) })
-        .catch(() => setKeysError('No se pudieron cargar las llaves LLM. Podés configurarlas en Bóveda IA.'))
+        .catch(() => setKeysError('No se pudieron cargar las llaves de la Bóveda IA.'))
+        .finally(() => setLoading(false))
     )
   }, [])
 
-  // Filtrar llaves segun el proveedor del modelo seleccionado
-  const selectedModel = AVAILABLE_MODELS.find(m => m.id === state.model_params.model)
-  const selectedProvider = state.model_params.provider || selectedModel?.providerId || 'anthropic'
-  const availableKeys = keys.filter(k => k.provider === selectedProvider)
+  // Construir lista de modelos desde la Bóveda: { id, name, providerId, keyId }
+  const availableModels = keys.flatMap(k =>
+    (k.models || []).map(modelId => ({
+      id: modelId,
+      name: modelId,
+      providerId: k.provider,
+      keyId: k.id,
+      keyName: k.name,
+      isDefault: k.is_default,
+    }))
+  )
+
+  // Llave seleccionada: la que corresponde al modelo elegido
+  const selectedModelEntry = availableModels.find(m => m.id === state.model_params.model)
+  const keysForProvider = selectedModelEntry
+    ? keys.filter(k => k.provider === selectedModelEntry.providerId)
+    : []
+
+  // Si el modelo actual ya no está disponible, resetear al primero
+  useEffect(() => {
+    if (!loading && availableModels.length > 0 && !availableModels.find(m => m.id === state.model_params.model)) {
+      const first = availableModels[0]
+      update({ model_params: { ...state.model_params, model: first.id, provider: first.providerId, llm_key_id: undefined } })
+    }
+  }, [loading])
 
   return (
     <div className="space-y-5">
@@ -454,64 +477,86 @@ function StepModel({ state, update }: StepProps) {
           {keysError}
         </div>
       )}
-      <Field label="Modelo LLM">
-        <select
-          value={state.model_params.model}
-          onChange={e => {
-            const model = AVAILABLE_MODELS.find(m => m.id === e.target.value)
-            update({
-              model_params: {
-                ...state.model_params,
-                model: e.target.value,
-                provider: model?.providerId,
-                llm_key_id: undefined,
-              },
-            })
-          }}
-          className={inputCls}
-        >
-          {AVAILABLE_MODELS.map(m => (
-            <option key={m.id} value={m.id}>{m.name} — {m.provider}</option>
-          ))}
-        </select>
-      </Field>
 
-      <Field label="Llave de IA (Opcional)" hint="Si no elige ninguna, se intentará usar la predeterminada del sistema.">
-        <select
-          value={state.model_params.llm_key_id || ''}
-          onChange={e => update({ model_params: { ...state.model_params, llm_key_id: e.target.value || undefined } })}
-          className={inputCls}
-        >
-          <option value="">-- Usar la llave predeterminada --</option>
-          {availableKeys.map(k => (
-            <option key={k.id} value={k.id}>{k.name} ({k.truncated_key}) {k.is_default && '★'}</option>
-          ))}
-        </select>
-      </Field>
-
-      <Field label={`Temperatura: ${state.model_params.temperature}`} hint="0 = determinístico · 1 = creativo">
-        <input
-          type="range" min="0" max="1" step="0.05"
-          value={state.model_params.temperature}
-          onChange={e => update({ model_params: { ...state.model_params, temperature: parseFloat(e.target.value) } })}
-          className="w-full accent-violet-600"
-        />
-        <div className="flex justify-between text-xs text-gray-400 mt-1">
-          <span>Preciso</span><span>Balanceado</span><span>Creativo</span>
+      {!loading && configuredProviders.size === 0 && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          No tenés ninguna llave de proveedor LLM configurada.{' '}
+          <strong>Andá a Bóveda IA</strong> y agregá al menos una antes de continuar.
         </div>
-      </Field>
+      )}
 
-      <Field label={`Máximo de tokens: ${state.model_params.max_tokens}`}>
-        <input
-          type="range" min="256" max="8192" step="256"
-          value={state.model_params.max_tokens}
-          onChange={e => update({ model_params: { ...state.model_params, max_tokens: parseInt(e.target.value) } })}
-          className="w-full accent-violet-600"
-        />
-        <div className="flex justify-between text-xs text-gray-400 mt-1">
-          <span>256</span><span>4096</span><span>8192</span>
+      {loading ? (
+        <div className="flex justify-center py-6">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet-600 border-t-transparent" />
         </div>
-      </Field>
+      ) : (
+        <>
+          <Field label="Modelo LLM">
+            <select
+              value={state.model_params.model}
+              onChange={e => {
+                const model = availableModels.find(m => m.id === e.target.value)
+                update({
+                  model_params: {
+                    ...state.model_params,
+                    model: e.target.value,
+                    provider: model?.providerId,
+                    llm_key_id: undefined,
+                  },
+                })
+              }}
+              className={inputCls}
+              disabled={availableModels.length === 0}
+            >
+              {availableModels.length === 0
+                ? <option value="">— Sin modelos — agregá en Bóveda IA —</option>
+                : availableModels.map(m => (
+                    <option key={`${m.keyId}-${m.id}`} value={m.id}>
+                      {m.id} ({m.keyName})
+                    </option>
+                  ))
+              }
+            </select>
+          </Field>
+
+          <Field label="Llave de IA" hint="La llave predeterminada del proveedor se usa automáticamente.">
+            <select
+              value={state.model_params.llm_key_id || ''}
+              onChange={e => update({ model_params: { ...state.model_params, llm_key_id: e.target.value || undefined } })}
+              className={inputCls}
+            >
+              <option value="">★ Usar la llave predeterminada</option>
+              {keysForProvider.map(k => (
+                <option key={k.id} value={k.id}>{k.name} ({k.truncated_key}){k.is_default ? ' ★' : ''}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label={`Temperatura: ${state.model_params.temperature}`} hint="0 = determinístico · 1 = creativo">
+            <input
+              type="range" min="0" max="1" step="0.05"
+              value={state.model_params.temperature}
+              onChange={e => update({ model_params: { ...state.model_params, temperature: parseFloat(e.target.value) } })}
+              className="w-full accent-violet-600"
+            />
+            <div className="flex justify-between text-xs text-gray-400 mt-1">
+              <span>Preciso</span><span>Balanceado</span><span>Creativo</span>
+            </div>
+          </Field>
+
+          <Field label={`Máximo de tokens: ${state.model_params.max_tokens}`}>
+            <input
+              type="range" min="256" max="8192" step="256"
+              value={state.model_params.max_tokens}
+              onChange={e => update({ model_params: { ...state.model_params, max_tokens: parseInt(e.target.value) } })}
+              className="w-full accent-violet-600"
+            />
+            <div className="flex justify-between text-xs text-gray-400 mt-1">
+              <span>256</span><span>4096</span><span>8192</span>
+            </div>
+          </Field>
+        </>
+      )}
     </div>
   )
 }
