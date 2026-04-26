@@ -159,7 +159,7 @@ async def list_llm_keys(ctx: CurrentContext) -> list[LLMProviderKeyOut]:
     async with PublicSessionFactory() as db:
         result = await db.execute(
             text("""
-                SELECT id, provider, name, is_default, created_at, truncated_key
+                SELECT id, provider, name, is_default, created_at, truncated_key, models
                 FROM llm_provider_keys
                 WHERE tenant_id = :tid ORDER BY created_at DESC
             """),
