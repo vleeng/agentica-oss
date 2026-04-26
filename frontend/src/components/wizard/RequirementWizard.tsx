@@ -478,7 +478,7 @@ function StepModel({ state, update }: StepProps) {
         </div>
       )}
 
-      {!loading && configuredProviders.size === 0 && (
+      {!loading && availableModels.length === 0 && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           No tenés ninguna llave de proveedor LLM configurada.{' '}
           <strong>Andá a Bóveda IA</strong> y agregá al menos una antes de continuar.
