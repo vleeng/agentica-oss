@@ -122,6 +122,18 @@ export const agentsApi = {
 
   delete: (agentId: string) => api.delete(`/agents/${agentId}`),
 
+  update: (
+    agentId: string,
+    patch: {
+      name?: string
+      model?: string
+      llm_key_id?: string
+      system_prompt?: string
+      temperature?: number
+      max_tokens?: number
+    }
+  ): Promise<AgentDesign> => api.put(`/agents/${agentId}`, patch).then((r) => r.data),
+
   getDesign: (agentId: string): Promise<AgentDesign> =>
     api.get(`/agents/${agentId}/design`).then((r) => r.data),
 

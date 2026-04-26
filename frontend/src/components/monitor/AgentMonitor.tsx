@@ -5,6 +5,7 @@ import type { AgentDesign } from '../../types/agent'
 import { agentsApi, createAgentWebSocket } from '../../lib/api'
 import { KnowledgePanel } from './KnowledgePanel'
 import { AgentConfigPanel } from './AgentConfigPanel'
+import { AgentEditPanel } from './AgentEditPanel'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
@@ -17,7 +18,7 @@ interface Props {
 }
 
 type Phase = 'idle' | 'building' | 'ready' | 'evaluating' | 'optimizing'
-type TabId = 'sandbox' | 'eval' | 'design' | 'knowledge' | 'config'
+type TabId = 'sandbox' | 'eval' | 'design' | 'knowledge' | 'config' | 'edit'
 
 interface ChatMessage {
   id: string
@@ -32,6 +33,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
   const [optimizeResult, setOptimizeResult] = useState<any>(null)
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState<TabId>('sandbox')
+  const [currentDesign, setCurrentDesign] = useState<AgentDesign>(design)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -142,7 +144,16 @@ export function AgentMonitor({ design, onOptimized }: Props) {
     { id: 'design', label: 'Diseño' },
     { id: 'knowledge', label: 'Conocimiento' },
     { id: 'config', label: 'Configurar' },
+    { id: 'edit', label: 'Editar' },
   ]
+
+  const handleAgentUpdated = (newDesign: AgentDesign) => {
+    setCurrentDesign(newDesign)
+    if (onOptimized) onOptimized(newDesign)
+    // Rebuild was triggered server-side; put the monitor back in ready state
+    setPhase('ready')
+    setActiveTab('sandbox')
+  }
 
   return (
     <div className="space-y-6">
@@ -167,8 +178,8 @@ export function AgentMonitor({ design, onOptimized }: Props) {
               </div>
 
               <div>
-                <h1 className="text-3xl font-semibold tracking-tight text-slate-950">{design.spec.name}</h1>
-                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">{design.spec.goal}</p>
+                <h1 className="text-3xl font-semibold tracking-tight text-slate-950">{currentDesign.spec.name}</h1>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">{currentDesign.spec.goal}</p>
               </div>
             </div>
 
@@ -194,9 +205,9 @@ export function AgentMonitor({ design, onOptimized }: Props) {
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-          <MonitorMetric title="Modelo base" value={design.spec.model_params.model} />
-          <MonitorMetric title="Modo" value={design.spec.mode === 'crew' ? 'Equipo de agentes' : 'Agente simple'} />
-          <MonitorMetric title="Tools" value={String(design.spec.tools.length)} />
+          <MonitorMetric title="Modelo base" value={currentDesign.spec.model_params.model} />
+          <MonitorMetric title="Modo" value={currentDesign.spec.mode === 'crew' ? 'Equipo de agentes' : 'Agente simple'} />
+          <MonitorMetric title="Tools" value={String(currentDesign.spec.tools.length)} />
         </div>
       </section>
 
@@ -300,7 +311,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
             </CardHeader>
             <CardContent>
               <pre className="max-h-[26rem] overflow-y-auto whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-xs leading-6 text-slate-700">
-                {design.system_prompt}
+                {currentDesign.system_prompt}
               </pre>
             </CardContent>
           </Card>
@@ -311,18 +322,18 @@ export function AgentMonitor({ design, onOptimized }: Props) {
                 <CardTitle>Decisión de framework</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm leading-7 text-slate-600">{design.framework.justification}</p>
+                <p className="text-sm leading-7 text-slate-600">{currentDesign.framework.justification}</p>
               </CardContent>
             </Card>
 
-            <MermaidDiagram chart={design.mermaid_diagram} />
+            <MermaidDiagram chart={currentDesign.mermaid_diagram} />
 
             <Card>
               <CardHeader>
                 <CardTitle>Casos de prueba</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {design.test_cases.map((testCase: any) => (
+                {currentDesign.test_cases.map((testCase: any) => (
                   <div key={testCase.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div className="font-medium text-slate-950">{testCase.description}</div>
                     <div className="mt-2 text-sm text-slate-600">Input: {testCase.input}</div>
@@ -335,9 +346,13 @@ export function AgentMonitor({ design, onOptimized }: Props) {
         </div>
       )}
 
-      {activeTab === 'knowledge' && <KnowledgePanel agentId={design.agent_id} />}
+      {activeTab === 'knowledge' && <KnowledgePanel agentId={currentDesign.agent_id} />}
 
-      {activeTab === 'config' && <AgentConfigPanel agentId={design.agent_id} />}
+      {activeTab === 'config' && <AgentConfigPanel agentId={currentDesign.agent_id} />}
+
+      {activeTab === 'edit' && (
+        <AgentEditPanel design={currentDesign} onUpdated={handleAgentUpdated} />
+      )}
     </div>
   )
 }

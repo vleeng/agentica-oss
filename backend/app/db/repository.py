@@ -101,6 +101,58 @@ class AgentRepository:
         await self._db.commit()
         return res.rowcount > 0
 
+    async def update_agent_core(self, agent_id: str, patch: dict) -> Optional[dict]:
+        """
+        Aplica un patch sobre name / system_prompt / model_params del design_json
+        y persiste name + spec_json + design_json en la fila de agents.
+        Retorna el design_dict actualizado, o None si no existe.
+        """
+        result = await self._db.execute(
+            text("SELECT design_json FROM agents WHERE id = CAST(:id AS uuid)"),
+            {"id": agent_id},
+        )
+        row = result.fetchone()
+        if not row:
+            return None
+
+        design_dict = row.design_json if isinstance(row.design_json, dict) else json.loads(row.design_json)
+        spec = design_dict.get("spec", {})
+
+        # Campos de alto nivel del spec
+        if patch.get("name"):
+            spec["name"] = patch["name"]
+
+        # system_prompt vive en AgentDesign (no en AgentSpec)
+        if "system_prompt" in patch and patch["system_prompt"] is not None:
+            design_dict["system_prompt"] = patch["system_prompt"]
+
+        # model_params
+        model_params = spec.get("model_params", {})
+        for field in ("model", "llm_key_id", "temperature", "max_tokens"):
+            if field in patch and patch[field] is not None:
+                model_params[field] = patch[field]
+        spec["model_params"] = model_params
+        design_dict["spec"] = spec
+
+        await self._db.execute(
+            text("""
+                UPDATE agents
+                SET name       = :name,
+                    spec_json  = CAST(:spec AS jsonb),
+                    design_json = CAST(:design AS jsonb),
+                    updated_at = NOW()
+                WHERE id = CAST(:id AS uuid)
+            """),
+            {
+                "id":     agent_id,
+                "name":   spec.get("name", ""),
+                "spec":   json.dumps(spec),
+                "design": json.dumps(design_dict),
+            },
+        )
+        await self._db.commit()
+        return design_dict
+
     # ── Builds ────────────────────────────────────────────────────────────────
 
     async def create_build(self, agent_id: str, version: int) -> str:

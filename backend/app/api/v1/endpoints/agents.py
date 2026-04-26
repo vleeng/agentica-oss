@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
@@ -267,6 +269,55 @@ async def optimize_agent(
         },
         "rebuilt": body.auto_rebuild,
     }
+
+
+# ── PUT /{id} — edición de parámetros core ───────────────────────────────────
+
+class UpdateAgentRequest(BaseModel):
+    name:          Optional[str]   = None
+    model:         Optional[str]   = None
+    llm_key_id:    Optional[str]   = None
+    system_prompt: Optional[str]   = None
+    temperature:   Optional[float] = Field(None, ge=0.0, le=1.0)
+    max_tokens:    Optional[int]   = Field(None, ge=256, le=8192)
+
+
+@router.put("/{agent_id}", response_model=AgentDesign)
+async def update_agent(
+    agent_id: str,
+    body: UpdateAgentRequest,
+    ctx: CurrentContext,
+    repo: TenantRepo,
+) -> AgentDesign:
+    """
+    Actualiza nombre, modelo, system prompt y/o parámetros del LLM
+    sin necesidad de borrar y recrear el agente.
+    Dispara un rebuild automático al finalizar.
+    """
+    ctx.require_developer()
+
+    patch = body.model_dump(exclude_none=True)
+    if not patch:
+        raise HTTPException(400, "No hay campos para actualizar")
+
+    updated_dict = await repo.update_agent_core(agent_id, patch)
+    if not updated_dict:
+        raise HTTPException(404, f"Agente '{agent_id}' no encontrado")
+
+    new_design = AgentDesign(**updated_dict)
+    store = get_runtime_store()
+    await store.save_design(agent_id, new_design)
+
+    # Rebuild en background para no bloquear la respuesta
+    try:
+        runtime = await RuntimeFactory(redis_client=store.redis_client).build(new_design)
+        await store.save_runtime(agent_id, runtime, new_design)
+        await repo.update_agent_status(agent_id, "testing")
+    except Exception as e:
+        logger.warning(f"[UPDATE] Rebuild fallido tras edición: {e}")
+        # El design quedó guardado; el próximo /build lo levantará
+
+    return new_design
 
 
 # ── DELETE /{id} ─────────────────────────────────────────────────────────────
