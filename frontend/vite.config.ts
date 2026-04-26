@@ -7,7 +7,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true },
+      // El Vite dev server reenvía /api al backend container (red Docker interna)
+      '/api': {
+        target: 'http://backend:8000',
+        changeOrigin: true,
+        ws: true,   // también proxea WebSockets (/api/v1/agents/{id}/ws)
+      },
     },
   },
 })

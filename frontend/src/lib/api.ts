@@ -12,7 +12,8 @@ import type {
 } from '../types/agent'
 import { clearStoredToken, getAuthToken } from '../stores/auth'
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// Vacío = URLs relativas → el browser llama a /api/v1/... en el mismo host/protocolo
+const BASE_URL = import.meta.env.VITE_API_URL || ''
 const APP_BASE = import.meta.env.BASE_URL || '/'
 
 function createClient(): AxiosInstance {
@@ -159,7 +160,9 @@ export function createAgentWebSocket(
   send: (input: string, sessionId: string) => void
   close: () => void
 } {
-  const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000'
+  // Auto-detecta wss:// o ws:// según el protocolo de la página (https → wss)
+  const WS_URL = import.meta.env.VITE_WS_URL ||
+    `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
   const params = new URLSearchParams()
   const token = getAuthToken()
   if (token) params.set('token', token)

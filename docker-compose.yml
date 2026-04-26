@@ -62,7 +62,7 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@agentica.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       ENVIRONMENT: ${ENVIRONMENT:-development}
-      CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:5173"]}'
+      CORS_ORIGINS: '${CORS_ORIGINS:-["https://vleeng.com","http://localhost:5173"]}'
       TAVILY_API_KEY: ${TAVILY_API_KEY}
     ports:
       - "8000:8000"
@@ -73,10 +73,19 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-      - agent_builds:/app/builds       # código generado de agentes
+      - agent_builds:/app/builds
+    networks:
+      - default
+      - traefik_public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.agentica-api.rule=Host(`vleeng.com`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.agentica-api.entrypoints=websecure"
+      - "traefik.http.routers.agentica-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.agentica-api.loadbalancer.server.port=8000"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # ── Celery worker (builds, evals, deploys async) ────────────────────────────
+  # ── Celery worker ───────────────────────────────────────────────────────────
 
   worker:
     build:
@@ -97,7 +106,7 @@ services:
     volumes:
       - ./backend:/app
       - agent_builds:/app/builds
-      - /var/run/docker.sock:/var/run/docker.sock   # para deploy de contenedores
+      - /var/run/docker.sock:/var/run/docker.sock
     command: celery -A app.tasks.celery_app worker --loglevel=info -Q builds,evals,deploys
 
   # ── Frontend ────────────────────────────────────────────────────────────────
@@ -108,8 +117,9 @@ services:
       dockerfile: Dockerfile.dev
     restart: unless-stopped
     environment:
-      VITE_API_URL: http://localhost:8000
-      VITE_WS_URL: ws://localhost:8000
+      # Vacío = el browser usará URLs relativas → Traefik enruta /api → backend
+      VITE_API_URL: ""
+      VITE_WS_URL: ""
     ports:
       - "5173:5173"
     volumes:
@@ -117,9 +127,22 @@ services:
       - /app/node_modules
     depends_on:
       - backend
+    networks:
+      - default
+      - traefik_public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.agentica-frontend.rule=Host(`vleeng.com`) && PathPrefix(`/agentica`)"
+      - "traefik.http.routers.agentica-frontend.entrypoints=websecure"
+      - "traefik.http.routers.agentica-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.agentica-frontend.loadbalancer.server.port=5173"
 
 volumes:
   postgres_data:
   redis_data:
   qdrant_data:
   agent_builds:
+
+networks:
+  traefik_public:
+    external: true
