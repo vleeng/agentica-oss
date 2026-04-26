@@ -57,6 +57,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       BUILDER_MODEL: ${BUILDER_MODEL:-openai/gpt-4o-mini}
+      BUILDER_PROVIDER: ${BUILDER_PROVIDER:-openrouter}
       JWT_SECRET: ${JWT_SECRET:-super_secret_dev_key_change_in_prod}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@agentica.local}
