@@ -52,12 +52,42 @@ async def _get_builder_config() -> tuple[str, str, str]:
         return provider, model, api_key
 
 
+import asyncio
+import logging
+
+_log = logging.getLogger(__name__)
+
+# Timeout máximo por llamada al builder LLM (segundos)
+BUILDER_LLM_TIMEOUT = 60
+
+
 class TextGenerationClient:
     async def complete(self, prompt: str, max_tokens: int, temperature: float = 0.2) -> str:
         provider, model, api_key = await _get_builder_config()
+        _log.info(f"[Builder] provider={provider} model={model} key_set={bool(api_key)}")
 
+        if not api_key:
+            raise ValueError(
+                f"No hay clave API configurada para el builder (provider={provider}). "
+                "Configurala en Bóveda IA → Configuración del Builder."
+            )
+
+        try:
+            return await asyncio.wait_for(
+                self._call(provider, model, api_key, prompt, max_tokens, temperature),
+                timeout=BUILDER_LLM_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(
+                f"El builder LLM no respondió en {BUILDER_LLM_TIMEOUT}s "
+                f"(provider={provider}, model={model}). "
+                "Verificá la clave API y el modelo en Bóveda IA → Configuración del Builder."
+            )
+
+    async def _call(self, provider: str, model: str, api_key: str,
+                    prompt: str, max_tokens: int, temperature: float) -> str:
         if provider == "anthropic":
-            client = AsyncAnthropic(api_key=api_key or None)
+            client = AsyncAnthropic(api_key=api_key)
             message = await client.messages.create(
                 model=model, max_tokens=max_tokens, temperature=temperature,
                 messages=[{"role": "user", "content": prompt}],
@@ -65,7 +95,7 @@ class TextGenerationClient:
             return message.content[0].text.strip()
         else:
             client = AsyncOpenAI(
-                api_key=api_key or "no-key",
+                api_key=api_key,
                 base_url=resolve_base_url(provider, None),
             )
             response = await client.chat.completions.create(
