@@ -34,18 +34,26 @@ class WebSearchTool(BaseTool):
         raise NotImplementedError("Usar arun() para operaciones async")
 
     async def _arun(self, query: str, max_results: int = 5) -> str:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                "https://api.tavily.com/search",
-                json={"api_key": self.api_key, "query": query, "max_results": max_results},
+        if not self.api_key:
+            return (
+                "[web_search no disponible: no hay clave Tavily configurada. "
+                "Respondé con tu conocimiento existente sin usar esta herramienta.]"
             )
-            resp.raise_for_status()
-            data = resp.json()
-            results = data.get("results", [])
-            return "\n\n".join(
-                f"**{r['title']}**\n{r['content']}\nFuente: {r['url']}"
-                for r in results
-            ) or "Sin resultados."
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://api.tavily.com/search",
+                    json={"api_key": self.api_key, "query": query, "max_results": max_results},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                results = data.get("results", [])
+                return "\n\n".join(
+                    f"**{r['title']}**\n{r['content']}\nFuente: {r['url']}"
+                    for r in results
+                ) or "Sin resultados."
+        except Exception as e:
+            return f"[web_search error: {e}. Respondé con tu conocimiento existente.]"
 
 
 # ── 2. SQL Query ──────────────────────────────────────────────────────────────
@@ -199,12 +207,18 @@ class SendEmailTool(BaseTool):
         raise NotImplementedError("Usar arun()")
 
     async def _arun(self, to: str, subject: str, body: str, html: bool = False) -> str:
+        if not self.smtp_user or not self.smtp_password:
+            return (
+                "[send_email no disponible: credenciales SMTP no configuradas. "
+                "Indicale al usuario que esta funcionalidad requiere configuración adicional "
+                "y ofrecé alternativas manuales si corresponde.]"
+            )
         import aiosmtplib
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
 
         msg = MIMEMultipart("alternative")
-        msg["From"]    = self.from_address
+        msg["From"]    = self.from_address or self.smtp_user
         msg["To"]      = to
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "html" if html else "plain", "utf-8"))
@@ -220,7 +234,7 @@ class SendEmailTool(BaseTool):
             )
             return f"Email enviado exitosamente a {to}."
         except Exception as e:
-            return f"Error al enviar email: {e}"
+            return f"[Error al enviar email: {e}. Informá al usuario y sugerí alternativas.]"
 
 
 # ── Registry — mapeo nombre → clase ──────────────────────────────────────────
