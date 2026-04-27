@@ -159,26 +159,45 @@ class KnowledgeBuilderService:
         return len(points)
 
     async def _embed_texts(self, texts: list[str]) -> list[list[float]]:
-        """Genera embeddings usando OpenAI text-embedding-3-small."""
-        import logging
-        from openai import AsyncOpenAI
+        """Genera embeddings usando la misma conexión configurada en el builder.
 
-        api_key = settings.openai_api_key
+        Reutiliza provider + api_key del builder config (Bóveda IA → Configuración del Builder).
+        Para OpenRouter usa 'openai/text-embedding-3-small'; para OpenAI directo
+        usa 'text-embedding-3-small'; Anthropic no soporta embeddings y devuelve error claro.
+        """
+        from openai import AsyncOpenAI
+        from app.services.llm_client import _get_builder_config
+        from app.runtime.llm import resolve_base_url
+
+        provider, _, api_key = await _get_builder_config()
+
         if not api_key:
             raise ValueError(
-                "OPENAI_API_KEY no está configurada. "
-                "El módulo RAG requiere una clave de OpenAI válida para generar embeddings. "
-                "Agregá OPENAI_API_KEY al .env del servidor o desactivá RAG en el agente."
+                "No hay clave API configurada en el builder. "
+                "Configurala en Bóveda IA → Configuración del Builder."
             )
 
-        client = AsyncOpenAI(api_key=api_key)
+        if provider == "anthropic":
+            raise ValueError(
+                "Anthropic no soporta embeddings nativos. "
+                "Para usar RAG configurá el builder con OpenRouter u OpenAI."
+            )
+
+        # Nombre del modelo de embedding según provider
+        embed_model = (
+            "openai/text-embedding-3-small" if provider == "openrouter"
+            else "text-embedding-3-small"
+        )
+        base_url = resolve_base_url(provider, None)
+
+        client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
         # Batch de 100 textos por llamada
         all_vectors = []
         for i in range(0, len(texts), 100):
             batch = texts[i:i+100]
             resp = await client.embeddings.create(
-                model="text-embedding-3-small",
+                model=embed_model,
                 input=batch,
             )
             all_vectors.extend([e.embedding for e in resp.data])
