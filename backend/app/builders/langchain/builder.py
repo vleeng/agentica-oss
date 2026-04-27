@@ -96,8 +96,8 @@ class LangChainAgentBuilder:
             agent=agent,
             tools=tools,
             verbose=True,
-            max_iterations=10,
-            max_execution_time=120,
+            max_iterations=4,        # límite bajo para evitar loops largos con tools que fallan
+            max_execution_time=60,   # 60s max por ejecución de agente
             handle_parsing_errors=True,
             return_intermediate_steps=True,
         )

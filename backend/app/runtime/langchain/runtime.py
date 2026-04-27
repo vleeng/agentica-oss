@@ -119,48 +119,61 @@ class LangChainRuntime(AgentRuntime):
                         collected_output.append(token)
                         yield token
             else:
-                # AgentExecutor: astream() solo emite el output final completo.
-                # astream_events() sí expone tokens individuales del LLM en tiempo real.
-                #
-                # Para openai_functions: los tool-call chunks tienen content="" y
-                # tool_call_chunks=[...], así que solo el texto de la respuesta final pasa.
-                #
-                # Para react: el LLM produce "Thought:/Action:/Final Answer:" como texto.
-                # Acumulamos y solo emitimos lo que viene después de "Final Answer:".
+                # AgentExecutor: usamos astream_events() para streaming token a token.
+                # Capturamos on_chat_model_stream (tokens reales) y
+                # on_chain_end de AgentExecutor (output final si el agente se detiene
+                # por iteration limit o si todos los tokens eran tool-calls sin content).
                 is_react = not hasattr(self._executor.agent, "functions")
                 react_buffer = ""
                 react_final_found = False
+                chain_final_output: str = ""
 
                 with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", category=Warning, message=".*beta.*")
-                async for event in self._executor.astream_events(
-                    {"input": input, "chat_history": chat_history},
-                    version="v2",
-                ):
-                    if event["event"] != "on_chat_model_stream":
-                        continue
-                    chunk = event["data"]["chunk"]
-                    # Saltar chunks que son llamadas a herramientas (no texto de respuesta)
-                    if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
-                        continue
-                    token = getattr(chunk, "content", "") or ""
-                    if not token:
-                        continue
+                    warnings.filterwarnings("ignore", message=".*beta.*")
+                    event_stream = self._executor.astream_events(
+                        {"input": input, "chat_history": chat_history},
+                        version="v2",
+                    )
 
-                    if is_react and not react_final_found:
-                        # Acumular hasta encontrar "Final Answer:"
-                        react_buffer += token
-                        marker = "Final Answer:"
-                        if marker in react_buffer:
-                            react_final_found = True
-                            after = react_buffer.split(marker, 1)[1]
-                            if after:
-                                collected_output.append(after)
-                                yield after
-                        # Si no encontramos el marcador, no emitimos nada aún
-                    else:
-                        collected_output.append(token)
-                        yield token
+                async for event in event_stream:
+                    kind = event["event"]
+
+                    # ── Tokens del LLM ───────────────────────────────────────
+                    if kind == "on_chat_model_stream":
+                        chunk = event["data"]["chunk"]
+                        if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
+                            continue  # selección de herramienta, no respuesta final
+                        token = getattr(chunk, "content", "") or ""
+                        if not token:
+                            continue
+
+                        if is_react and not react_final_found:
+                            react_buffer += token
+                            if "Final Answer:" in react_buffer:
+                                react_final_found = True
+                                after = react_buffer.split("Final Answer:", 1)[1]
+                                if after:
+                                    collected_output.append(after)
+                                    yield after
+                        else:
+                            collected_output.append(token)
+                            yield token
+
+                    # ── Output final del AgentExecutor ───────────────────────
+                    # Captura la respuesta cuando el agente paró por max_iterations
+                    # o cuando ningún token de contenido fue emitido
+                    elif kind == "on_chain_end" and event.get("name") == "AgentExecutor":
+                        raw = event.get("data", {}).get("output", {})
+                        if isinstance(raw, dict):
+                            chain_final_output = raw.get("output", "") or ""
+                        elif isinstance(raw, str):
+                            chain_final_output = raw
+
+                # Si el stream no emitió nada pero el agente sí produjo output,
+                # lo emitimos ahora (caso: iteration limit, sin "Final Answer:" en react, etc.)
+                if not collected_output and chain_final_output:
+                    collected_output.append(chain_final_output)
+                    yield chain_final_output
         except Exception as e:
             logger.exception(f"[STREAM] Error during stream for session {session_id}: {e}")
             raise
