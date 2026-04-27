@@ -3,7 +3,12 @@ import { useEffect, useId, useState } from 'react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 
-mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'neutral' })
+mermaid.initialize({
+  startOnLoad: false,
+  securityLevel: 'loose',
+  theme: 'neutral',
+  suppressErrors: true,
+})
 
 export function MermaidDiagram({ chart }: { chart: string }) {
   const [svg, setSvg] = useState('')
@@ -11,18 +16,35 @@ export function MermaidDiagram({ chart }: { chart: string }) {
   const id = useId().replace(/:/g, '')
 
   useEffect(() => {
+    if (!chart || chart.trim() === '') {
+      setError('Sin diagrama disponible.')
+      return
+    }
+
     let active = true
-    mermaid
-      .render(`agentica-${id}`, chart)
-      .then(({ svg }) => {
-        if (!active) return
-        setSvg(svg)
-        setError('')
-      })
-      .catch(() => {
-        if (!active) return
-        setError('No se pudo renderizar el diagrama Mermaid.')
-      })
+
+    // Validate syntax before rendering to avoid Mermaid polluting the DOM
+    mermaid.parse(chart).then(valid => {
+      if (!active) return
+      if (!valid) {
+        setError('Sintaxis de diagrama inválida.')
+        return
+      }
+      mermaid
+        .render(`agentica-${id}`, chart)
+        .then(({ svg }) => {
+          if (!active) return
+          setSvg(svg)
+          setError('')
+        })
+        .catch(() => {
+          if (!active) return
+          setError('No se pudo renderizar el diagrama.')
+        })
+    }).catch(() => {
+      if (!active) return
+      setError('Sintaxis de diagrama inválida.')
+    })
 
     return () => {
       active = false

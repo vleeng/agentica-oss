@@ -333,7 +333,9 @@ export function AgentMonitor({ design, onOptimized }: Props) {
               </CardContent>
             </Card>
 
-            <MermaidDiagram chart={currentDesign.mermaid_diagram} />
+            {currentDesign.mermaid_diagram && (
+              <MermaidDiagram chart={currentDesign.mermaid_diagram} />
+            )}
 
             <Card>
               <CardHeader>
