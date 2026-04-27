@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 import time
 from typing import TYPE_CHECKING, AsyncIterator
 
@@ -130,6 +131,8 @@ class LangChainRuntime(AgentRuntime):
                 react_buffer = ""
                 react_final_found = False
 
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=Warning, message=".*beta.*")
                 async for event in self._executor.astream_events(
                     {"input": input, "chat_history": chat_history},
                     version="v2",
