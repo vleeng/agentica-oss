@@ -160,8 +160,18 @@ class KnowledgeBuilderService:
 
     async def _embed_texts(self, texts: list[str]) -> list[list[float]]:
         """Genera embeddings usando OpenAI text-embedding-3-small."""
+        import logging
         from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=settings.openai_api_key or "")
+
+        api_key = settings.openai_api_key
+        if not api_key:
+            raise ValueError(
+                "OPENAI_API_KEY no está configurada. "
+                "El módulo RAG requiere una clave de OpenAI válida para generar embeddings. "
+                "Agregá OPENAI_API_KEY al .env del servidor o desactivá RAG en el agente."
+            )
+
+        client = AsyncOpenAI(api_key=api_key)
 
         # Batch de 100 textos por llamada
         all_vectors = []

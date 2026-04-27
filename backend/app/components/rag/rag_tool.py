@@ -29,7 +29,15 @@ class RAGTool(BaseTool):
         raise NotImplementedError("Usar arun()")
 
     async def _arun(self, query: str) -> str:
-        from app.components.rag.knowledge_builder import KnowledgeBuilderService
-        kb = KnowledgeBuilderService()
-        context = await kb.retrieve_as_context(self.agent_id, query, self.top_k)
-        return context or "No se encontró información relevante en la base de conocimiento."
+        try:
+            from app.components.rag.knowledge_builder import KnowledgeBuilderService
+            kb = KnowledgeBuilderService()
+            context = await kb.retrieve_as_context(self.agent_id, query, self.top_k)
+            return context or "No se encontró información relevante en la base de conocimiento."
+        except ValueError as e:
+            # Clave de embeddings no configurada — devolver aviso en lugar de crashear el agente
+            return f"[RAG no disponible: {e}]"
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"[RAGTool] Error en retrieval: {e}")
+            return "No se pudo consultar la base de conocimiento en este momento."
