@@ -138,7 +138,7 @@ services:
       - "traefik.http.routers.agentica-frontend.rule=Host(`vleeng.com`) && PathPrefix(`/agentica`)"
       - "traefik.http.routers.agentica-frontend.entrypoints=websecure"
       - "traefik.http.routers.agentica-frontend.tls.certresolver=letsencrypt"
-- "traefik.http.services.agentica-frontend.loadbalancer.server.port=5173"
+      - "traefik.http.services.agentica-frontend.loadbalancer.server.port=5173"
 
 volumes:
   postgres_data:
