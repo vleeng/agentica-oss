@@ -109,7 +109,7 @@ class LangChainRuntime(AgentRuntime):
 
         try:
             if self._is_simple_chain:
-                # Chain simple → stream token a token desde el LLM directamente
+                # Chain simple: LCEL propaga el streaming token a token desde el LLM
                 async for chunk in self._executor.astream(
                     {"input": input, "chat_history": chat_history}
                 ):
@@ -118,24 +118,26 @@ class LangChainRuntime(AgentRuntime):
                         collected_output.append(token)
                         yield token
             else:
-                # AgentExecutor → stream por eventos (no token-a-token, sino por pasos)
-                async for chunk in self._executor.astream(
-                    {"input": input, "chat_history": chat_history}
+                # AgentExecutor: astream() solo emite el output final completo.
+                # astream_events() sí expone tokens individuales del LLM en tiempo real.
+                async for event in self._executor.astream_events(
+                    {"input": input, "chat_history": chat_history},
+                    version="v2",
                 ):
-                    token = ""
-                    if isinstance(chunk, dict):
-                        # Skip intermediate step chunks silently (no output yet)
-                        if "actions" in chunk or "steps" in chunk:
-                            continue
-                        token = chunk.get("output") or chunk.get("token") or ""
-                    elif isinstance(chunk, str):
-                        token = chunk
-
+                    if event["event"] != "on_chat_model_stream":
+                        continue
+                    chunk = event["data"]["chunk"]
+                    # Los tool-call chunks tienen tool_call_chunks y content vacío:
+                    # son la selección de herramienta (JSON interno), no la respuesta final.
+                    # Solo emitimos chunks con contenido de texto real.
+                    if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
+                        continue
+                    token = getattr(chunk, "content", "") or ""
                     if token:
                         collected_output.append(token)
                         yield token
         except Exception as e:
-            logger.exception(f"[STREAM] Error during astream for session {session_id}: {e}")
+            logger.exception(f"[STREAM] Error during stream for session {session_id}: {e}")
             raise
 
         full_output = "".join(collected_output)
