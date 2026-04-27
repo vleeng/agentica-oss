@@ -81,7 +81,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik_public"
-      - "traefik.http.routers.agentica-api.rule=(Host(`app.vleeng.com`) || Host(`vleeng.com`)) && PathPrefix(`/api`)"
+      - "traefik.http.routers.agentica-api.rule=Host(`vleeng.com`) && PathPrefix(`/api`)"
       - "traefik.http.routers.agentica-api.entrypoints=websecure"
       - "traefik.http.routers.agentica-api.tls.certresolver=letsencrypt"
       - "traefik.http.services.agentica-api.loadbalancer.server.port=8000"
@@ -135,7 +135,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik_public"
-      - "traefik.http.routers.agentica-frontend.rule=(Host(`app.vleeng.com`) || Host(`vleeng.com`)) && PathPrefix(`/agentica`)"
+      - "traefik.http.routers.agentica-frontend.rule=Host(`vleeng.com`) && PathPrefix(`/agentica`)"
       - "traefik.http.routers.agentica-frontend.entrypoints=websecure"
       - "traefik.http.routers.agentica-frontend.tls.certresolver=letsencrypt"
       - "traefik.http.services.agentica-frontend.loadbalancer.server.port=5173"
