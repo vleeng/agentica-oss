@@ -3,7 +3,21 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   base: '/agentica/',
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'base-redirect',
+      configureServer(server) {
+        server.middlewares.use((req, _res, next) => {
+          // Normalize /agentica → /agentica/ so React Router loads correctly
+          if (req.url === '/agentica') {
+            req.url = '/agentica/'
+          }
+          next()
+        })
+      },
+    },
+  ],
   server: {
     port: 5173,
     allowedHosts: ['app.vleeng.com', 'vleeng.com', 'localhost'],

@@ -138,11 +138,7 @@ services:
       - "traefik.http.routers.agentica-frontend.rule=Host(`vleeng.com`) && PathPrefix(`/agentica`)"
       - "traefik.http.routers.agentica-frontend.entrypoints=websecure"
       - "traefik.http.routers.agentica-frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.agentica-frontend.middlewares=agentica-slash"
-      - "traefik.http.middlewares.agentica-slash.redirectregex.regex=^https://vleeng\\.com/agentica$$"
-      - "traefik.http.middlewares.agentica-slash.redirectregex.replacement=https://vleeng.com/agentica/"
-      - "traefik.http.middlewares.agentica-slash.redirectregex.permanent=true"
-      - "traefik.http.services.agentica-frontend.loadbalancer.server.port=5173"
+- "traefik.http.services.agentica-frontend.loadbalancer.server.port=5173"
 
 volumes:
   postgres_data:
