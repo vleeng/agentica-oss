@@ -172,6 +172,19 @@ class LangChainRuntime(AgentRuntime):
                 # Si el stream no emitió nada pero el agente sí produjo output,
                 # lo emitimos ahora (caso: iteration limit, sin "Final Answer:" en react, etc.)
                 if not collected_output and chain_final_output:
+                    # Filtrar el mensaje genérico de LangChain por iteration limit
+                    if "iteration limit" in chain_final_output.lower() or "time limit" in chain_final_output.lower():
+                        # Intentar recuperar el último Thought del react_buffer como respuesta
+                        if react_buffer:
+                            last_thought = react_buffer.rsplit("Thought:", 1)[-1].strip()
+                            # Quitar líneas de Action/Observation que quedaron
+                            last_thought = last_thought.split("\nAction:")[0].split("\nObservation:")[0].strip()
+                            if last_thought:
+                                chain_final_output = last_thought
+                            else:
+                                chain_final_output = "Lo siento, no pude completar la respuesta. Por favor intentá reformular la pregunta."
+                        else:
+                            chain_final_output = "Lo siento, no pude completar la respuesta. Por favor intentá reformular la pregunta."
                     collected_output.append(chain_final_output)
                     yield chain_final_output
         except Exception as e:
