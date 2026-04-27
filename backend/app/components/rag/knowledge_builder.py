@@ -102,22 +102,64 @@ class KnowledgeBuilderService:
 
         if source.startswith("http://") or source.startswith("https://"):
             if source.lower().endswith(".pdf"):
-                # PDF remoto — descargar primero
                 local_path = await self._download_file(source)
-                loader = PyPDFLoader(str(local_path))
+                return PyPDFLoader(str(local_path)).load()
             else:
-                loader = WebBaseLoader([source])
-            return loader.load()
+                return WebBaseLoader([source]).load()
 
         path = Path(source)
         if path.exists():
-            if path.suffix.lower() == ".pdf":
-                return PyPDFLoader(str(path)).load()
-            else:
-                return TextLoader(str(path), encoding="utf-8").load()
+            return self._load_file(path)
 
         # Tratar como texto directo
         return [Document(page_content=source, metadata={"source": "inline"})]
+
+    def _load_file(self, path: Path) -> list[Document]:
+        """Carga un archivo local según su extensión."""
+        suffix = path.suffix.lower()
+
+        if suffix == ".pdf":
+            return PyPDFLoader(str(path)).load()
+
+        if suffix in (".pptx", ".ppt"):
+            from pptx import Presentation
+            prs = Presentation(str(path))
+            slides_text = []
+            for i, slide in enumerate(prs.slides, 1):
+                texts = [
+                    shape.text.strip()
+                    for shape in slide.shapes
+                    if hasattr(shape, "text") and shape.text.strip()
+                ]
+                if texts:
+                    slides_text.append(f"[Slide {i}]\n" + "\n".join(texts))
+            content = "\n\n".join(slides_text)
+            return [Document(page_content=content, metadata={"source": str(path)})]
+
+        if suffix in (".docx", ".doc"):
+            import docx
+            doc = docx.Document(str(path))
+            content = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            return [Document(page_content=content, metadata={"source": str(path)})]
+
+        if suffix in (".xlsx", ".xls"):
+            import openpyxl
+            wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+            rows = []
+            for sheet in wb.worksheets:
+                for row in sheet.iter_rows(values_only=True):
+                    line = "\t".join(str(c) for c in row if c is not None)
+                    if line.strip():
+                        rows.append(line)
+            content = "\n".join(rows)
+            return [Document(page_content=content, metadata={"source": str(path)})]
+
+        if suffix == ".csv":
+            content = path.read_text(encoding="utf-8", errors="replace")
+            return [Document(page_content=content, metadata={"source": str(path)})]
+
+        # Fallback: texto plano
+        return TextLoader(str(path), encoding="utf-8", autodetect_encoding=True).load()
 
     async def _download_file(self, url: str) -> Path:
         tmp = Path(tempfile.gettempdir()) / hashlib.md5(url.encode()).hexdigest()
