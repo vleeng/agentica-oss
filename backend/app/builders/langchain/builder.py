@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from langchain.agents import AgentExecutor, create_openai_functions_agent, create_react_agent
 from langchain.tools import BaseTool
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from app.components.memory.adapters import (
@@ -53,10 +54,32 @@ class LangChainAgentBuilder:
         if extra_tools:
             tools.extend(extra_tools)
 
-        # 3. Prompt + 4. AgentExecutor según agent_type
+        # 3. Prompt + 4. Runtime según presencia de tools
         agent_type = fw.agent_type or "openai_functions"
+
+        # Memory adapter
+        memory = self._build_memory(design)
+
+        # ── Sin tools → chain simple (mucho más robusto y rápido) ────────────
+        if not tools:
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", design.system_prompt),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ])
+            chain = prompt | llm | StrOutputParser()
+            return LangChainRuntime(
+                executor=chain,
+                memory_adapter=memory,
+                spec=spec,
+                agent_id=str(design.agent_id),
+                session_factory=self._session_factory,
+                is_simple_chain=True,
+            )
+
+        # ── Con tools → AgentExecutor ────────────────────────────────────────
         if agent_type == "openai_functions":
-            prompt = self._build_prompt(design.system_prompt, has_tools=bool(tools))
+            prompt = self._build_prompt(design.system_prompt, has_tools=True)
             agent = create_openai_functions_agent(llm, tools, prompt)
         else:
             prompt = self._build_react_prompt(design.system_prompt)
@@ -71,9 +94,6 @@ class LangChainAgentBuilder:
             handle_parsing_errors=True,
             return_intermediate_steps=True,
         )
-
-        # 5. Memory adapter
-        memory = self._build_memory(design)
 
         return LangChainRuntime(
             executor=executor,

@@ -6,15 +6,44 @@ from app.services.llm_client import TextGenerationClient
 
 settings = get_settings()
 
-# Modelos que soportan function calling nativo (mejor performance que ReAct)
+# Modelos que soportan function calling nativo (mejor performance que ReAct).
+# Se compara contra el nombre *base* del modelo (sin prefijos de provider como "openai/").
 FUNCTION_CALLING_MODELS = {
+    # Anthropic
     "claude-opus-4-6",
     "claude-sonnet-4-6",
     "claude-haiku-4-5-20251001",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku-20241022",
+    "claude-3-opus-20240229",
+    "claude-3-haiku-20240307",
+    # OpenAI
     "gpt-4o",
     "gpt-4o-mini",
     "gpt-4-turbo",
+    "gpt-4",
+    "gpt-3.5-turbo",
+    # Gemini (via OpenRouter)
+    "gemini-2.0-flash",
+    "gemini-pro",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash",
+    # Mistral
+    "mistral-large",
+    "mistral-medium",
+    "mistral-small",
 }
+
+
+def _supports_function_calling(model: str) -> bool:
+    """True si el modelo soporta function-calling nativo.
+    Maneja prefijos de provider (ej. "openai/gpt-4o-mini" → "gpt-4o-mini").
+    """
+    normalized = model.lower().strip()
+    # Quitar prefijo "provider/" si existe (openrouter, openai, anthropic, google, etc.)
+    if "/" in normalized:
+        normalized = normalized.split("/", 1)[1]
+    return normalized in FUNCTION_CALLING_MODELS
 
 
 class FrameworkSelectorService:
@@ -35,7 +64,7 @@ class FrameworkSelectorService:
         if framework == "langchain":
             agent_type = (
                 "openai_functions"
-                if spec.model_params.model in FUNCTION_CALLING_MODELS
+                if _supports_function_calling(spec.model_params.model)
                 else "react"
             )
         else:

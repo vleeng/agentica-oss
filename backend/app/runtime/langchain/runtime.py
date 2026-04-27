@@ -20,23 +20,25 @@ GUARDRAIL_BLOCKED_MSG = "[Respuesta bloqueada por política de seguridad]"
 
 class LangChainRuntime(AgentRuntime):
     """
-    Wrappea un LangChain AgentExecutor.
+    Wrappea un LangChain AgentExecutor O un chain simple (prompt | llm | parser).
     Usado para AgentSpec.mode == 'single'.
     """
 
     def __init__(
         self,
-        executor: "AgentExecutor",
+        executor,                 # AgentExecutor | Runnable chain
         memory_adapter: "MemoryAdapter",
         spec: AgentSpec,
         agent_id: str = "",
         session_factory=None,
+        is_simple_chain: bool = False,
     ):
         self._executor = executor
         self._memory = memory_adapter
         self.spec = spec
         self._agent_id = agent_id
         self._session_factory = session_factory
+        self._is_simple_chain = is_simple_chain
 
     async def _load_guardrail_rules(self) -> list[dict]:
         if not self._agent_id or not self._session_factory:
@@ -60,13 +62,22 @@ class LangChainRuntime(AgentRuntime):
         # Carga el historial de la sesión
         chat_history = await self._memory.load(session_id)
 
-        result = await self._executor.ainvoke({
-            "input": input,
-            "chat_history": chat_history,
-        })
-
-        output: str = result.get("output", "")
-        steps: list = result.get("intermediate_steps", [])
+        if self._is_simple_chain:
+            # Chain simple: retorna string directamente
+            output = await self._executor.ainvoke({
+                "input": input,
+                "chat_history": chat_history,
+            })
+            if not isinstance(output, str):
+                output = str(output)
+            steps: list = []
+        else:
+            result = await self._executor.ainvoke({
+                "input": input,
+                "chat_history": chat_history,
+            })
+            output = result.get("output", "")
+            steps = result.get("intermediate_steps", [])
 
         # Post-invoke: guardrails de salida
         gr_out = await check_output(output, rules)
@@ -76,17 +87,11 @@ class LangChainRuntime(AgentRuntime):
         # Persiste el turno en memoria
         await self._memory.save(session_id, input, output)
 
-        tokens_in = 0
-        tokens_out = 0
-        if cb := result.get("__run", {}).get("callback_manager"):
-            tokens_in = getattr(cb, "prompt_tokens", 0)
-            tokens_out = getattr(cb, "completion_tokens", 0)
-
         return AgentResponse(
             output=output,
             steps=[{"tool": str(s[0]), "result": str(s[1])} for s in steps],
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
+            tokens_in=0,
+            tokens_out=0,
             latency_ms=(time.monotonic() - start) * 1000,
             session_id=session_id,
         )
@@ -103,23 +108,32 @@ class LangChainRuntime(AgentRuntime):
         collected_output = []
 
         try:
-            async for chunk in self._executor.astream(
-                {"input": input, "chat_history": chat_history}
-            ):
-                token = ""
-                if isinstance(chunk, dict):
-                    # AgentExecutor yields intermediate steps AND final output
-                    # Final output dict has "output" key; intermediate steps have "actions"/"steps"
-                    token = chunk.get("output") or chunk.get("token") or ""
-                    if not token and "actions" in chunk:
-                        # intermediate step — skip silently (no content to stream yet)
-                        continue
-                elif isinstance(chunk, str):
-                    token = chunk
+            if self._is_simple_chain:
+                # Chain simple → stream token a token desde el LLM directamente
+                async for chunk in self._executor.astream(
+                    {"input": input, "chat_history": chat_history}
+                ):
+                    token = chunk if isinstance(chunk, str) else ""
+                    if token:
+                        collected_output.append(token)
+                        yield token
+            else:
+                # AgentExecutor → stream por eventos (no token-a-token, sino por pasos)
+                async for chunk in self._executor.astream(
+                    {"input": input, "chat_history": chat_history}
+                ):
+                    token = ""
+                    if isinstance(chunk, dict):
+                        # Skip intermediate step chunks silently (no output yet)
+                        if "actions" in chunk or "steps" in chunk:
+                            continue
+                        token = chunk.get("output") or chunk.get("token") or ""
+                    elif isinstance(chunk, str):
+                        token = chunk
 
-                if token:
-                    collected_output.append(token)
-                    yield token
+                    if token:
+                        collected_output.append(token)
+                        yield token
         except Exception as e:
             logger.exception(f"[STREAM] Error during astream for session {session_id}: {e}")
             raise
