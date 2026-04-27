@@ -120,6 +120,16 @@ class LangChainRuntime(AgentRuntime):
             else:
                 # AgentExecutor: astream() solo emite el output final completo.
                 # astream_events() sí expone tokens individuales del LLM en tiempo real.
+                #
+                # Para openai_functions: los tool-call chunks tienen content="" y
+                # tool_call_chunks=[...], así que solo el texto de la respuesta final pasa.
+                #
+                # Para react: el LLM produce "Thought:/Action:/Final Answer:" como texto.
+                # Acumulamos y solo emitimos lo que viene después de "Final Answer:".
+                is_react = not hasattr(self._executor.agent, "functions")
+                react_buffer = ""
+                react_final_found = False
+
                 async for event in self._executor.astream_events(
                     {"input": input, "chat_history": chat_history},
                     version="v2",
@@ -127,13 +137,25 @@ class LangChainRuntime(AgentRuntime):
                     if event["event"] != "on_chat_model_stream":
                         continue
                     chunk = event["data"]["chunk"]
-                    # Los tool-call chunks tienen tool_call_chunks y content vacío:
-                    # son la selección de herramienta (JSON interno), no la respuesta final.
-                    # Solo emitimos chunks con contenido de texto real.
+                    # Saltar chunks que son llamadas a herramientas (no texto de respuesta)
                     if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
                         continue
                     token = getattr(chunk, "content", "") or ""
-                    if token:
+                    if not token:
+                        continue
+
+                    if is_react and not react_final_found:
+                        # Acumular hasta encontrar "Final Answer:"
+                        react_buffer += token
+                        marker = "Final Answer:"
+                        if marker in react_buffer:
+                            react_final_found = True
+                            after = react_buffer.split(marker, 1)[1]
+                            if after:
+                                collected_output.append(after)
+                                yield after
+                        # Si no encontramos el marcador, no emitimos nada aún
+                    else:
                         collected_output.append(token)
                         yield token
         except Exception as e:

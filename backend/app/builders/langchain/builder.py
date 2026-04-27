@@ -55,7 +55,14 @@ class LangChainAgentBuilder:
             tools.extend(extra_tools)
 
         # 3. Prompt + 4. Runtime según presencia de tools
-        agent_type = fw.agent_type or "openai_functions"
+        # Re-evaluar siempre el agent_type según capacidades del modelo actual,
+        # ignorando el valor guardado en el design (puede ser stale de antes del fix).
+        from app.services.selector.framework_selector import _supports_function_calling
+        agent_type = (
+            "openai_functions"
+            if _supports_function_calling(spec.model_params.model)
+            else (fw.agent_type or "react")
+        )
 
         # Memory adapter
         memory = self._build_memory(design)
