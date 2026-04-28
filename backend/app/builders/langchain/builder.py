@@ -70,7 +70,7 @@ class LangChainAgentBuilder:
         # ── Sin tools → chain simple (mucho más robusto y rápido) ────────────
         if not tools:
             prompt = ChatPromptTemplate.from_messages([
-                ("system", design.system_prompt),
+                ("system", self._escape_prompt(design.system_prompt)),
                 MessagesPlaceholder("chat_history"),
                 ("human", "{input}"),
             ])
@@ -110,9 +110,14 @@ class LangChainAgentBuilder:
             session_factory=self._session_factory,
         )
 
+    @staticmethod
+    def _escape_prompt(system_prompt: str) -> str:
+        """Escapa llaves del system prompt para que LangChain no las interprete como variables."""
+        return system_prompt.replace("{", "{{").replace("}", "}}")
+
     def _build_prompt(self, system_prompt: str, has_tools: bool) -> ChatPromptTemplate:
         messages = [
-            ("system", system_prompt),
+            ("system", self._escape_prompt(system_prompt)),
             MessagesPlaceholder("chat_history"),
             ("human", "{input}"),
         ]
@@ -124,7 +129,7 @@ class LangChainAgentBuilder:
         """Prompt para create_react_agent — requiere {tools}, {tool_names}, {input} y {agent_scratchpad}.
         Nota: agent_scratchpad es un string en react (no lista), por eso va en human message."""
         react_system = (
-            f"{system_prompt}\n\n"
+            f"{self._escape_prompt(system_prompt)}\n\n"
             "Tenés acceso a las siguientes herramientas:\n\n"
             "{tools}\n\n"
             "REGLAS ESTRICTAS — seguí EXACTAMENTE este formato, sin excepciones:\n\n"
