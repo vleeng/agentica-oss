@@ -1,4 +1,4 @@
-import { Gauge, Play, RefreshCcw, Rocket, Sparkles, Wand2 } from 'lucide-react'
+import { ExternalLink, Gauge, Play, RefreshCcw, Rocket, Sparkles, Wand2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import type { AgentDesign } from '../../types/agent'
@@ -229,6 +229,18 @@ export function AgentMonitor({ design, onOptimized }: Props) {
                 <Rocket className="h-4 w-4" />
                 {isDeployed ? 'Desplegado ✓' : phase === 'deploying' ? 'Desplegando…' : 'Deploy'}
               </Button>
+
+              {isDeployed && (
+                <a
+                  href={`${import.meta.env.BASE_URL}c/${design.agent_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Abrir chat
+                </a>
+              )}
             </div>
           </CardContent>
         </Card>
