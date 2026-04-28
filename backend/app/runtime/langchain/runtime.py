@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import warnings
 import time
 from typing import TYPE_CHECKING, AsyncIterator
@@ -17,6 +18,22 @@ if TYPE_CHECKING:
     from app.components.memory.base import MemoryAdapter
 
 GUARDRAIL_BLOCKED_MSG = "[Respuesta bloqueada por política de seguridad]"
+
+# Patrones XML que algunos modelos emiten como texto en lugar de function calls
+_XML_TOOL_PATTERNS = re.compile(
+    r'<(?:minimax:|)tool_call>.*?</(?:minimax:|)tool_call>'
+    r'|<invoke(?:\s[^>]*)?>.*?</invoke>'
+    r'|<parameter(?:\s[^>]*)?>.*?</parameter>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _strip_xml_tool_calls(text: str) -> str:
+    """Elimina bloques XML de tool calls que algunos modelos emiten como texto plano."""
+    cleaned = _XML_TOOL_PATTERNS.sub('', text)
+    # Comprimir espacios y saltos de línea múltiples
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
 
 
 class LangChainRuntime(AgentRuntime):
@@ -193,8 +210,10 @@ class LangChainRuntime(AgentRuntime):
                 # Si no usó tools y la respuesta está en el pre_tool_buffer (respuesta directa)
                 if not collected_output and not tool_was_used and pre_tool_buffer:
                     content = "".join(pre_tool_buffer)
-                    collected_output.append(content)
-                    yield content
+                    content = _strip_xml_tool_calls(content)
+                    if content:
+                        collected_output.append(content)
+                        yield content
 
                 # Si el stream no emitió nada pero el agente sí produjo output,
                 # lo emitimos ahora (caso: iteration limit, sin "Final Answer:" en react, etc.)
