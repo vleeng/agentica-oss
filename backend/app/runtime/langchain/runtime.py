@@ -127,6 +127,11 @@ class LangChainRuntime(AgentRuntime):
                 react_buffer = ""
                 react_final_found = False
                 chain_final_output: str = ""
+                # Para agentes con function-calling: buffear tokens pre-tool
+                # y solo emitir la respuesta final (después de que tools ejecutaron)
+                pre_tool_buffer: list[str] = []
+                tool_was_used = False
+                in_final_response = False
 
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", message=".*beta.*")
@@ -138,8 +143,15 @@ class LangChainRuntime(AgentRuntime):
                 async for event in event_stream:
                     kind = event["event"]
 
+                    if kind == "on_tool_start":
+                        tool_was_used = True
+                        pre_tool_buffer.clear()   # descartar razonamiento previo
+
+                    elif kind == "on_tool_end":
+                        in_final_response = True  # próximos tokens = respuesta final
+
                     # ── Tokens del LLM ───────────────────────────────────────
-                    if kind == "on_chat_model_stream":
+                    elif kind == "on_chat_model_stream":
                         chunk = event["data"]["chunk"]
                         if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
                             continue  # selección de herramienta, no respuesta final
@@ -155,7 +167,16 @@ class LangChainRuntime(AgentRuntime):
                                 if after:
                                     collected_output.append(after)
                                     yield after
+                        elif not is_react:
+                            if in_final_response:
+                                # Post-tool: esta es la respuesta final
+                                collected_output.append(token)
+                                yield token
+                            else:
+                                # Pre-tool: buffear (puede ser razonamiento interno)
+                                pre_tool_buffer.append(token)
                         else:
+                            # ReAct con Final Answer ya encontrado
                             collected_output.append(token)
                             yield token
 
@@ -168,6 +189,12 @@ class LangChainRuntime(AgentRuntime):
                             chain_final_output = raw.get("output", "") or ""
                         elif isinstance(raw, str):
                             chain_final_output = raw
+
+                # Si no usó tools y la respuesta está en el pre_tool_buffer (respuesta directa)
+                if not collected_output and not tool_was_used and pre_tool_buffer:
+                    content = "".join(pre_tool_buffer)
+                    collected_output.append(content)
+                    yield content
 
                 # Si el stream no emitió nada pero el agente sí produjo output,
                 # lo emitimos ahora (caso: iteration limit, sin "Final Answer:" en react, etc.)
