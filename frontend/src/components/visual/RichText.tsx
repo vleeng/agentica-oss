@@ -1,64 +1,164 @@
 import type { ReactNode } from 'react'
 
-function renderInline(text: string) {
-  const parts = text.split(/(`[^`]+`)/g)
-  return parts.map((part, index) => {
-    if (part.startsWith('`') && part.endsWith('`')) {
-      return (
-        <code key={index} className="rounded bg-slate-900/90 px-1.5 py-0.5 text-[0.85em] text-white">
-          {part.slice(1, -1)}
-        </code>
-      )
-    }
-
-    const boldParts = part.split(/(\*\*[^*]+\*\*)/g)
-    return boldParts.map((boldPart, boldIndex) => {
-      if (boldPart.startsWith('**') && boldPart.endsWith('**')) {
-        return <strong key={`${index}-${boldIndex}`}>{boldPart.slice(2, -2)}</strong>
-      }
-      return <span key={`${index}-${boldIndex}`}>{boldPart}</span>
-    })
+// ── Inline rendering (bold, italic, inline-code) ──────────────────────────────
+function renderInline(text: string): ReactNode[] {
+  // Split on inline-code first, then bold, then italic
+  const segments = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g)
+  return segments.map((seg, i) => {
+    if (seg.startsWith('`') && seg.endsWith('`'))
+      return <code key={i} className="rounded bg-slate-900/90 px-1.5 py-0.5 text-[0.85em] text-white font-mono">{seg.slice(1, -1)}</code>
+    if (seg.startsWith('**') && seg.endsWith('**'))
+      return <strong key={i}>{seg.slice(2, -2)}</strong>
+    if (seg.startsWith('*') && seg.endsWith('*'))
+      return <em key={i}>{seg.slice(1, -1)}</em>
+    return <span key={i}>{seg}</span>
   })
 }
 
-export function RichText({ content }: { content: string }) {
-  const blocks = content.split('\n')
-  const nodes: ReactNode[] = []
-  let listItems: string[] = []
+// ── Table parser ─────────────────────────────────────────────────────────────
+function parseTable(lines: string[]): ReactNode {
+  const rows = lines.map(l =>
+    l.replace(/^\||\|$/g, '').split('|').map(c => c.trim())
+  )
+  // Second row is separator (---|---); remove it
+  const [header, , ...body] = rows
+  return (
+    <div key={Math.random()} className="overflow-x-auto my-3">
+      <table className="min-w-full border-collapse text-sm">
+        <thead>
+          <tr className="bg-slate-100">
+            {header.map((cell, ci) => (
+              <th key={ci} className="border border-slate-300 px-3 py-2 text-left font-semibold text-slate-700">
+                {renderInline(cell)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.map((row, ri) => (
+            <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+              {row.map((cell, ci) => (
+                <td key={ci} className="border border-slate-300 px-3 py-2 text-slate-700">
+                  {renderInline(cell)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
-  const flushList = () => {
-    if (!listItems.length) return
+// ── Main component ────────────────────────────────────────────────────────────
+export function RichText({ content }: { content: string }) {
+  const lines = content.split('\n')
+  const nodes: ReactNode[] = []
+
+  let bulletItems: string[] = []
+  let orderedItems: string[] = []
+  let tableLines: string[] = []
+  let key = 0
+
+  const flushBullet = () => {
+    if (!bulletItems.length) return
     nodes.push(
-      <ul key={`list-${nodes.length}`} className="list-disc space-y-1 pl-5">
-        {listItems.map((item, index) => (
-          <li key={index}>{renderInline(item)}</li>
-        ))}
+      <ul key={key++} className="list-disc space-y-1 pl-5 my-2">
+        {bulletItems.map((item, i) => <li key={i} className="text-sm leading-7">{renderInline(item)}</li>)}
       </ul>
     )
-    listItems = []
+    bulletItems = []
   }
 
-  for (const raw of blocks) {
-    const line = raw.trimEnd()
-    if (!line.trim()) {
-      flushList()
-      continue
-    }
-
-    if (line.startsWith('- ') || line.startsWith('* ')) {
-      listItems.push(line.slice(2))
-      continue
-    }
-
-    flushList()
+  const flushOrdered = () => {
+    if (!orderedItems.length) return
     nodes.push(
-      <p key={`p-${nodes.length}`} className="whitespace-pre-wrap">
+      <ol key={key++} className="list-decimal space-y-1 pl-5 my-2">
+        {orderedItems.map((item, i) => <li key={i} className="text-sm leading-7">{renderInline(item)}</li>)}
+      </ol>
+    )
+    orderedItems = []
+  }
+
+  const flushTable = () => {
+    if (tableLines.length < 3) { tableLines = []; return }
+    nodes.push(parseTable(tableLines))
+    tableLines = []
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]
+    const line = raw.trimEnd()
+
+    // ── Table row ──
+    if (line.startsWith('|')) {
+      flushBullet(); flushOrdered()
+      tableLines.push(line)
+      continue
+    } else {
+      flushTable()
+    }
+
+    // ── Horizontal rule ──
+    if (/^[-*_]{3,}$/.test(line.trim())) {
+      flushBullet(); flushOrdered()
+      nodes.push(<hr key={key++} className="my-3 border-slate-200" />)
+      continue
+    }
+
+    // ── Headings ──
+    const h3 = line.match(/^###\s+(.+)/)
+    const h2 = line.match(/^##\s+(.+)/)
+    const h1 = line.match(/^#\s+(.+)/)
+    if (h3) {
+      flushBullet(); flushOrdered()
+      nodes.push(<h3 key={key++} className="text-sm font-semibold text-slate-800 mt-4 mb-1">{renderInline(h3[1])}</h3>)
+      continue
+    }
+    if (h2) {
+      flushBullet(); flushOrdered()
+      nodes.push(<h2 key={key++} className="text-base font-semibold text-slate-900 mt-4 mb-1">{renderInline(h2[1])}</h2>)
+      continue
+    }
+    if (h1) {
+      flushBullet(); flushOrdered()
+      nodes.push(<h1 key={key++} className="text-lg font-bold text-slate-900 mt-4 mb-1">{renderInline(h1[1])}</h1>)
+      continue
+    }
+
+    // ── Bullet list ──
+    if (line.startsWith('- ') || line.startsWith('* ')) {
+      flushOrdered()
+      bulletItems.push(line.slice(2))
+      continue
+    }
+
+    // ── Ordered list ──
+    const orderedMatch = line.match(/^\d+\.\s+(.+)/)
+    if (orderedMatch) {
+      flushBullet()
+      orderedItems.push(orderedMatch[1])
+      continue
+    }
+
+    // ── Empty line ──
+    if (!line.trim()) {
+      flushBullet(); flushOrdered()
+      continue
+    }
+
+    // ── Regular paragraph ──
+    flushBullet(); flushOrdered()
+    nodes.push(
+      <p key={key++} className="text-sm leading-7 whitespace-pre-wrap">
         {renderInline(line)}
       </p>
     )
   }
 
-  flushList()
+  flushBullet()
+  flushOrdered()
+  flushTable()
 
-  return <div className="space-y-3 text-sm leading-7">{nodes}</div>
+  return <div className="space-y-1">{nodes}</div>
 }

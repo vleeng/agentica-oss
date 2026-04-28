@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { agentsApi, createAgentWebSocket } from '../../lib/api'
+import { RichText } from '../visual/RichText'
 import { Bot, Send } from 'lucide-react'
 
 interface Props {
@@ -158,7 +159,14 @@ export function StandaloneChat({ agentId }: Props) {
                 ? 'bg-violet-600 text-white rounded-br-sm'
                 : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
             }`}>
-              {msg.content || (msg.streaming ? <span className="animate-pulse">●</span> : '')}
+              {msg.role === 'user'
+                ? <p className="whitespace-pre-wrap">{msg.content}</p>
+                : msg.content
+                  ? <RichText content={msg.content} />
+                  : msg.streaming
+                  ? <span className="animate-pulse">●</span>
+                  : null
+              }
             </div>
           </div>
         ))}
