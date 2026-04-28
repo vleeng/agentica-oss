@@ -8,42 +8,30 @@ settings = get_settings()
 
 # Modelos que soportan function calling nativo (mejor performance que ReAct).
 # Se compara contra el nombre *base* del modelo (sin prefijos de provider como "openai/").
-FUNCTION_CALLING_MODELS = {
-    # Anthropic
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5-20251001",
-    "claude-3-5-sonnet-20241022",
-    "claude-3-5-haiku-20241022",
-    "claude-3-opus-20240229",
-    "claude-3-haiku-20240307",
-    # OpenAI
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "gpt-4",
-    "gpt-3.5-turbo",
-    # Gemini (via OpenRouter)
-    "gemini-2.0-flash",
-    "gemini-pro",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
-    # Mistral
-    "mistral-large",
-    "mistral-medium",
-    "mistral-small",
+# Modelos que NO soportan function calling — deben usar ReAct.
+# La mayoría de modelos modernos SÍ soportan function calling, por lo que
+# la estrategia es: function calling por defecto, ReAct solo para estos casos.
+REACT_ONLY_MODELS = {
+    # Llama 2 (sin function calling nativo)
+    "llama-2-7b",
+    "llama-2-13b",
+    "llama-2-70b",
+    # Modelos muy viejos
+    "gpt-3.5-turbo-instruct",
+    "text-davinci-003",
 }
 
 
 def _supports_function_calling(model: str) -> bool:
     """True si el modelo soporta function-calling nativo.
-    Maneja prefijos de provider (ej. "openai/gpt-4o-mini" → "gpt-4o-mini").
+    Por defecto True — casi todos los modelos modernos lo soportan.
+    Solo retorna False para modelos explícitamente incompatibles.
     """
     normalized = model.lower().strip()
     # Quitar prefijo "provider/" si existe (openrouter, openai, anthropic, google, etc.)
     if "/" in normalized:
         normalized = normalized.split("/", 1)[1]
-    return normalized in FUNCTION_CALLING_MODELS
+    return normalized not in REACT_ONLY_MODELS
 
 
 class FrameworkSelectorService:
