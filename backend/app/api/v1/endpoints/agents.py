@@ -359,6 +359,11 @@ async def deploy_agent(
     _, design = result
     await repo.update_agent_status(agent_id, "deployed")
 
+    # Actualizar el status en el RuntimeStore para que getDesign lo refleje
+    design.status = "deployed"
+    store = get_runtime_store()
+    await store.save_design(agent_id, design)
+
     logger.info(f"[DEPLOY] agent_id={agent_id} tenant={ctx.tenant_id} → deployed")
 
     return {

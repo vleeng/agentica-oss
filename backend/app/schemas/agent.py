@@ -159,6 +159,7 @@ class AgentDesign(BaseModel):
     test_cases: list[dict] = Field(default_factory=list) # mín 5, generados por LLM
     mermaid_diagram: str = ""
     version: int = 1
+    status: str = "draft"  # draft | building | testing | deployed | archived
 
 
 # ── AgentResponse — output unificado del AgentRuntime ───────────────────────

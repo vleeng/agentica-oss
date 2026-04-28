@@ -31,7 +31,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [evalReport, setEvalReport] = useState<any>(null)
   const [optimizeResult, setOptimizeResult] = useState<any>(null)
-  const [isDeployed, setIsDeployed] = useState(false)
+  const [isDeployed, setIsDeployed] = useState(design.status === 'deployed')
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState<TabId>('sandbox')
   const [currentDesign, setCurrentDesign] = useState<AgentDesign>(design)

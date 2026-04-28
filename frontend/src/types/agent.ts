@@ -109,6 +109,7 @@ export interface AgentDesign {
   }>
   mermaid_diagram: string
   version: number
+  status?: string  // draft | building | testing | deployed | archived
 }
 
 export interface AgentResponse {
