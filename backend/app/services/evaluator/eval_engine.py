@@ -56,7 +56,7 @@ class EvalEngineService:
             redis_client=self._redis,
             session_factory=self._session_factory,
         )
-        runtime = factory.build(design)
+        runtime = await factory.build(design)
 
         test_cases = design.test_cases[:max_cases]
         if not test_cases:
