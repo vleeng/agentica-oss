@@ -325,7 +325,7 @@ class AgentRepository:
                 "build_id": build_id,
                 "score":    report.get("overall_score", 0),
                 "passed":   report.get("pass_threshold", False),
-                "report":   json.dumps(report),
+                "report":   json.dumps(report, default=str),
             },
         )
         await self._db.commit()

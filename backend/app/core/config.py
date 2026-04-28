@@ -36,9 +36,9 @@ class Settings(BaseSettings):
     builder_api_key: Optional[str] = None
     builder_temperature: float = 0.2                 # baja temp para generación de código
 
-    # Celery
-    celery_broker: str = "redis://localhost:6379/1"
-    celery_backend: str = "redis://localhost:6379/2"
+    # Celery — defaults apuntan al container redis en la red Docker
+    celery_broker: str = "redis://redis:6379/1"
+    celery_backend: str = "redis://redis:6379/2"
 
     # CORS
     cors_origins: str | list[str] = "http://localhost:5173"
