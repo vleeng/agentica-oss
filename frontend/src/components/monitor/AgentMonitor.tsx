@@ -17,7 +17,7 @@ interface Props {
   onOptimized?: (newDesign: AgentDesign) => void
 }
 
-type Phase = 'idle' | 'building' | 'ready' | 'evaluating' | 'optimizing'
+type Phase = 'idle' | 'building' | 'ready' | 'evaluating' | 'optimizing' | 'deploying'
 type TabId = 'sandbox' | 'eval' | 'design' | 'knowledge' | 'config' | 'edit'
 
 interface ChatMessage {
@@ -31,6 +31,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [evalReport, setEvalReport] = useState<any>(null)
   const [optimizeResult, setOptimizeResult] = useState<any>(null)
+  const [isDeployed, setIsDeployed] = useState(false)
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState<TabId>('sandbox')
   const [currentDesign, setCurrentDesign] = useState<AgentDesign>(design)
@@ -145,6 +146,19 @@ export function AgentMonitor({ design, onOptimized }: Props) {
     }
   }
 
+  const handleDeploy = async () => {
+    setPhase('deploying')
+    setError('')
+    try {
+      await agentsApi.deploy(design.agent_id)
+      setIsDeployed(true)
+    } catch (e: any) {
+      setError(e.response?.data?.detail || 'No se pudo desplegar el agente.')
+    } finally {
+      setPhase('ready')
+    }
+  }
+
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'sandbox', label: 'Sandbox' },
     { id: 'eval', label: 'Evaluación' },
@@ -169,8 +183,10 @@ export function AgentMonitor({ design, onOptimized }: Props) {
           <CardContent className="flex h-full flex-col justify-between gap-6 p-8">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge tone={phase === 'ready' ? 'green' : phase === 'building' ? 'blue' : phase === 'evaluating' ? 'amber' : 'violet'}>
-                  {phase === 'ready'
+                <Badge tone={isDeployed ? 'green' : phase === 'ready' ? 'green' : phase === 'building' ? 'blue' : phase === 'evaluating' ? 'amber' : 'violet'}>
+                  {isDeployed
+                    ? 'Desplegado'
+                    : phase === 'ready'
                     ? 'Runtime listo'
                     : phase === 'building'
                     ? 'Construyendo'
@@ -178,6 +194,8 @@ export function AgentMonitor({ design, onOptimized }: Props) {
                     ? 'Evaluando'
                     : phase === 'optimizing'
                     ? 'Optimizando'
+                    : phase === 'deploying'
+                    ? 'Desplegando'
                     : 'Pendiente'}
                 </Badge>
                 <Badge tone="slate">{design.framework.framework}</Badge>
@@ -203,9 +221,13 @@ export function AgentMonitor({ design, onOptimized }: Props) {
                 <Wand2 className="h-4 w-4" />
                 Optimizar
               </Button>
-              <Button variant="secondary" disabled>
+              <Button
+                onClick={handleDeploy}
+                variant={isDeployed ? 'secondary' : 'default'}
+                disabled={phase !== 'ready' || isDeployed}
+              >
                 <Rocket className="h-4 w-4" />
-                Deploy
+                {isDeployed ? 'Desplegado ✓' : phase === 'deploying' ? 'Desplegando…' : 'Deploy'}
               </Button>
             </div>
           </CardContent>

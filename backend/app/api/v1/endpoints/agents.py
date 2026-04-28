@@ -338,6 +338,37 @@ async def update_agent(
     return new_design
 
 
+# ── POST /{id}/deploy ─────────────────────────────────────────────────────────
+
+@router.post("/{agent_id}/deploy")
+async def deploy_agent(
+    agent_id: str,
+    ctx: CurrentContext,
+    repo: TenantRepo,
+) -> dict:
+    """
+    Marca el agente como 'deployed' (producción).
+    Requiere que el agente haya sido evaluado y tenga build en estado 'ready'.
+    """
+    ctx.require_developer()
+
+    result = await get_runtime_store().get(agent_id)
+    if result is None:
+        raise HTTPException(404, "Agente no encontrado — hacé un build primero")
+
+    _, design = result
+    await repo.update_agent_status(agent_id, "deployed")
+
+    logger.info(f"[DEPLOY] agent_id={agent_id} tenant={ctx.tenant_id} → deployed")
+
+    return {
+        "agent_id": agent_id,
+        "status":   "deployed",
+        "version":  design.version,
+        "message":  "Agente desplegado correctamente.",
+    }
+
+
 # ── DELETE /{id} ─────────────────────────────────────────────────────────────
 
 @router.delete("/{agent_id}", status_code=204)
