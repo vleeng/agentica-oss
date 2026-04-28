@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from langchain.agents import AgentExecutor, create_openai_functions_agent, create_react_agent
+from langchain.agents import AgentExecutor, create_react_agent, create_tool_calling_agent
 from langchain.tools import BaseTool
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -87,7 +87,12 @@ class LangChainAgentBuilder:
         # ── Con tools → AgentExecutor ────────────────────────────────────────
         if agent_type == "openai_functions":
             prompt = self._build_prompt(design.system_prompt, has_tools=True)
-            agent = create_openai_functions_agent(llm, tools, prompt)
+            try:
+                agent = create_tool_calling_agent(llm, tools, prompt)
+            except Exception:
+                # Fallback a react si el modelo no soporta tool calling
+                prompt = self._build_react_prompt(design.system_prompt)
+                agent = create_react_agent(llm, tools, prompt)
         else:
             prompt = self._build_react_prompt(design.system_prompt)
             agent = create_react_agent(llm, tools, prompt)
