@@ -1,6 +1,6 @@
 # docker-compose.prod.yml
 # Stack de producción AGENTICA para VPS Axenova
-# Compatible con Traefik ya instalado en axenova.com
+# Compatible con Traefik ya instalado en el dominio base
 #
 # Requisitos en el VPS:
 #   - Red externa "traefik_public" ya existente (la de Axenova)
@@ -69,7 +69,7 @@ services:
       ADMIN_PASSWORD:    ${ADMIN_PASSWORD}
       ENCRYPTION_KEY:    ${ENCRYPTION_KEY}
       ENVIRONMENT:       production
-      CORS_ORIGINS:      '${CORS_ORIGINS:-["https://www.${BASE_DOMAIN:-axenova.com}"]}'
+      CORS_ORIGINS:      '${CORS_ORIGINS:-["https://${BASE_DOMAIN:-axenova.com}"]}'
       BASE_DOMAIN:       ${BASE_DOMAIN:-axenova.com}
       BUILDER_PROVIDER:  ${BUILDER_PROVIDER:-anthropic}
       BUILDER_MODEL:     ${BUILDER_MODEL:-claude-sonnet-4-5}
@@ -94,8 +94,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik_public"
-      # API — www.axenova.com/agentica/api
-      - "traefik.http.routers.agentica-api.rule=Host(`www.${BASE_DOMAIN:-axenova.com}`) && PathPrefix(`/agentica/api`)"
+      # API — axenova.com/agentica/api
+      - "traefik.http.routers.agentica-api.rule=Host(`${BASE_DOMAIN:-axenova.com}`) && PathPrefix(`/agentica/api`)"
       - "traefik.http.routers.agentica-api.entrypoints=websecure"
       - "traefik.http.routers.agentica-api.tls.certresolver=letsencrypt"
       - "traefik.http.services.agentica-api.loadbalancer.server.port=8000"
@@ -142,14 +142,14 @@ services:
       dockerfile: Dockerfile.prod
       args:
         VITE_API_URL: ${VITE_API_URL:-/agentica}
-        VITE_WS_URL: ${VITE_WS_URL:-wss://www.${BASE_DOMAIN:-axenova.com}/agentica}
+        VITE_WS_URL: ${VITE_WS_URL:-wss://${BASE_DOMAIN:-axenova.com}/agentica}
     restart: unless-stopped
     networks:
       - traefik_public
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik_public"
-      - "traefik.http.routers.agentica-ui.rule=Host(`www.${BASE_DOMAIN:-axenova.com}`) && PathPrefix(`/agentica`)"
+      - "traefik.http.routers.agentica-ui.rule=Host(`${BASE_DOMAIN:-axenova.com}`) && PathPrefix(`/agentica`)"
       - "traefik.http.routers.agentica-ui.entrypoints=websecure"
       - "traefik.http.routers.agentica-ui.tls.certresolver=letsencrypt"
       - "traefik.http.services.agentica-ui.loadbalancer.server.port=80"

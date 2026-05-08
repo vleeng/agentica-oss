@@ -58,9 +58,9 @@ sudo nano /opt/agentica/.env
 # - ADMIN_PASSWORD
 # - ENCRYPTION_KEY
 # - BASE_DOMAIN=axenova.com
-# - CORS_ORIGINS='["https://www.axenova.com"]'
+# - CORS_ORIGINS='["https://axenova.com"]'
 # - VITE_API_URL=/agentica
-# - VITE_WS_URL=wss://www.axenova.com/agentica
+# - VITE_WS_URL=wss://axenova.com/agentica
 
 # Deploys siguientes
 cd /opt/agentica
