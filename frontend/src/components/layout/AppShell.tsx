@@ -2,6 +2,7 @@ import {
   BarChart3,
   BookOpen,
   BrainCircuit,
+  Building2,
   Code2,
   ExternalLink,
   KeyRound,
@@ -24,6 +25,7 @@ const navItems = [
   { to: '/', label: 'Agentes', end: true, icon: <LayoutDashboard className="h-4 w-4" /> },
   { to: '/wizard', label: 'Crear agente', icon: <Wand2 className="h-4 w-4" /> },
   { to: '/usage', label: 'Observabilidad', icon: <BarChart3 className="h-4 w-4" /> },
+  { to: '/access', label: 'Accesos', icon: <Building2 className="h-4 w-4" /> },
   { to: '/providers', label: 'Boveda IA', icon: <Shield className="h-4 w-4" /> },
   { to: '/custom-tools', label: 'Mis tools', icon: <Code2 className="h-4 w-4" /> },
   { to: '/keys', label: 'API Keys', icon: <KeyRound className="h-4 w-4" /> },
@@ -42,10 +44,16 @@ export function AppShell() {
   const location = useLocation()
   const role = getAuthRole()
   const isViewer = role === 'viewer'
+  const isOwner = role === 'owner'
 
   const visibleNavItems = useMemo(
-    () => (isViewer ? navItems.filter((item) => ['/', '/usage'].includes(item.to)) : navItems),
-    [isViewer]
+    () =>
+      navItems.filter((item) => {
+        if (isViewer) return ['/', '/usage'].includes(item.to)
+        if (item.to === '/access') return isOwner
+        return true
+      }),
+    [isOwner, isViewer]
   )
   const visibleLibraryItems = useMemo(() => (isViewer ? [] : libraryItems), [isViewer])
 

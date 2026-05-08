@@ -107,6 +107,33 @@ export interface TenantUser {
   created_at: string
 }
 
+export interface AuthMe {
+  user_id: string
+  tenant_id: string
+  role: 'owner' | 'developer' | 'viewer'
+}
+
+export interface TenantRegistrationPayload {
+  body: {
+    name: string
+    slug: string
+    plan_id?: string
+  }
+  user: {
+    email: string
+    password: string
+    full_name?: string
+  }
+}
+
+export interface TenantRegistrationResult {
+  access_token: string
+  token_type: string
+  tenant_id: string
+  user_id: string
+  role: string
+}
+
 export const authApi = {
   register: (email: string, password: string) =>
     api.post('/auth/register', { email, password }).then((r) => r.data),
@@ -114,7 +141,7 @@ export const authApi = {
   login: (email: string, password: string) =>
     api.post('/auth/login', { email, password }).then((r) => r.data),
 
-  me: () => api.get('/auth/me').then((r) => r.data),
+  me: (): Promise<AuthMe> => api.get('/auth/me').then((r) => r.data),
 }
 
 export const agentsApi = {
@@ -240,6 +267,8 @@ export function createAgentWebSocket(
 export const tenantsApi = {
   listAgents: (): Promise<AgentSummary[]> => api.get('/tenants/me/agents').then((r) => r.data),
   billing: (): Promise<TenantBillingSummary> => api.get('/tenants/me/billing').then((r) => r.data),
+  register: (payload: TenantRegistrationPayload): Promise<TenantRegistrationResult> =>
+    api.post('/tenants/register', payload).then((r) => r.data),
 }
 
 export const usersApi = {
