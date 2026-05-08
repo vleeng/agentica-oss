@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, status, Request
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import text
 
 from app.core.security import (
@@ -13,6 +16,13 @@ from app.db.session import PublicSessionFactory, engine, provision_tenant
 from app.schemas.tenant import LoginInput, TokenOut, UserCreate
 
 router = APIRouter()
+
+
+class TenantUserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    full_name: str | None = None
+    role: Literal["developer", "viewer"] = "viewer"
 
 
 @router.post("/register", response_model=TokenOut, status_code=201)
@@ -104,4 +114,77 @@ async def login(body: LoginInput, request: Request) -> TokenOut:
 
 @router.get("/me")
 async def get_me(ctx: CurrentContext) -> dict:
+    ctx.require_human_user()
     return {"user_id": ctx.user_id, "tenant_id": ctx.tenant_id, "role": ctx.role}
+
+
+@router.get("/users")
+async def list_users(ctx: CurrentContext) -> list[dict]:
+    ctx.require_human_user()
+    ctx.require_owner()
+    async with PublicSessionFactory() as db:
+        result = await db.execute(
+            text("""
+                SELECT id, tenant_id, email, full_name, role, status, created_at
+                FROM users
+                WHERE tenant_id = :tenant_id
+                ORDER BY created_at DESC
+            """),
+            {"tenant_id": ctx.tenant_id},
+        )
+        rows = result.fetchall()
+
+    return [
+        {
+            "id": str(row.id),
+            "tenant_id": str(row.tenant_id),
+            "email": row.email,
+            "full_name": row.full_name,
+            "role": row.role,
+            "status": row.status,
+            "created_at": row.created_at.isoformat(),
+        }
+        for row in rows
+    ]
+
+
+@router.post("/users", status_code=201)
+async def create_user(body: TenantUserCreate, ctx: CurrentContext) -> dict:
+    ctx.require_human_user()
+    ctx.require_owner()
+
+    import uuid
+
+    async with PublicSessionFactory() as db:
+        existing = await db.execute(
+            text("SELECT id FROM users WHERE email = :email"),
+            {"email": body.email},
+        )
+        if existing.fetchone():
+            raise HTTPException(409, "Email ya registrado")
+
+        user_id = str(uuid.uuid4())
+        await db.execute(
+            text("""
+                INSERT INTO users (id, tenant_id, email, full_name, password_hash, role, status)
+                VALUES (:id, :tenant_id, :email, :full_name, :password_hash, :role, 'active')
+            """),
+            {
+                "id": user_id,
+                "tenant_id": ctx.tenant_id,
+                "email": body.email,
+                "full_name": body.full_name or "",
+                "password_hash": hash_password(body.password),
+                "role": body.role,
+            },
+        )
+        await db.commit()
+
+    return {
+        "id": user_id,
+        "tenant_id": ctx.tenant_id,
+        "email": body.email,
+        "full_name": body.full_name or "",
+        "role": body.role,
+        "status": "active",
+    }

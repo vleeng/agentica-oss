@@ -17,14 +17,14 @@ import {
 import { useMemo, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 
-import { useAuthStore } from '../../stores/auth'
+import { getAuthRole, useAuthStore } from '../../stores/auth'
 import { Button } from '../ui/button'
 
 const navItems = [
   { to: '/', label: 'Agentes', end: true, icon: <LayoutDashboard className="h-4 w-4" /> },
   { to: '/wizard', label: 'Crear agente', icon: <Wand2 className="h-4 w-4" /> },
   { to: '/usage', label: 'Observabilidad', icon: <BarChart3 className="h-4 w-4" /> },
-  { to: '/providers', label: 'Bóveda IA', icon: <Shield className="h-4 w-4" /> },
+  { to: '/providers', label: 'Boveda IA', icon: <Shield className="h-4 w-4" /> },
   { to: '/custom-tools', label: 'Mis tools', icon: <Code2 className="h-4 w-4" /> },
   { to: '/keys', label: 'API Keys', icon: <KeyRound className="h-4 w-4" /> },
 ]
@@ -40,13 +40,21 @@ export function AppShell() {
   const clearToken = useAuthStore((state) => state.clearToken)
   const navigate = useNavigate()
   const location = useLocation()
+  const role = getAuthRole()
+  const isViewer = role === 'viewer'
+
+  const visibleNavItems = useMemo(
+    () => (isViewer ? navItems.filter((item) => ['/', '/usage'].includes(item.to)) : navItems),
+    [isViewer]
+  )
+  const visibleLibraryItems = useMemo(() => (isViewer ? [] : libraryItems), [isViewer])
 
   const pageTitle = useMemo(() => {
-    const match = [...navItems, ...libraryItems].find((item) => item.to === location.pathname)
+    const match = [...visibleNavItems, ...visibleLibraryItems].find((item) => item.to === location.pathname)
     if (match) return match.label
     if (location.pathname.startsWith('/agents/')) return 'Monitor'
     return 'Agentica'
-  }, [location.pathname])
+  }, [location.pathname, visibleLibraryItems, visibleNavItems])
 
   const logout = () => {
     clearToken()
@@ -79,32 +87,36 @@ export function AppShell() {
               <div className="text-xs text-slate-400">Control de agentes IA</div>
             </div>
           </button>
-          <Button className="mt-5 w-full justify-start" onClick={() => navigate('/wizard')}>
-            <Plus className="h-4 w-4" />
-            Nuevo agente
-          </Button>
+          {!isViewer && (
+            <Button className="mt-5 w-full justify-start" onClick={() => navigate('/wizard')}>
+              <Plus className="h-4 w-4" />
+              Nuevo agente
+            </Button>
+          )}
         </div>
 
         <nav className="flex-1 overflow-y-auto px-4 py-6">
           <div className="space-y-0.5">
-            {navItems.map((item) => (
+            {visibleNavItems.map((item) => (
               <ShellNavItem key={item.to} {...item} onNavigate={() => setMobileOpen(false)} />
             ))}
           </div>
 
-          <div className="mt-6">
-            <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Librería
-            </p>
-            <div className="space-y-0.5">
-              {libraryItems.map((item) => (
-                <ShellNavItem key={item.to} {...item} onNavigate={() => setMobileOpen(false)} />
-              ))}
+          {visibleLibraryItems.length > 0 && (
+            <div className="mt-6">
+              <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Libreria
+              </p>
+              <div className="space-y-0.5">
+                {visibleLibraryItems.map((item) => (
+                  <ShellNavItem key={item.to} {...item} onNavigate={() => setMobileOpen(false)} />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </nav>
 
-        <div className="border-t border-slate-800 p-4 space-y-1">
+        <div className="space-y-1 border-t border-slate-800 p-4">
           <a
             href={docsHref}
             target="_blank"
@@ -119,7 +131,7 @@ export function AppShell() {
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-slate-400 transition hover:bg-rose-900/40 hover:text-rose-300"
           >
             <LogOut className="h-4 w-4 shrink-0" />
-            Cerrar sesión
+            Cerrar sesion
           </button>
         </div>
       </aside>
@@ -138,11 +150,11 @@ export function AppShell() {
                 <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-violet-500">
                   Workspace
                 </div>
-                <h1 className="text-base font-semibold text-slate-950 leading-tight">{pageTitle}</h1>
+                <h1 className="text-base font-semibold leading-tight text-slate-950">{pageTitle}</h1>
               </div>
             </div>
             <div className="hidden items-center gap-2 md:flex">
-              <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
               <span className="text-xs text-slate-400">Consola operativa</span>
             </div>
           </div>

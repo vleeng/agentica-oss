@@ -7,7 +7,6 @@ mermaid.initialize({
   startOnLoad: false,
   securityLevel: 'loose',
   theme: 'neutral',
-  suppressErrors: true,
 })
 
 export function MermaidDiagram({ chart }: { chart: string }) {

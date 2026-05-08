@@ -223,7 +223,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
               </Button>
               <Button
                 onClick={handleDeploy}
-                variant={isDeployed ? 'secondary' : 'default'}
+                variant={isDeployed ? 'secondary' : 'primary'}
                 disabled={phase !== 'ready' || isDeployed}
               >
                 <Rocket className="h-4 w-4" />

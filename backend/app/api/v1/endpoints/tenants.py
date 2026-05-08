@@ -63,9 +63,11 @@ async def login(user: UserCreate) -> TokenOut:
 
 @router.get("/me/agents")
 async def list_agents(ctx: CurrentContext, repo: TenantRepo) -> list[dict]:
+    ctx.require_human_user()
     return await repo.list_agents()
 
 
 @router.get("/me/billing")
 async def billing_summary(ctx: CurrentContext, repo: TenantRepo) -> dict:
+    ctx.require_human_user()
     return await repo.get_billing_summary()

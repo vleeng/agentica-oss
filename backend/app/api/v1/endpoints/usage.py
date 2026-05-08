@@ -16,6 +16,7 @@ router = APIRouter()
 @router.get("/summary")
 async def get_usage_summary(ctx: CurrentContext) -> dict:
     """Plan, límites y uso actual del tenant — para el dashboard."""
+    ctx.require_human_user()
     return await plan_checker.get_usage_summary(ctx.tenant_id)
 
 
@@ -26,6 +27,7 @@ async def get_billing_detail(
     days: int = 30,
 ) -> dict:
     """Detalle de billing de los últimos N días."""
+    ctx.require_human_user()
     since = datetime.now(timezone.utc) - timedelta(days=days)
 
     result = await repo._db.execute(
@@ -72,6 +74,7 @@ async def get_agents_usage(
     repo: TenantRepo,
 ) -> list[dict]:
     """Uso por agente — invocaciones y costo."""
+    ctx.require_human_user()
     result = await repo._db.execute(
         text("""
             SELECT
@@ -106,6 +109,7 @@ async def get_agents_usage(
 @router.get("/rate-limits")
 async def get_rate_limit_status(ctx: CurrentContext) -> dict:
     """Estado actual de los rate limits del tenant."""
+    ctx.require_human_user()
     rl = get_rate_limiter()
     scopes = ["invoke", "build", "spec", "eval", "global"]
     status = {}

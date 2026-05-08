@@ -28,6 +28,19 @@ export function getAuthToken() {
   return localStorage.getItem(TOKEN_KEY)
 }
 
+function decodeTokenPayload(token: string | null): Record<string, any> | null {
+  if (!token) return null
+  try {
+    return JSON.parse(atob(token.split('.')[1]))
+  } catch {
+    return null
+  }
+}
+
+export function getAuthRole() {
+  return decodeTokenPayload(getAuthToken())?.role || ''
+}
+
 export function setStoredToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token)
 }

@@ -68,7 +68,9 @@ async def build_agent(
     ctx: CurrentContext,
     repo: TenantRepo,
 ) -> dict:
+    ctx.require_human_user()
     ctx.require_developer()
+    await _assert_agent_access(agent_id, ctx, repo)
 
     result = await get_runtime_store().get(agent_id)
     if result is None:
@@ -109,7 +111,7 @@ async def invoke_agent(
     ctx: CurrentContext,
     repo: TenantRepo,
 ) -> AgentResponse:
-    runtime, design = await _get_runtime(agent_id)
+    runtime, design = await _get_runtime(agent_id, ctx, repo)
     session_id = body.session_id or f"{ctx.tenant_id}_{agent_id}_default"
 
     # Sprint 6: rate limiting por tenant
@@ -175,10 +177,7 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
                 continue
 
             try:
-                runtime, design = await _get_runtime(agent_id)
-                if design.tenant_id != ctx.tenant_id:
-                    await websocket.send_json({"type": "error", "message": "Agente no autorizado"})
-                    continue
+                runtime, design = await _get_runtime(agent_id, ctx)
             except HTTPException as e:
                 await websocket.send_json({"type": "error", "message": e.detail})
                 continue
@@ -220,8 +219,9 @@ async def eval_agent(
     ctx: CurrentContext,
     repo: TenantRepo,
 ) -> EvalReport:
+    ctx.require_human_user()
     ctx.require_developer()
-    _, design = await _get_runtime(agent_id)
+    _, design = await _get_runtime(agent_id, ctx, repo)
     report = await eval_svc.run(design)
 
     build = await repo.get_latest_build(agent_id)
@@ -243,8 +243,9 @@ async def eval_with_feedback(
     ctx: CurrentContext,
     repo: TenantRepo,
 ) -> EvalReport:
+    ctx.require_human_user()
     ctx.require_developer()
-    _, design = await _get_runtime(agent_id)
+    _, design = await _get_runtime(agent_id, ctx, repo)
     return await eval_svc.run(design, human_feedback=body.feedback)
 
 
@@ -262,8 +263,9 @@ async def optimize_agent(
     ctx: CurrentContext,
     repo: TenantRepo,
 ) -> dict:
+    ctx.require_human_user()
     ctx.require_developer()
-    _, design = await _get_runtime(agent_id)
+    _, design = await _get_runtime(agent_id, ctx, repo)
 
     updated_design, patch = await optimizer_svc.optimize(design, body.eval_report)
 
@@ -312,7 +314,9 @@ async def update_agent(
     sin necesidad de borrar y recrear el agente.
     Dispara un rebuild automático al finalizar.
     """
+    ctx.require_human_user()
     ctx.require_developer()
+    await _assert_agent_access(agent_id, ctx, repo)
 
     patch = body.model_dump(exclude_none=True)
     if not patch:
@@ -350,13 +354,9 @@ async def deploy_agent(
     Marca el agente como 'deployed' (producción).
     Requiere que el agente haya sido evaluado y tenga build en estado 'ready'.
     """
+    ctx.require_human_user()
     ctx.require_developer()
-
-    result = await get_runtime_store().get(agent_id)
-    if result is None:
-        raise HTTPException(404, "Agente no encontrado — hacé un build primero")
-
-    _, design = result
+    _, design = await _get_runtime(agent_id, ctx, repo)
     await repo.update_agent_status(agent_id, "deployed")
 
     # Actualizar el status en el RuntimeStore para que getDesign lo refleje
@@ -382,7 +382,9 @@ async def delete_agent(
     ctx: CurrentContext,
     repo: TenantRepo,
 ) -> Response:
+    ctx.require_human_user()
     ctx.require_developer()
+    await _assert_agent_access(agent_id, ctx, repo)
     deleted = await repo.delete_agent(agent_id)
     if not deleted:
         raise HTTPException(404, f"Agente '{agent_id}' no encontrado")
@@ -393,12 +395,14 @@ async def delete_agent(
 # ── GET /{id}/design ──────────────────────────────────────────────────────────
 
 @router.get("/{agent_id}/design", response_model=AgentDesign)
-async def get_design(agent_id: str, ctx: CurrentContext) -> AgentDesign:
+async def get_design(agent_id: str, ctx: CurrentContext, repo: TenantRepo) -> AgentDesign:
+    ctx.require_human_user()
+    agent = await _assert_agent_access(agent_id, ctx, repo)
     result = await get_runtime_store().get(agent_id)
-    if result is None:
-        raise HTTPException(404, f"Agente '{agent_id}' no encontrado")
-    _, design = result
-    return design
+    if result is not None:
+        _, design = result
+        return design
+    return AgentDesign(**agent["design"])
 
 
 # ── GET /{id}/state ───────────────────────────────────────────────────────────
@@ -407,10 +411,12 @@ async def get_design(agent_id: str, ctx: CurrentContext) -> AgentDesign:
 async def get_state(
     agent_id: str,
     ctx: CurrentContext,
+    repo: TenantRepo,
     session_id: str = "default",
 ) -> dict:
+    ctx.require_human_user()
     ctx.require_developer()
-    runtime, design = await _get_runtime(agent_id)
+    runtime, design = await _get_runtime(agent_id, ctx, repo)
     return {
         "agent_id":  agent_id,
         "framework": design.framework.framework,
@@ -429,25 +435,45 @@ async def get_history(
     ctx: CurrentContext,
     repo: TenantRepo,
 ) -> list[dict]:
+    ctx.require_human_user()
+    await _assert_agent_access(agent_id, ctx, repo)
     return await repo.get_conversation_history(agent_id, session_id)
 
 
 # ── DELETE /{id}/session/{sid} ────────────────────────────────────────────────
 
 @router.delete("/{agent_id}/session/{session_id}", status_code=204)
-async def reset_session(agent_id: str, session_id: str, ctx: CurrentContext) -> Response:
-    runtime, _ = await _get_runtime(agent_id)
+async def reset_session(agent_id: str, session_id: str, ctx: CurrentContext, repo: TenantRepo) -> Response:
+    ctx.require_human_user()
+    ctx.require_developer()
+    runtime, _ = await _get_runtime(agent_id, ctx, repo)
     runtime.reset(session_id)
     return Response(status_code=204)
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
-async def _get_runtime(agent_id: str) -> tuple:
+async def _assert_agent_access(agent_id: str, ctx: RequestContext, repo: TenantRepo) -> dict:
+    if ctx.is_agent_user:
+        if ctx.agent_id != agent_id:
+            raise HTTPException(403, "La API key solo puede acceder a su agente asignado")
+    agent = await repo.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(404, f"Agente '{agent_id}' no encontrado")
+    return agent
+
+
+async def _get_runtime(agent_id: str, ctx: RequestContext, repo: TenantRepo | None = None) -> tuple:
+    if ctx.is_agent_user and ctx.agent_id != agent_id:
+        raise HTTPException(403, "La API key solo puede invocar su agente asignado")
+    if repo is not None:
+        await _assert_agent_access(agent_id, ctx, repo)
     result = await get_runtime_store().get(agent_id)
     if result is None:
         raise HTTPException(404, f"Agente '{agent_id}' no encontrado — llamá a /spec primero")
     runtime, design = result
+    if str(design.tenant_id) != str(ctx.tenant_id):
+        raise HTTPException(403, "Agente no autorizado")
     if runtime is None:
         raise HTTPException(409, f"Agente sin build — llamá a /{agent_id}/build")
     return runtime, design
@@ -481,6 +507,7 @@ async def _get_ws_context(websocket: WebSocket) -> RequestContext | None:
                     tenant_id=result["tenant_id"],
                     user_id="api_key",
                     role="agent_user",
+                    agent_id=result.get("agent_id"),
                 )
         except Exception:
             return None

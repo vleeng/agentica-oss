@@ -104,10 +104,11 @@ def decode_access_token(token: str) -> dict:
 class RequestContext:
     """Inyectado en todos los endpoints vía Depends."""
 
-    def __init__(self, tenant_id: str, user_id: str, role: str):
+    def __init__(self, tenant_id: str, user_id: str, role: str, agent_id: str | None = None):
         self.tenant_id = tenant_id
         self.user_id = user_id
         self.role = role
+        self.agent_id = agent_id
 
     @property
     def is_owner(self) -> bool:
@@ -117,6 +118,10 @@ class RequestContext:
     def is_developer(self) -> bool:
         return self.role in ("owner", "developer")
 
+    @property
+    def is_agent_user(self) -> bool:
+        return self.role == "agent_user"
+
     def require_developer(self) -> None:
         if not self.is_developer:
             raise HTTPException(status_code=403, detail="Se requiere rol developer o superior")
@@ -124,6 +129,10 @@ class RequestContext:
     def require_owner(self) -> None:
         if not self.is_owner:
             raise HTTPException(status_code=403, detail="Se requiere rol owner")
+
+    def require_human_user(self) -> None:
+        if self.is_agent_user:
+            raise HTTPException(status_code=403, detail="La API key publica no tiene permiso para esta accion")
 
 
 # ── Dependency para FastAPI ───────────────────────────────────────────────────
@@ -181,6 +190,7 @@ async def _resolve_api_key(raw_key: str) -> Optional[RequestContext]:
                 tenant_id=result["tenant_id"],
                 user_id="api_key",
                 role="agent_user",   # scoped: solo puede invocar agentes
+                agent_id=result.get("agent_id"),
             )
     except Exception:
         pass

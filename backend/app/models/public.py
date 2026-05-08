@@ -62,10 +62,16 @@ class APIKey(Base):
 
     id:         Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id:  Mapped[uuid.UUID]    = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"))
+    agent_id:   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     key_hash:   Mapped[str]          = mapped_column(String(64), unique=True, nullable=False)
     name:       Mapped[str]          = mapped_column(String(100), nullable=False)
     scopes:     Mapped[list[str]]    = mapped_column(ARRAY(String), default=["invoke"])
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime]     = mapped_column(DateTime(timezone=True), default=utcnow)
 
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="api_keys")

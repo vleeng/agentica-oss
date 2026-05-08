@@ -97,6 +97,16 @@ export interface AgentUsage {
   cost_usd: number
 }
 
+export interface TenantUser {
+  id: string
+  tenant_id: string
+  email: string
+  full_name?: string
+  role: 'owner' | 'developer' | 'viewer'
+  status: string
+  created_at: string
+}
+
 export const authApi = {
   register: (email: string, password: string) =>
     api.post('/auth/register', { email, password }).then((r) => r.data),
@@ -232,6 +242,16 @@ export const tenantsApi = {
   billing: (): Promise<TenantBillingSummary> => api.get('/tenants/me/billing').then((r) => r.data),
 }
 
+export const usersApi = {
+  list: (): Promise<TenantUser[]> => api.get('/auth/users').then((r) => r.data),
+  create: (payload: {
+    email: string
+    password: string
+    full_name?: string
+    role: 'developer' | 'viewer'
+  }): Promise<TenantUser> => api.post('/auth/users', payload).then((r) => r.data),
+}
+
 export const llmKeysApi = {
   list: (): Promise<ProviderKey[]> => api.get('/keys/llm').then((r) => r.data),
   create: (payload: { provider: string; name: string; raw_key: string }) =>
@@ -274,13 +294,15 @@ export const knowledgeApi = {
 
 export const apiKeysApi = {
   list: () => api.get('/keys/').then((r) => r.data as APIKey[]),
-  create: (name: string, scopes = ['invoke']) =>
-    api.post('/keys/', { name, scopes }).then((r) => r.data as APIKey),
+  create: (name: string, agentId: string, scopes = ['invoke']) =>
+    api.post('/keys/', { name, agent_id: agentId, scopes }).then((r) => r.data as APIKey),
   revoke: (keyId: string) => api.delete(`/keys/${keyId}`).then((r) => r.data),
 }
 
 export interface APIKey {
   id: string
+  agent_id: string
+  agent_name?: string | null
   name: string
   key?: string
   key_prefix: string

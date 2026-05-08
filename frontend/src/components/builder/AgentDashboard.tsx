@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { agentsApi, type AgentSummary, type TenantBillingSummary, tenantsApi } from '../../lib/api'
 import { formatCurrency, formatNumber } from '../../lib/utils'
+import { getAuthRole } from '../../stores/auth'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
@@ -22,6 +23,8 @@ const STATUS_CONFIG: Record<string, { label: string; tone: 'slate' | 'blue' | 'a
 }
 
 export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
+  const role = getAuthRole()
+  const isViewer = role === 'viewer'
   const [agents, setAgents] = useState<AgentSummary[]>([])
   const [billing, setBilling] = useState<TenantBillingSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -93,10 +96,12 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={onNewAgent} size="lg">
-                <Sparkles className="h-4 w-4" />
-                Crear agente
-              </Button>
+              {!isViewer && (
+                <Button onClick={onNewAgent} size="lg">
+                  <Sparkles className="h-4 w-4" />
+                  Crear agente
+                </Button>
+              )}
               <Button variant="secondary" size="lg" onClick={() => setQuery('deployed')}>
                 Ver desplegados
               </Button>
@@ -156,7 +161,7 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
           )}
 
           {filteredAgents.length === 0 ? (
-            <EmptyState onNew={onNewAgent} filtered={!!query} />
+            <EmptyState onNew={onNewAgent} filtered={!!query} canCreate={!isViewer} />
           ) : (
             <div className="grid gap-3">
               {filteredAgents.map((agent) => (
@@ -188,14 +193,16 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <button
-                        onClick={(e) => handleDelete(e, agent.agent_id, agent.name)}
-                        disabled={deletingId === agent.agent_id}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 transition"
-                        title="Eliminar agente"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      {!isViewer && (
+                        <button
+                          onClick={(e) => handleDelete(e, agent.agent_id, agent.name)}
+                          disabled={deletingId === agent.agent_id}
+                          className="rounded-lg p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                          title="Eliminar agente"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                       <span className="flex items-center gap-2 text-sm font-medium text-violet-700">
                         Abrir monitor
                         <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
@@ -243,7 +250,15 @@ function MetricLine({
   )
 }
 
-function EmptyState({ onNew, filtered }: { onNew: () => void; filtered: boolean }) {
+function EmptyState({
+  onNew,
+  filtered,
+  canCreate,
+}: {
+  onNew: () => void
+  filtered: boolean
+  canCreate: boolean
+}) {
   return (
     <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center">
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-2xl text-violet-700">
@@ -257,7 +272,7 @@ function EmptyState({ onNew, filtered }: { onNew: () => void; filtered: boolean 
           ? 'Probá otra búsqueda o limpiá el filtro para ver todo el workspace.'
           : 'Arrancá desde el wizard y pasá de idea a monitor con un flujo guiado y listo para operar.'}
       </p>
-      {!filtered && (
+      {!filtered && canCreate && (
         <Button onClick={onNew} className="mt-6">
           Crear mi primer agente
         </Button>

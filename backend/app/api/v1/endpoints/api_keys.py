@@ -23,6 +23,7 @@ def _hash_key(raw_key: str) -> str:
 
 class CreateKeyRequest(BaseModel):
     name: str
+    agent_id: str
     scopes: list[str] = ["invoke"]
     expires_days: Optional[int] = None   # None = sin expiración
 
@@ -30,6 +31,8 @@ class CreateKeyRequest(BaseModel):
 class APIKeyOut(BaseModel):
     id: str
     name: str
+    agent_id: str
+    agent_name: Optional[str] = None
     key: Optional[str] = None    # Solo presente al crear — nunca más
     key_prefix: str              # Primeros 8 chars para identificar en la UI
     scopes: list[str]
@@ -41,12 +44,17 @@ class APIKeyOut(BaseModel):
 async def create_api_key(
     body: CreateKeyRequest,
     ctx: CurrentContext,
+    repo: TenantRepo,
 ) -> APIKeyOut:
     """
-    Genera una nueva API key para el tenant.
+    Genera una nueva API key para un agente puntual del tenant.
     La key completa solo se muestra una vez — no se puede recuperar después.
     """
+    ctx.require_human_user()
     ctx.require_developer()
+    agent = await repo.get_agent(body.agent_id)
+    if not agent:
+        raise HTTPException(404, "Agente no encontrado para este tenant")
 
     import uuid
     raw_key  = f"ak_{secrets.token_urlsafe(32)}"
@@ -61,16 +69,18 @@ async def create_api_key(
     async with PublicSessionFactory() as db:
         await db.execute(
             text("""
-                INSERT INTO api_keys (id, tenant_id, key_hash, name, scopes, expires_at)
-                VALUES (:id, :tenant_id, :hash, :name, :scopes, :expires)
+                INSERT INTO api_keys (id, tenant_id, agent_id, key_hash, name, scopes, expires_at, created_by_user_id)
+                VALUES (:id, :tenant_id, CAST(:agent_id AS uuid), :hash, :name, :scopes, :expires, CAST(:created_by AS uuid))
             """),
             {
                 "id":        key_id,
                 "tenant_id": ctx.tenant_id,
+                "agent_id":  body.agent_id,
                 "hash":      key_hash,
                 "name":      body.name,
                 "scopes":    body.scopes,
                 "expires":   expires_at,
+                "created_by": ctx.user_id,
             },
         )
         await db.commit()
@@ -78,6 +88,8 @@ async def create_api_key(
     return APIKeyOut(
         id=key_id,
         name=body.name,
+        agent_id=body.agent_id,
+        agent_name=agent["name"],
         key=raw_key,           # única vez que se devuelve
         key_prefix=raw_key[:10],
         scopes=body.scopes,
@@ -87,22 +99,28 @@ async def create_api_key(
 
 
 @router.get("/", response_model=list[APIKeyOut])
-async def list_api_keys(ctx: CurrentContext) -> list[APIKeyOut]:
+async def list_api_keys(ctx: CurrentContext, repo: TenantRepo) -> list[APIKeyOut]:
     """Lista todas las API keys del tenant (sin mostrar la key completa)."""
+    ctx.require_human_user()
     async with PublicSessionFactory() as db:
         result = await db.execute(
             text("""
-                SELECT id, name, key_hash, scopes, expires_at, created_at
+                SELECT id, agent_id, name, key_hash, scopes, expires_at, created_at
                 FROM api_keys WHERE tenant_id = :tid ORDER BY created_at DESC
             """),
             {"tid": ctx.tenant_id},
         )
         rows = result.fetchall()
 
+    agents = await repo.list_agents(limit=500)
+    agent_names = {agent["agent_id"]: agent["name"] for agent in agents}
+
     return [
         APIKeyOut(
             id=str(r.id),
             name=r.name,
+            agent_id=str(r.agent_id) if r.agent_id else "",
+            agent_name=agent_names.get(str(r.agent_id)) if r.agent_id else None,
             key_prefix=r.key_hash[:10],
             scopes=list(r.scopes),
             expires_at=r.expires_at.isoformat() if r.expires_at else None,
@@ -115,6 +133,7 @@ async def list_api_keys(ctx: CurrentContext) -> list[APIKeyOut]:
 @router.delete("/{key_id}", status_code=204)
 async def revoke_api_key(key_id: str, ctx: CurrentContext) -> Response:
     """Revoca (elimina) una API key."""
+    ctx.require_human_user()
     ctx.require_developer()
     async with PublicSessionFactory() as db:
         result = await db.execute(
@@ -129,14 +148,14 @@ async def revoke_api_key(key_id: str, ctx: CurrentContext) -> Response:
 
 async def resolve_api_key(raw_key: str) -> Optional[dict]:
     """
-    Valida una API key y retorna { tenant_id, scopes } si es válida.
+    Valida una API key y retorna { tenant_id, agent_id, scopes } si es válida.
     Usado por el security middleware para autenticación de widgets/bots.
     """
     key_hash = _hash_key(raw_key)
     async with PublicSessionFactory() as db:
         result = await db.execute(
             text("""
-                SELECT k.tenant_id, k.scopes, k.expires_at
+                SELECT k.tenant_id, k.agent_id, k.scopes, k.expires_at
                 FROM api_keys k
                 WHERE k.key_hash = :hash
             """),
@@ -148,7 +167,13 @@ async def resolve_api_key(raw_key: str) -> Optional[dict]:
         return None
     if row.expires_at and row.expires_at <= datetime.now(timezone.utc):
         return None
-    return {"tenant_id": str(row.tenant_id), "scopes": list(row.scopes)}
+    if not row.agent_id:
+        return None
+    return {
+        "tenant_id": str(row.tenant_id),
+        "agent_id": str(row.agent_id),
+        "scopes": list(row.scopes),
+    }
 
 
 # ── LLM Provider Keys (Bóveda) ────────────────────────────────────────────────
@@ -156,6 +181,7 @@ async def resolve_api_key(raw_key: str) -> Optional[dict]:
 @router.get("/llm", response_model=list[LLMProviderKeyOut])
 async def list_llm_keys(ctx: CurrentContext) -> list[LLMProviderKeyOut]:
     """Lista las llaves de IA guardadas (ocultando la clave real)."""
+    ctx.require_human_user()
     async with PublicSessionFactory() as db:
         result = await db.execute(
             text("""
@@ -184,6 +210,7 @@ async def list_llm_keys(ctx: CurrentContext) -> list[LLMProviderKeyOut]:
 @router.post("/llm", response_model=LLMProviderKeyOut, status_code=201)
 async def create_llm_key(body: LLMProviderKeyCreate, ctx: CurrentContext) -> LLMProviderKeyOut:
     """Guarda una nueva credencial en la bóveda de forma cifrada."""
+    ctx.require_human_user()
     ctx.require_developer()
     enc_key = encrypt_provider_key(body.raw_key)
     truncated_key = (
@@ -235,6 +262,7 @@ async def create_llm_key(body: LLMProviderKeyCreate, ctx: CurrentContext) -> LLM
 @router.put("/llm/{key_id}/default", status_code=200)
 async def set_default_llm_key(key_id: str, provider: str, ctx: CurrentContext) -> dict:
     """Fija una llave como la predeterminada para un modelo/proveedor dado."""
+    ctx.require_human_user()
     ctx.require_developer()
     async with PublicSessionFactory() as db:
         await db.execute(
@@ -255,6 +283,7 @@ class UpdateModelsRequest(BaseModel):
 @router.put("/llm/{key_id}/models", status_code=200)
 async def update_llm_key_models(key_id: str, body: UpdateModelsRequest, ctx: CurrentContext) -> dict:
     """Actualiza la lista de modelos disponibles para una key de la bóveda."""
+    ctx.require_human_user()
     ctx.require_developer()
     import json
     async with PublicSessionFactory() as db:
@@ -269,6 +298,7 @@ async def update_llm_key_models(key_id: str, body: UpdateModelsRequest, ctx: Cur
 @router.delete("/llm/{key_id}", status_code=204)
 async def delete_llm_key(key_id: str, ctx: CurrentContext) -> Response:
     """Elimina una credencial de la bóveda."""
+    ctx.require_human_user()
     ctx.require_developer()
     async with PublicSessionFactory() as db:
         await db.execute(

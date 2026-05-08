@@ -23,7 +23,7 @@ import { StandaloneChat } from './components/monitor/StandaloneChat'
 import { UsageDashboard } from './components/monitor/UsageDashboard'
 import { RequirementWizard } from './components/wizard/RequirementWizard'
 import { agentsApi, authApi, wizardStateToSpec } from './lib/api'
-import { useAuthStore } from './stores/auth'
+import { getAuthRole, useAuthStore } from './stores/auth'
 import type { AgentDesign, WizardState } from './types/agent'
 
 export default function App() {
@@ -34,17 +34,17 @@ export default function App() {
       <Route element={<ProtectedLayout />}>
         <Route element={<AppShell />}>
           <Route index element={<DashboardRoute />} />
-          <Route path="wizard" element={<WizardRoute />} />
+          <Route path="wizard" element={<DeveloperOnly><WizardRoute /></DeveloperOnly>} />
           <Route path="agents/:agentId" element={<MonitorRoute />} />
           <Route path="usage" element={<UsageDashboard />} />
-          <Route path="providers" element={<ProvidersPanel />} />
-          <Route path="custom-tools" element={<CustomToolsPanel />} />
-          <Route path="keys" element={<APIKeysPanel />} />
-          <Route path="skills" element={<PanelPage title="Skills"><SkillsPanel /></PanelPage>} />
-          <Route path="mcp" element={<PanelPage title="Servidores MCP"><MCPPanel /></PanelPage>} />
+          <Route path="providers" element={<DeveloperOnly><ProvidersPanel /></DeveloperOnly>} />
+          <Route path="custom-tools" element={<DeveloperOnly><CustomToolsPanel /></DeveloperOnly>} />
+          <Route path="keys" element={<DeveloperOnly><APIKeysPanel /></DeveloperOnly>} />
+          <Route path="skills" element={<DeveloperOnly><PanelPage title="Skills"><SkillsPanel /></PanelPage></DeveloperOnly>} />
+          <Route path="mcp" element={<DeveloperOnly><PanelPage title="Servidores MCP"><MCPPanel /></PanelPage></DeveloperOnly>} />
           <Route
             path="knowledge-bases"
-            element={<PanelPage title="Bases de conocimiento"><KnowledgeBasesPanel /></PanelPage>}
+            element={<DeveloperOnly><PanelPage title="Bases de conocimiento"><KnowledgeBasesPanel /></PanelPage></DeveloperOnly>}
           />
         </Route>
       </Route>
@@ -71,6 +71,12 @@ function LoginRoute() {
   if (token) return <Navigate to="/" replace />
 
   return <Login onLoginSuccess={() => navigate('/')} />
+}
+
+function DeveloperOnly({ children }: { children: ReactNode }) {
+  const role = getAuthRole()
+  if (role === 'viewer') return <Navigate to="/" replace />
+  return <>{children}</>
 }
 
 function DashboardRoute() {

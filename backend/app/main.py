@@ -44,6 +44,18 @@ async def lifespan(app: FastAPI):
             "  updated_at TIMESTAMPTZ DEFAULT NOW()"
             ")"
         ))
+        await conn.execute(_text(
+            "ALTER TABLE IF EXISTS public.api_keys "
+            "ADD COLUMN IF NOT EXISTS agent_id UUID"
+        ))
+        await conn.execute(_text(
+            "ALTER TABLE IF EXISTS public.api_keys "
+            "ADD COLUMN IF NOT EXISTS created_by_user_id UUID"
+        ))
+        await conn.execute(_text(
+            "CREATE INDEX IF NOT EXISTS idx_api_keys_tenant_agent "
+            "ON public.api_keys (tenant_id, agent_id)"
+        ))
 
     # Sembrar superusuario admin
     import uuid
