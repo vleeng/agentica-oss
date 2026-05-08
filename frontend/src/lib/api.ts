@@ -134,6 +134,18 @@ export interface TenantRegistrationResult {
   role: string
 }
 
+export interface PlanDefinition {
+  id: string
+  name: string
+  max_agents: number
+  max_invocations_month: number
+  price_usd: number
+  features: {
+    rag?: boolean
+    crew?: boolean
+  }
+}
+
 export const authApi = {
   register: (email: string, password: string) =>
     api.post('/auth/register', { email, password }).then((r) => r.data),
@@ -441,6 +453,9 @@ export const systemApi = {
   getBuilderConfig: () => api.get('/system/builder').then(r => r.data),
   setBuilderConfig: (body: { provider: string; model: string; llm_key_id?: string }) =>
     api.put('/system/builder', body).then(r => r.data),
+  listPlans: (): Promise<PlanDefinition[]> => api.get('/system/plans').then(r => r.data),
+  updatePlan: (planId: string, body: PlanDefinition): Promise<PlanDefinition> =>
+    api.put(`/system/plans/${planId}`, body).then(r => r.data),
 }
 
 export const guardrailsApi = {

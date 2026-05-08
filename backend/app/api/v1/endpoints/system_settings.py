@@ -1,8 +1,13 @@
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import text
+
+import json
 from typing import Optional
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import text
+
+from app.core.plan_limits import list_plans
 from app.core.security import CurrentContext
 from app.db.session import PublicSessionFactory
 
@@ -19,6 +24,42 @@ class BuilderConfigOut(BaseModel):
     model: str
     llm_key_id: Optional[str] = None
     configured: bool  # True if settings are in DB (not just env defaults)
+
+
+class PlanOut(BaseModel):
+    id: str
+    name: str
+    max_agents: int
+    max_invocations_month: int
+    price_usd: float
+    features: dict
+
+
+class PlanUpdate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    max_agents: int = Field(..., ge=1)
+    max_invocations_month: int = Field(..., ge=1)
+    price_usd: float = Field(..., ge=0)
+    features: dict
+
+
+async def _require_system_admin(ctx: CurrentContext) -> None:
+    ctx.require_human_user()
+    ctx.require_owner()
+    async with PublicSessionFactory() as db:
+        result = await db.execute(
+            text("""
+                SELECT t.slug
+                FROM users u
+                JOIN tenants t ON t.id = u.tenant_id
+                WHERE u.id = :user_id AND t.id = :tenant_id
+            """),
+            {"user_id": ctx.user_id, "tenant_id": ctx.tenant_id},
+        )
+        row = result.fetchone()
+
+    if not row or row.slug != "admin":
+        raise HTTPException(status_code=403, detail="Se requiere admin general del sistema")
 
 @router.get("/system/builder", response_model=BuilderConfigOut)
 async def get_builder_config(ctx: CurrentContext) -> BuilderConfigOut:
@@ -61,4 +102,50 @@ async def set_builder_config(body: BuilderConfig, ctx: CurrentContext) -> Builde
         model=body.model,
         llm_key_id=body.llm_key_id,
         configured=True,
+    )
+
+
+@router.get("/system/plans", response_model=list[PlanOut])
+async def get_plans(ctx: CurrentContext) -> list[PlanOut]:
+    await _require_system_admin(ctx)
+    return [PlanOut(**plan) for plan in await list_plans()]
+
+
+@router.put("/system/plans/{plan_id}", response_model=PlanOut)
+async def update_plan(plan_id: str, body: PlanUpdate, ctx: CurrentContext) -> PlanOut:
+    await _require_system_admin(ctx)
+    async with PublicSessionFactory() as db:
+        result = await db.execute(
+            text("""
+                UPDATE plans
+                SET
+                    name = :name,
+                    max_agents = :max_agents,
+                    max_invocations_month = :max_invocations_month,
+                    price_usd = :price_usd,
+                    features = CAST(:features AS jsonb)
+                WHERE id = :plan_id
+                RETURNING id, name, max_agents, max_invocations_month, price_usd, features
+            """),
+            {
+                "plan_id": plan_id,
+                "name": body.name,
+                "max_agents": body.max_agents,
+                "max_invocations_month": body.max_invocations_month,
+                "price_usd": body.price_usd,
+                "features": json.dumps(body.features),
+            },
+        )
+        row = result.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Plan no encontrado")
+        await db.commit()
+
+    return PlanOut(
+        id=row.id,
+        name=row.name,
+        max_agents=row.max_agents,
+        max_invocations_month=row.max_invocations_month,
+        price_usd=float(row.price_usd or 0),
+        features=row.features or {},
     )

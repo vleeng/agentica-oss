@@ -1,38 +1,164 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
-from functools import lru_cache
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from sqlalchemy import text
 
 from app.db.session import PublicSessionFactory
 
 logger = logging.getLogger(__name__)
 
-# Definición de límites por plan — espejo de init.sql
-PLAN_LIMITS = {
-    "free":       {"max_agents": 3,   "max_invocations_month": 1_000,   "rag": False, "crew": False},
-    "starter":    {"max_agents": 10,  "max_invocations_month": 10_000,  "rag": True,  "crew": False},
-    "pro":        {"max_agents": 50,  "max_invocations_month": 100_000, "rag": True,  "crew": True},
-    "business":   {"max_agents": 100, "max_invocations_month": 500_000, "rag": True,  "crew": True},
-    "enterprise": {"max_agents": 999, "max_invocations_month": 999_999, "rag": True,  "crew": True},
+# Seed inicial y fallback si la tabla public.plans estuviera vacía.
+PLAN_DEFAULTS = {
+    "free": {
+        "name": "Free",
+        "max_agents": 3,
+        "max_invocations_month": 1_000,
+        "price_usd": 0,
+        "features": {"rag": False, "crew": False},
+    },
+    "starter": {
+        "name": "Starter",
+        "max_agents": 10,
+        "max_invocations_month": 10_000,
+        "price_usd": 29,
+        "features": {"rag": True, "crew": False},
+    },
+    "pro": {
+        "name": "Pro",
+        "max_agents": 50,
+        "max_invocations_month": 100_000,
+        "price_usd": 99,
+        "features": {"rag": True, "crew": True},
+    },
+    "business": {
+        "name": "Business",
+        "max_agents": 100,
+        "max_invocations_month": 500_000,
+        "price_usd": 299,
+        "features": {"rag": True, "crew": True},
+    },
+    "enterprise": {
+        "name": "Enterprise",
+        "max_agents": 999,
+        "max_invocations_month": 999_999,
+        "price_usd": 999,
+        "features": {"rag": True, "crew": True},
+    },
 }
 
-DEFAULT_LIMITS = PLAN_LIMITS["free"]
+DEFAULT_LIMITS = PLAN_DEFAULTS["free"]
+
+
+async def seed_default_plans() -> None:
+    async with PublicSessionFactory() as db:
+        for plan_id, plan in PLAN_DEFAULTS.items():
+            await db.execute(
+                text("""
+                    INSERT INTO plans (id, name, max_agents, max_invocations_month, price_usd, features)
+                    VALUES (:id, :name, :max_agents, :max_invocations_month, :price_usd, CAST(:features AS jsonb))
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        max_agents = EXCLUDED.max_agents,
+                        max_invocations_month = EXCLUDED.max_invocations_month,
+                        price_usd = EXCLUDED.price_usd,
+                        features = EXCLUDED.features
+                """),
+                {
+                    "id": plan_id,
+                    "name": plan["name"],
+                    "max_agents": plan["max_agents"],
+                    "max_invocations_month": plan["max_invocations_month"],
+                    "price_usd": plan["price_usd"],
+                    "features": json.dumps(plan["features"]),
+                },
+            )
+        await db.commit()
+
+
+async def list_plans() -> list[dict]:
+    async with PublicSessionFactory() as db:
+        result = await db.execute(
+            text("""
+                SELECT id, name, max_agents, max_invocations_month, price_usd, features
+                FROM plans
+                ORDER BY
+                    CASE id
+                        WHEN 'free' THEN 1
+                        WHEN 'starter' THEN 2
+                        WHEN 'pro' THEN 3
+                        WHEN 'business' THEN 4
+                        WHEN 'enterprise' THEN 5
+                        ELSE 99
+                    END
+            """)
+        )
+        rows = result.fetchall()
+
+    if rows:
+        return [
+            {
+                "id": row.id,
+                "name": row.name,
+                "max_agents": row.max_agents,
+                "max_invocations_month": row.max_invocations_month,
+                "price_usd": float(row.price_usd or 0),
+                "features": row.features or {},
+            }
+            for row in rows
+        ]
+
+    return [{"id": plan_id, **plan} for plan_id, plan in PLAN_DEFAULTS.items()]
 
 
 async def get_tenant_plan(tenant_id: str) -> dict:
     """Retorna el plan y sus límites para un tenant."""
     async with PublicSessionFactory() as db:
         result = await db.execute(
-            text("SELECT plan_id FROM tenants WHERE id = :id"),
+            text("""
+                SELECT
+                    t.plan_id,
+                    p.name,
+                    p.max_agents,
+                    p.max_invocations_month,
+                    p.price_usd,
+                    p.features
+                FROM tenants t
+                LEFT JOIN plans p ON p.id = t.plan_id
+                WHERE t.id = :id
+            """),
             {"id": tenant_id},
         )
         row = result.fetchone()
+
     plan_id = row.plan_id if row else "free"
-    return {"plan_id": plan_id, **PLAN_LIMITS.get(plan_id, DEFAULT_LIMITS)}
+    if row and row.max_agents is not None:
+        features = row.features or {}
+        return {
+            "plan_id": plan_id,
+            "name": row.name or plan_id.capitalize(),
+            "max_agents": row.max_agents,
+            "max_invocations_month": row.max_invocations_month,
+            "price_usd": float(row.price_usd or 0),
+            "rag": bool(features.get("rag")),
+            "crew": bool(features.get("crew")),
+            "features": features,
+        }
+
+    fallback = PLAN_DEFAULTS.get(plan_id, DEFAULT_LIMITS)
+    return {
+        "plan_id": plan_id,
+        "name": fallback["name"],
+        "max_agents": fallback["max_agents"],
+        "max_invocations_month": fallback["max_invocations_month"],
+        "price_usd": fallback["price_usd"],
+        "rag": bool(fallback["features"].get("rag")),
+        "crew": bool(fallback["features"].get("crew")),
+        "features": fallback["features"],
+    }
 
 
 async def get_tenant_usage(tenant_id: str) -> dict:
@@ -42,7 +168,6 @@ async def get_tenant_usage(tenant_id: str) -> dict:
     schema = f"tenant_{tenant_id.replace('-', '_')}"
 
     async with PublicSessionFactory() as db:
-        # Contar agentes activos
         try:
             agents_result = await db.execute(
                 text(f"SELECT COUNT(*) FROM {schema}.agents WHERE status != 'archived'")
@@ -51,7 +176,6 @@ async def get_tenant_usage(tenant_id: str) -> dict:
         except Exception:
             agent_count = 0
 
-        # Contar invocaciones del mes
         try:
             inv_result = await db.execute(
                 text(f"""
@@ -65,21 +189,16 @@ async def get_tenant_usage(tenant_id: str) -> dict:
             invocations = 0
 
     return {
-        "agent_count":   agent_count,
+        "agent_count": agent_count,
         "invocations_month": invocations,
-        "month_start":   month_start.isoformat(),
+        "month_start": month_start.isoformat(),
     }
 
 
 class PlanLimitsChecker:
-    """
-    Verifica límites de plan antes de operaciones costosas.
-    Se usa como dependency en los endpoints relevantes.
-    """
-
     @staticmethod
     async def check_can_create_agent(tenant_id: str) -> None:
-        plan  = await get_tenant_plan(tenant_id)
+        plan = await get_tenant_plan(tenant_id)
         usage = await get_tenant_usage(tenant_id)
 
         if usage["agent_count"] >= plan["max_agents"]:
@@ -94,7 +213,7 @@ class PlanLimitsChecker:
 
     @staticmethod
     async def check_can_invoke(tenant_id: str) -> None:
-        plan  = await get_tenant_plan(tenant_id)
+        plan = await get_tenant_plan(tenant_id)
         usage = await get_tenant_usage(tenant_id)
 
         if usage["invocations_month"] >= plan["max_invocations_month"]:
@@ -127,23 +246,22 @@ class PlanLimitsChecker:
 
     @staticmethod
     async def get_usage_summary(tenant_id: str) -> dict:
-        """Retorna plan + uso + porcentajes para el dashboard."""
-        plan  = await get_tenant_plan(tenant_id)
+        plan = await get_tenant_plan(tenant_id)
         usage = await get_tenant_usage(tenant_id)
         return {
-            "plan_id":           plan["plan_id"],
+            "plan_id": plan["plan_id"],
             "agents": {
-                "used":  usage["agent_count"],
+                "used": usage["agent_count"],
                 "limit": plan["max_agents"],
-                "pct":   round(usage["agent_count"] / plan["max_agents"] * 100, 1),
+                "pct": round(usage["agent_count"] / plan["max_agents"] * 100, 1),
             },
             "invocations": {
-                "used":  usage["invocations_month"],
+                "used": usage["invocations_month"],
                 "limit": plan["max_invocations_month"],
-                "pct":   round(usage["invocations_month"] / plan["max_invocations_month"] * 100, 1),
+                "pct": round(usage["invocations_month"] / plan["max_invocations_month"] * 100, 1),
             },
             "features": {
-                "rag":  plan["rag"],
+                "rag": plan["rag"],
                 "crew": plan["crew"],
             },
         }

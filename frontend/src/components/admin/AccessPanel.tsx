@@ -1,7 +1,7 @@
-import { Building2, ShieldCheck, UserPlus, Users } from 'lucide-react'
+import { Building2, ShieldCheck, UserPlus, Users, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 
-import { authApi, tenantsApi, usersApi, type TenantUser } from '../../lib/api'
+import { authApi, systemApi, tenantsApi, usersApi, type PlanDefinition, type TenantUser } from '../../lib/api'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
@@ -52,8 +52,11 @@ export function AccessPanel() {
   const [loading, setLoading] = useState(true)
   const [userSubmitting, setUserSubmitting] = useState(false)
   const [tenantSubmitting, setTenantSubmitting] = useState(false)
+  const [plansSubmitting, setPlansSubmitting] = useState<string | null>(null)
   const [userForm, setUserForm] = useState(emptyUserForm)
   const [tenantForm, setTenantForm] = useState(emptyTenantForm)
+  const [plans, setPlans] = useState<PlanDefinition[]>([])
+  const [canManagePlans, setCanManagePlans] = useState(false)
   const [lastTenantCreated, setLastTenantCreated] = useState<null | {
     tenant_id: string
     user_id: string
@@ -66,6 +69,18 @@ export function AccessPanel() {
       const [me, tenantUsers] = await Promise.all([authApi.me(), usersApi.list()])
       setContext(me)
       setUsers(tenantUsers)
+      try {
+        const planCatalog = await systemApi.listPlans()
+        setPlans(planCatalog)
+        setCanManagePlans(true)
+      } catch (error: any) {
+        if (error.response?.status === 403) {
+          setCanManagePlans(false)
+          setPlans([])
+        } else {
+          throw error
+        }
+      }
     } catch (error: any) {
       toast.push({
         tone: 'error',
@@ -74,6 +89,41 @@ export function AccessPanel() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handlePlanChange = (planId: string, patch: Partial<PlanDefinition>) => {
+    setPlans((prev) =>
+      prev.map((plan) =>
+        plan.id === planId
+          ? {
+              ...plan,
+              ...patch,
+              features: patch.features ? { ...plan.features, ...patch.features } : plan.features,
+            }
+          : plan
+      )
+    )
+  }
+
+  const savePlan = async (plan: PlanDefinition) => {
+    setPlansSubmitting(plan.id)
+    try {
+      const updated = await systemApi.updatePlan(plan.id, plan)
+      setPlans((prev) => prev.map((entry) => (entry.id === plan.id ? updated : entry)))
+      toast.push({
+        tone: 'success',
+        title: 'Plan actualizado',
+        description: `Guardamos los límites de ${updated.name}.`,
+      })
+    } catch (error: any) {
+      toast.push({
+        tone: 'error',
+        title: 'No pudimos guardar el plan',
+        description: error.response?.data?.detail || error.message || 'Reintentá en unos segundos.',
+      })
+    } finally {
+      setPlansSubmitting(null)
     }
   }
 
@@ -304,7 +354,9 @@ export function AccessPanel() {
                   onChange={(event) => setTenantForm((prev) => ({ ...prev, plan_id: event.target.value }))}
                 >
                   <option value="free">free</option>
+                  <option value="starter">starter</option>
                   <option value="pro">pro</option>
+                  <option value="business">business</option>
                   <option value="enterprise">enterprise</option>
                 </Select>
               </Field>
@@ -362,6 +414,111 @@ export function AccessPanel() {
           </CardContent>
         </Card>
       </div>
+
+      {canManagePlans && (
+        <Card className="border-slate-200/80">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                <WalletCards className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle>Límites globales por plan</CardTitle>
+                <CardDescription>
+                  Consola del admin general para ajustar capacidad, pricing y features de cada plan.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {plans.map((plan) => (
+              <div key={plan.id} className="rounded-xl border border-slate-200 px-4 py-4">
+                <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-semibold text-slate-950">{plan.name}</span>
+                      <Badge tone={plan.id === 'enterprise' ? 'amber' : plan.id === 'pro' ? 'violet' : plan.id === 'starter' ? 'blue' : 'slate'}>
+                        {plan.id}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-slate-500">Límites efectivos que usa el backend para este plan.</p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    onClick={() => savePlan(plan)}
+                    disabled={plansSubmitting === plan.id}
+                  >
+                    {plansSubmitting === plan.id ? 'Guardando...' : 'Guardar plan'}
+                  </Button>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-4">
+                  <Field label="Nombre visible">
+                    <Input
+                      value={plan.name}
+                      onChange={(event) => handlePlanChange(plan.id, { name: event.target.value })}
+                    />
+                  </Field>
+                  <Field label="Máx. agentes">
+                    <Input
+                      type="number"
+                      min={1}
+                      value={plan.max_agents}
+                      onChange={(event) =>
+                        handlePlanChange(plan.id, { max_agents: Number(event.target.value || 0) })
+                      }
+                    />
+                  </Field>
+                  <Field label="Invocaciones / mes">
+                    <Input
+                      type="number"
+                      min={1}
+                      value={plan.max_invocations_month}
+                      onChange={(event) =>
+                        handlePlanChange(plan.id, { max_invocations_month: Number(event.target.value || 0) })
+                      }
+                    />
+                  </Field>
+                  <Field label="Precio USD">
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={plan.price_usd}
+                      onChange={(event) =>
+                        handlePlanChange(plan.id, { price_usd: Number(event.target.value || 0) })
+                      }
+                    />
+                  </Field>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-6">
+                  <label className="flex items-center gap-2 text-sm text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(plan.features.rag)}
+                      onChange={(event) =>
+                        handlePlanChange(plan.id, { features: { rag: event.target.checked } })
+                      }
+                    />
+                    RAG habilitado
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(plan.features.crew)}
+                      onChange={(event) =>
+                        handlePlanChange(plan.id, { features: { crew: event.target.checked } })
+                      }
+                    />
+                    Multi-agente / crew
+                  </label>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

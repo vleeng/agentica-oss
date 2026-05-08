@@ -10,6 +10,7 @@ const PLAN_TONES: Record<string, 'slate' | 'blue' | 'violet' | 'amber'> = {
   free: 'slate',
   starter: 'blue',
   pro: 'violet',
+  business: 'amber',
   enterprise: 'amber',
 }
 

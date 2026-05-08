@@ -57,6 +57,9 @@ async def lifespan(app: FastAPI):
             "ON public.api_keys (tenant_id, agent_id)"
         ))
 
+    from app.core.plan_limits import seed_default_plans
+    await seed_default_plans()
+
     # Sembrar superusuario admin
     import uuid
     from sqlalchemy import text
