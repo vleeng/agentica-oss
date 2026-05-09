@@ -6,7 +6,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, status, Request
+from fastapi import APIRouter, HTTPException, Response, status, Request
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import text
 
@@ -378,7 +378,7 @@ async def create_user(body: TenantUserCreate, ctx: CurrentContext) -> dict:
     }
 
 
-@router.post("/change-password", status_code=204)
+@router.post("/change-password", status_code=204, response_class=Response)
 async def change_password(body: ChangePasswordInput, ctx: CurrentContext) -> None:
     ctx.require_human_user()
     async with PublicSessionFactory() as db:
@@ -475,7 +475,7 @@ async def forgot_password(body: ForgotPasswordInput, request: Request) -> Forgot
     return ForgotPasswordOut(reset_token=raw_token)
 
 
-@router.post("/reset-password", status_code=204)
+@router.post("/reset-password", status_code=204, response_class=Response)
 async def reset_password(body: ResetPasswordInput, request: Request) -> None:
     from app.core.rate_limiter import get_rate_limiter
 
