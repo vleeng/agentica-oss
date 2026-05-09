@@ -3,7 +3,7 @@ import os
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 from app.core.config import get_settings
-from app.runtime.llm import resolve_base_url
+from app.runtime.llm import resolve_base_url, uses_max_completion_tokens
 
 settings = get_settings()
 
@@ -98,8 +98,14 @@ class TextGenerationClient:
                 api_key=api_key,
                 base_url=resolve_base_url(provider, None),
             )
-            response = await client.chat.completions.create(
-                model=model, max_tokens=max_tokens, temperature=temperature,
-                messages=[{"role": "user", "content": prompt}],
-            )
+            kwargs = {
+                "model": model,
+                "temperature": temperature,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            if uses_max_completion_tokens(model, provider):
+                kwargs["max_completion_tokens"] = max_tokens
+            else:
+                kwargs["max_tokens"] = max_tokens
+            response = await client.chat.completions.create(**kwargs)
             return (response.choices[0].message.content or "").strip()

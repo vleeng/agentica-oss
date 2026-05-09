@@ -13,6 +13,7 @@ from app.runtime.llm import (
     infer_provider,
     qualify_crewai_model_name,
     resolve_base_url,
+    uses_max_completion_tokens,
 )
 from app.schemas.agent import AgentDesign, AgentRoleSpec, CrewProcess, MemoryType
 
@@ -88,8 +89,11 @@ class CrewAIAgentBuilder:
             "model": model,
             "api_key": llm_config.api_key,
             "temperature": params.temperature,
-            "max_tokens": params.max_tokens,
         }
+        if uses_max_completion_tokens(model, provider):
+            kwargs["max_completion_tokens"] = params.max_tokens
+        else:
+            kwargs["max_tokens"] = params.max_tokens
 
         base_url = llm_config.base_url or resolve_base_url(provider, params.base_url)
         if base_url:

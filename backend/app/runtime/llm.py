@@ -109,6 +109,19 @@ def qualify_crewai_model_name(model: str, provider: str) -> str:
     return normalized
 
 
+def uses_max_completion_tokens(model: str, provider: str) -> bool:
+    provider = canonical_provider(provider)
+    normalized = normalize_model_name(model, provider).lower()
+    if provider not in {"openai", "custom_openai"}:
+        return False
+    return (
+        normalized.startswith("gpt-5")
+        or normalized.startswith("o1")
+        or normalized.startswith("o3")
+        or normalized.startswith("o4")
+    )
+
+
 def resolve_base_url(provider: str, explicit_base_url: str | None = None) -> str | None:
     if explicit_base_url:
         return explicit_base_url
@@ -136,9 +149,12 @@ def create_chat_llm(params: ModelParams, config: LLMConfig):
         kwargs = {
             "model": model,
             "temperature": params.temperature,
-            "max_tokens": params.max_tokens,
             "api_key": config.api_key,
         }
+        if uses_max_completion_tokens(model, provider):
+            kwargs["model_kwargs"] = {"max_completion_tokens": params.max_tokens}
+        else:
+            kwargs["max_tokens"] = params.max_tokens
         base_url = config.base_url or resolve_base_url(provider, params.base_url)
         if base_url:
             kwargs["base_url"] = base_url
