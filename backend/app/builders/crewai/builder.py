@@ -91,6 +91,7 @@ class CrewAIAgentBuilder:
             "temperature": params.temperature,
         }
         if uses_max_completion_tokens(model, provider):
+            kwargs["max_tokens"] = None
             kwargs["max_completion_tokens"] = params.max_tokens
         else:
             kwargs["max_tokens"] = params.max_tokens
