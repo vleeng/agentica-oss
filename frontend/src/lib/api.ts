@@ -91,7 +91,13 @@ export interface ProviderKey {
   is_default: boolean
   created_at: string
   truncated_key: string
-  models: string[]
+  models: ProviderModel[]
+}
+
+export interface ProviderModel {
+  id: string
+  input_cost_per_million: number
+  output_cost_per_million: number
 }
 
 export interface UsageSummary {
@@ -403,7 +409,7 @@ export const llmKeysApi = {
   remove: (keyId: string) => api.delete(`/keys/llm/${keyId}`).then((r) => r.data),
   setDefault: (keyId: string, provider: string) =>
     api.put(`/keys/llm/${keyId}/default`, undefined, { params: { provider } }).then((r) => r.data),
-  updateModels: (keyId: string, models: string[]) =>
+  updateModels: (keyId: string, models: ProviderModel[]) =>
     api.put(`/keys/llm/${keyId}/models`, { models }).then((r) => r.data),
 }
 

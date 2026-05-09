@@ -446,9 +446,9 @@ function StepModel({ state, update }: StepProps) {
 
   // Construir lista de modelos desde la Bóveda: { id, name, providerId, keyId }
   const availableModels = keys.flatMap(k =>
-    (k.models || []).map(modelId => ({
-      id: modelId,
-      name: modelId,
+    (k.models || []).map(model => ({
+      id: model.id,
+      name: model.id,
       providerId: k.provider,
       keyId: k.id,
       keyName: k.name,

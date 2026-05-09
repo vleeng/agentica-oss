@@ -12,7 +12,8 @@ from sqlalchemy import text
 from app.api.deps import TenantRepo
 from app.core.security import CurrentContext, encrypt_provider_key
 from app.db.session import PublicSessionFactory
-from app.schemas.tenant import LLMProviderKeyCreate, LLMProviderKeyOut
+from app.schemas.tenant import LLMProviderKeyCreate, LLMProviderKeyOut, LLMProviderModel
+from app.services.model_catalog import normalize_provider_models
 
 router = APIRouter()
 
@@ -201,7 +202,7 @@ async def list_llm_keys(ctx: CurrentContext) -> list[LLMProviderKeyOut]:
             is_default=r.is_default,
             created_at=r.created_at,
             truncated_key=r.truncated_key,
-            models=list(r.models) if r.models else [],
+            models=normalize_provider_models(r.models),
         )
         for r in rows
     ]
@@ -278,7 +279,7 @@ async def set_default_llm_key(key_id: str, provider: str, ctx: CurrentContext) -
 
 
 class UpdateModelsRequest(BaseModel):
-    models: list[str]
+    models: list[LLMProviderModel | str]
 
 @router.put("/llm/{key_id}/models", status_code=200)
 async def update_llm_key_models(key_id: str, body: UpdateModelsRequest, ctx: CurrentContext) -> dict:
@@ -286,13 +287,14 @@ async def update_llm_key_models(key_id: str, body: UpdateModelsRequest, ctx: Cur
     ctx.require_human_user()
     ctx.require_developer()
     import json
+    normalized_models = normalize_provider_models(body.models)
     async with PublicSessionFactory() as db:
         await db.execute(
             text("UPDATE llm_provider_keys SET models = CAST(:models AS jsonb) WHERE id = :id AND tenant_id = :tid"),
-            {"models": json.dumps(body.models), "id": key_id, "tid": ctx.tenant_id}
+            {"models": json.dumps([model.model_dump() for model in normalized_models]), "id": key_id, "tid": ctx.tenant_id}
         )
         await db.commit()
-    return {"status": "ok", "models": body.models}
+    return {"status": "ok", "models": [model.model_dump() for model in normalized_models]}
 
 
 @router.delete("/llm/{key_id}", status_code=204)

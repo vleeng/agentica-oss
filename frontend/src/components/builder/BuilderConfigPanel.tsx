@@ -132,8 +132,8 @@ export function BuilderConfigPanel() {
                     onChange={e => setSelectedModel(e.target.value)}
                   >
                     <option value="">— Selecciona un modelo —</option>
-                    {availableModels.map(m => (
-                      <option key={m} value={m}>{m}</option>
+                    {availableModels.map((m) => (
+                      <option key={m.id} value={m.id}>{m.id}</option>
                     ))}
                   </Select>
                 ) : (

@@ -15,6 +15,7 @@ from app.runtime.llm import infer_provider, qualify_model_name
 from app.runtime.store import get_runtime_store
 from app.schemas.agent import AgentDesign, AgentResponse, AgentSpec, ModelParams
 from app.schemas.eval import EvalReport, FeedbackItem
+from app.services.model_catalog import calculate_model_cost, estimate_usage_tokens, resolve_model_pricing
 from app.services.designer.design_generator import DesignGeneratorService
 from app.services.evaluator.eval_engine import EvalEngineService
 from app.services.optimizer.optimizer import OptimizerService
@@ -120,11 +121,18 @@ async def invoke_agent(
         raise HTTPException(500, _format_runtime_error(exc))
 
     try:
-        conv_id = await repo.upsert_conversation(agent_id, session_id, "rest_api")
-        await repo.save_message(conv_id, "user", body.input)
-        await repo.save_message(conv_id, "assistant", response.output, response.tokens_in, response.tokens_out)
-        cost = response.tokens_in * 3e-6 + response.tokens_out * 15e-6
-        await repo.record_billing_event(agent_id, conv_id, response.tokens_in, response.tokens_out, cost)
+        await _persist_usage_event(
+            repo=repo,
+            agent_id=agent_id,
+            ctx=ctx,
+            design=design,
+            session_id=session_id,
+            channel="rest_api",
+            user_input=body.input,
+            output=response.output,
+            reported_tokens_in=response.tokens_in,
+            reported_tokens_out=response.tokens_out,
+        )
     except Exception as exc:
         logger.warning("[INVOKE] Error al persistir conversacion: %s", exc)
 
@@ -166,19 +174,34 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
                 continue
 
             try:
-                async def _do_stream():
-                    collected = []
+                async def _do_stream() -> tuple[str, int, int]:
+                    collected: list[str] = []
                     async for token in runtime.stream(user_input, session_id):
                         await websocket.send_json({"type": "token", "content": token})
                         collected.append(token)
 
-                    if not collected:
-                        logger.warning("[WS] stream yielded no tokens for agent %s - falling back to invoke", agent_id)
-                        response = await asyncio.wait_for(runtime.invoke(user_input, session_id), timeout=WS_INVOKE_TIMEOUT_SECONDS)
-                        if response.output:
-                            await websocket.send_json({"type": "token", "content": response.output})
+                    if collected:
+                        return "".join(collected).strip(), 0, 0
 
-                await asyncio.wait_for(_do_stream(), timeout=WS_INVOKE_TIMEOUT_SECONDS)
+                    logger.warning("[WS] stream yielded no tokens for agent %s - falling back to invoke", agent_id)
+                    response = await asyncio.wait_for(runtime.invoke(user_input, session_id), timeout=WS_INVOKE_TIMEOUT_SECONDS)
+                    if response.output:
+                        await websocket.send_json({"type": "token", "content": response.output})
+                    return response.output, response.tokens_in, response.tokens_out
+
+                output, reported_tokens_in, reported_tokens_out = await asyncio.wait_for(_do_stream(), timeout=WS_INVOKE_TIMEOUT_SECONDS)
+                await _persist_usage_event(
+                    repo=None,
+                    agent_id=agent_id,
+                    ctx=ctx,
+                    design=_design,
+                    session_id=session_id,
+                    channel="web_chat",
+                    user_input=user_input,
+                    output=output,
+                    reported_tokens_in=reported_tokens_in,
+                    reported_tokens_out=reported_tokens_out,
+                )
                 await websocket.send_json({"type": "done", "session_id": session_id})
             except asyncio.TimeoutError:
                 logger.warning("[WS] stream timed out after %ss for agent %s", int(WS_INVOKE_TIMEOUT_SECONDS), agent_id)
@@ -544,6 +567,45 @@ async def _get_ws_context(websocket: WebSocket) -> RequestContext | None:
             return None
 
     return None
+
+
+async def _persist_usage_event(
+    *,
+    repo,
+    agent_id: str,
+    ctx: RequestContext,
+    design: AgentDesign,
+    session_id: str,
+    channel: str,
+    user_input: str,
+    output: str,
+    reported_tokens_in: int,
+    reported_tokens_out: int,
+) -> None:
+    async def _write_usage(usage_repo) -> None:
+        tokens_in, tokens_out = estimate_usage_tokens(
+            user_input,
+            output,
+            reported_tokens_in=reported_tokens_in,
+            reported_tokens_out=reported_tokens_out,
+        )
+        pricing = await resolve_model_pricing(ctx.tenant_id, design.spec.model_params)
+        cost = calculate_model_cost(tokens_in, tokens_out, pricing)
+        conv_id = await usage_repo.upsert_conversation(agent_id, session_id, channel, user_ref=ctx.user_id)
+        await usage_repo.save_message(conv_id, "user", user_input)
+        await usage_repo.save_message(conv_id, "assistant", output, tokens_in, tokens_out)
+        await usage_repo.record_billing_event(agent_id, conv_id, tokens_in, tokens_out, cost)
+
+    if repo is not None:
+        await _write_usage(repo)
+        return
+
+    from app.db.repository import AgentRepository
+    from app.db.session import get_tenant_session_factory
+
+    session_factory = get_tenant_session_factory(ctx.tenant_id)
+    async with session_factory() as session:
+        await _write_usage(AgentRepository(session))
 
 
 def _normalize_design_models(design: AgentDesign) -> bool:

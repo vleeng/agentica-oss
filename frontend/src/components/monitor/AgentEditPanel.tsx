@@ -36,7 +36,7 @@ export function AgentEditPanel({ design, onUpdated }: Props) {
 
   // Flat list of {keyId, modelId} options
   const modelOptions = keys.flatMap((k) =>
-    (k.models ?? []).map((m) => ({ keyId: k.id, modelId: m, keyName: k.name, provider: k.provider }))
+    (k.models ?? []).map((m) => ({ keyId: k.id, modelId: m.id, keyName: k.name, provider: k.provider }))
   )
 
   const selectedOption = modelOptions.find((o) => o.modelId === model && o.keyId === llmKeyId)

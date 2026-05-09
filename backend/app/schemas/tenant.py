@@ -56,6 +56,11 @@ class LLMProviderKeyCreate(BaseModel):
     name: str
     raw_key: str
 
+class LLMProviderModel(BaseModel):
+    id: str = Field(..., min_length=1)
+    input_cost_per_million: float = Field(0.0, ge=0.0)
+    output_cost_per_million: float = Field(0.0, ge=0.0)
+
 class LLMProviderKeyOut(BaseModel):
     id: UUID
     provider: str
@@ -63,4 +68,4 @@ class LLMProviderKeyOut(BaseModel):
     is_default: bool
     created_at: datetime
     truncated_key: str
-    models: list[str] = []
+    models: list[LLMProviderModel] = Field(default_factory=list)

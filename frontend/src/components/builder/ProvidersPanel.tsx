@@ -1,7 +1,7 @@
 import { KeyRound, Plus, ShieldCheck, Star, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { llmKeysApi, type ProviderKey } from '../../lib/api'
+import { llmKeysApi, type ProviderKey, type ProviderModel } from '../../lib/api'
 import { getAuthToken } from '../../stores/auth'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
@@ -166,7 +166,7 @@ export function ProvidersPanel() {
       <Card>
         <CardHeader>
           <CardTitle>Credenciales disponibles</CardTitle>
-          <CardDescription>Podés marcar defaults y revisar rápidamente qué proveedor cubre cada flujo.</CardDescription>
+          <CardDescription>Podés marcar defaults, cargar modelos y definir costo por millón de tokens.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {errorMsg && (
@@ -227,16 +227,28 @@ function KeyRow({
   onModelsUpdated: () => void
 }) {
   const [newModel, setNewModel] = useState('')
+  const [newInputCost, setNewInputCost] = useState('0')
+  const [newOutputCost, setNewOutputCost] = useState('0')
   const [saving, setSaving] = useState(false)
   const { push } = useToast()
 
   const addModel = async () => {
-    const model = newModel.trim()
-    if (!model || providerKey.models.includes(model)) return
+    const modelId = newModel.trim()
+    if (!modelId || providerKey.models.some((model) => model.id === modelId)) return
+
     setSaving(true)
     try {
-      await llmKeysApi.updateModels(providerKey.id, [...providerKey.models, model])
+      await llmKeysApi.updateModels(providerKey.id, [
+        ...providerKey.models,
+        {
+          id: modelId,
+          input_cost_per_million: Math.max(0, Number(newInputCost) || 0),
+          output_cost_per_million: Math.max(0, Number(newOutputCost) || 0),
+        },
+      ])
       setNewModel('')
+      setNewInputCost('0')
+      setNewOutputCost('0')
       onModelsUpdated()
     } catch {
       push({ tone: 'error', title: 'Error', description: 'No se pudo agregar el modelo.' })
@@ -245,10 +257,35 @@ function KeyRow({
     }
   }
 
-  const removeModel = async (model: string) => {
+  const saveModel = async (modelId: string, patch: Partial<ProviderModel>) => {
     setSaving(true)
     try {
-      await llmKeysApi.updateModels(providerKey.id, providerKey.models.filter(m => m !== model))
+      await llmKeysApi.updateModels(
+        providerKey.id,
+        providerKey.models.map((model) =>
+          model.id === modelId
+            ? {
+                ...model,
+                ...patch,
+                input_cost_per_million: Math.max(0, Number(patch.input_cost_per_million ?? model.input_cost_per_million) || 0),
+                output_cost_per_million: Math.max(0, Number(patch.output_cost_per_million ?? model.output_cost_per_million) || 0),
+              }
+            : model
+        )
+      )
+      push({ tone: 'success', title: 'Costo actualizado' })
+      onModelsUpdated()
+    } catch {
+      push({ tone: 'error', title: 'Error', description: 'No se pudo actualizar el costo del modelo.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const removeModel = async (modelId: string) => {
+    setSaving(true)
+    try {
+      await llmKeysApi.updateModels(providerKey.id, providerKey.models.filter((model) => model.id !== modelId))
       onModelsUpdated()
     } catch {
       push({ tone: 'error', title: 'Error', description: 'No se pudo eliminar el modelo.' })
@@ -258,8 +295,7 @@ function KeyRow({
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 space-y-4">
-      {/* Header de la key */}
+    <div className="space-y-4 rounded-2xl border border-slate-200 bg-white px-5 py-4">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-start gap-4">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-sm font-semibold text-slate-700">
@@ -289,36 +325,120 @@ function KeyRow({
         </div>
       </div>
 
-      {/* Modelos disponibles */}
-      <div className="border-t border-slate-100 pt-3 space-y-2">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Modelos disponibles</p>
-        <div className="flex flex-wrap gap-2">
+      <div className="space-y-3 border-t border-slate-100 pt-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Modelos disponibles</p>
+        <div className="space-y-3">
           {providerKey.models.length === 0 && (
-            <span className="text-xs text-slate-400">Sin modelos — agregá al menos uno para poder usarlo en el Wizard.</span>
+            <span className="text-xs text-slate-400">Sin modelos todavía. Agregá al menos uno para poder usarlo en el wizard.</span>
           )}
-          {providerKey.models.map(model => (
-            <span key={model} className="flex items-center gap-1 rounded-full bg-violet-50 border border-violet-200 px-3 py-1 text-xs font-mono text-violet-700">
-              {model}
-              <button onClick={() => removeModel(model)} disabled={saving} className="ml-1 hover:text-rose-600">
-                <X className="h-3 w-3" />
-              </button>
-            </span>
+          {providerKey.models.map((model) => (
+            <ModelPricingRow
+              key={model.id}
+              model={model}
+              disabled={saving}
+              onSave={saveModel}
+              onRemove={removeModel}
+            />
           ))}
         </div>
-        <div className="flex gap-2 mt-2">
-          <input
+
+        <div className="grid gap-2 md:grid-cols-[1.6fr_0.8fr_0.8fr_auto]">
+          <Input
             value={newModel}
-            onChange={e => setNewModel(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addModel()}
+            onChange={(e) => setNewModel(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addModel()}
             placeholder={`Ej: ${providerKey.provider === 'openrouter' ? 'openai/gpt-4o-mini' : providerKey.provider === 'openai' ? 'gpt-4o' : 'claude-3-5-sonnet-20241022'}`}
-            className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-500"
+            className="text-xs font-mono"
+          />
+          <Input
+            type="number"
+            min="0"
+            step="0.0001"
+            value={newInputCost}
+            onChange={(e) => setNewInputCost(e.target.value)}
+            placeholder="USD / 1M in"
+          />
+          <Input
+            type="number"
+            min="0"
+            step="0.0001"
+            value={newOutputCost}
+            onChange={(e) => setNewOutputCost(e.target.value)}
+            placeholder="USD / 1M out"
           />
           <Button size="sm" variant="secondary" onClick={addModel} disabled={saving || !newModel.trim()}>
             <Plus className="h-3.5 w-3.5" />
             Agregar
           </Button>
         </div>
+        <p className="text-[11px] text-slate-400">Costo en USD por millón de tokens de entrada y salida.</p>
       </div>
+    </div>
+  )
+}
+
+function ModelPricingRow({
+  model,
+  disabled,
+  onSave,
+  onRemove,
+}: {
+  model: ProviderModel
+  disabled: boolean
+  onSave: (modelId: string, patch: Partial<ProviderModel>) => Promise<void>
+  onRemove: (modelId: string) => Promise<void>
+}) {
+  const [inputCost, setInputCost] = useState(String(model.input_cost_per_million))
+  const [outputCost, setOutputCost] = useState(String(model.output_cost_per_million))
+
+  useEffect(() => {
+    setInputCost(String(model.input_cost_per_million))
+    setOutputCost(String(model.output_cost_per_million))
+  }, [model.id, model.input_cost_per_million, model.output_cost_per_million])
+
+  return (
+    <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 md:grid-cols-[1.6fr_0.8fr_0.8fr_auto_auto]">
+      <div className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-mono text-violet-700">
+        <span className="block truncate">{model.id}</span>
+      </div>
+      <Input
+        type="number"
+        min="0"
+        step="0.0001"
+        value={inputCost}
+        disabled={disabled}
+        onChange={(e) => setInputCost(e.target.value)}
+      />
+      <Input
+        type="number"
+        min="0"
+        step="0.0001"
+        value={outputCost}
+        disabled={disabled}
+        onChange={(e) => setOutputCost(e.target.value)}
+      />
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={disabled}
+        onClick={() =>
+          onSave(model.id, {
+            input_cost_per_million: Number(inputCost) || 0,
+            output_cost_per_million: Number(outputCost) || 0,
+          })
+        }
+      >
+        Guardar
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={disabled}
+        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+        onClick={() => onRemove(model.id)}
+      >
+        <X className="h-3.5 w-3.5" />
+      </Button>
     </div>
   )
 }
