@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
+from typing import Any
 
 from app.schemas.agent import ModelParams
 
@@ -45,6 +46,43 @@ class LLMConfig:
     @property
     def is_openai_compatible(self) -> bool:
         return canonical_provider(self.provider) in OPENAI_COMPATIBLE_PROVIDERS
+
+
+@dataclass
+class CrewAILLMAdapter:
+    model: str
+    provider: str
+    api_key: str
+    temperature: float
+    max_tokens: int
+    base_url: str | None = None
+    timeout: float = 120.0
+    stop: list[str] = field(default_factory=list)
+
+    def call(self, messages: list[dict[str, Any]] | str, callbacks: list[Any] | None = None) -> str:
+        import litellm
+
+        payload = messages
+        if isinstance(messages, str):
+            payload = [{"role": "user", "content": messages}]
+
+        params: dict[str, Any] = {
+            "model": self.model,
+            "messages": payload,
+            "timeout": self.timeout,
+            "temperature": self.temperature,
+            "api_key": self.api_key,
+            "base_url": self.base_url,
+            "stop": self.stop or None,
+            "stream": False,
+        }
+        if uses_max_completion_tokens(self.model, self.provider):
+            params["max_completion_tokens"] = self.max_tokens
+        else:
+            params["max_tokens"] = self.max_tokens
+
+        response = litellm.completion(**{k: v for k, v in params.items() if v is not None})
+        return response["choices"][0]["message"]["content"]
 
 
 def infer_provider(params: ModelParams) -> str:

@@ -8,12 +8,12 @@ from app.components.memory.adapters import (
 from app.components.tools.builtin import get_tool
 from app.runtime.crewai.runtime import CrewAIRuntime
 from app.runtime.llm import (
+    CrewAILLMAdapter,
     LLMConfig,
     canonical_provider,
     infer_provider,
     qualify_crewai_model_name,
     resolve_base_url,
-    uses_max_completion_tokens,
 )
 from app.schemas.agent import AgentDesign, AgentRoleSpec, CrewProcess, MemoryType
 
@@ -81,26 +81,17 @@ class CrewAIAgentBuilder:
         )
 
     def _make_llm(self, params, llm_config: LLMConfig):
-        from crewai import LLM
-
         provider = canonical_provider(params.provider or llm_config.provider or infer_provider(params))
         model = qualify_crewai_model_name(params.model, provider)
-        kwargs = {
-            "model": model,
-            "api_key": llm_config.api_key,
-            "temperature": params.temperature,
-        }
-        if uses_max_completion_tokens(model, provider):
-            kwargs["max_tokens"] = None
-            kwargs["max_completion_tokens"] = params.max_tokens
-        else:
-            kwargs["max_tokens"] = params.max_tokens
-
         base_url = llm_config.base_url or resolve_base_url(provider, params.base_url)
-        if base_url:
-            kwargs["base_url"] = base_url
-
-        return LLM(**kwargs)
+        return CrewAILLMAdapter(
+            model=model,
+            provider=provider,
+            api_key=llm_config.api_key,
+            temperature=params.temperature,
+            max_tokens=params.max_tokens,
+            base_url=base_url,
+        )
 
     async def _build_agent_async(
         self,
