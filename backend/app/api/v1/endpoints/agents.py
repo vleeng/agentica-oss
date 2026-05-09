@@ -28,6 +28,9 @@ designer_svc = DesignGeneratorService()
 eval_svc = EvalEngineService()
 optimizer_svc = OptimizerService()
 
+REST_INVOKE_TIMEOUT_SECONDS = 240.0
+WS_INVOKE_TIMEOUT_SECONDS = 180.0
+
 
 @router.post("/spec", response_model=AgentDesign, status_code=201)
 async def create_agent_from_spec(
@@ -110,11 +113,11 @@ async def invoke_agent(
     await plan_checker.check_can_invoke(ctx.tenant_id)
 
     try:
-        response = await asyncio.wait_for(runtime.invoke(body.input, session_id), timeout=120.0)
+        response = await asyncio.wait_for(runtime.invoke(body.input, session_id), timeout=REST_INVOKE_TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
-        raise HTTPException(504, "Timeout - agente tardo mas de 120s")
+        raise HTTPException(504, f"Timeout - el agente tardo mas de {int(REST_INVOKE_TIMEOUT_SECONDS)}s")
     except Exception as exc:
-        raise HTTPException(500, str(exc))
+        raise HTTPException(500, _format_runtime_error(exc))
 
     try:
         conv_id = await repo.upsert_conversation(agent_id, session_id, "rest_api")
@@ -171,18 +174,25 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
 
                     if not collected:
                         logger.warning("[WS] stream yielded no tokens for agent %s - falling back to invoke", agent_id)
-                        response = await asyncio.wait_for(runtime.invoke(user_input, session_id), timeout=90.0)
+                        response = await asyncio.wait_for(runtime.invoke(user_input, session_id), timeout=WS_INVOKE_TIMEOUT_SECONDS)
                         if response.output:
                             await websocket.send_json({"type": "token", "content": response.output})
 
-                await asyncio.wait_for(_do_stream(), timeout=90.0)
+                await asyncio.wait_for(_do_stream(), timeout=WS_INVOKE_TIMEOUT_SECONDS)
                 await websocket.send_json({"type": "done", "session_id": session_id})
             except asyncio.TimeoutError:
-                logger.warning("[WS] stream timed out after 90s for agent %s", agent_id)
-                await websocket.send_json({"type": "error", "message": "El agente tardo demasiado en responder (timeout 90s)"})
+                logger.warning("[WS] stream timed out after %ss for agent %s", int(WS_INVOKE_TIMEOUT_SECONDS), agent_id)
+                await websocket.send_json({
+                    "type": "error",
+                    "message": (
+                        f"El agente tardo demasiado en responder "
+                        f"(timeout {int(WS_INVOKE_TIMEOUT_SECONDS)}s). "
+                        "Probá con un modelo mas rapido o una consulta mas corta."
+                    ),
+                })
             except Exception as exc:
                 logger.exception("[WS] error during stream for agent %s: %s", agent_id, exc)
-                await websocket.send_json({"type": "error", "message": str(exc)})
+                await websocket.send_json({"type": "error", "message": _format_runtime_error(exc)})
 
     except WebSocketDisconnect:
         pass
@@ -568,3 +578,20 @@ def _normalize_design_models(design: AgentDesign) -> bool:
             changed = True
 
     return changed
+
+
+def _format_runtime_error(exc: Exception) -> str:
+    message = str(exc)
+    lowered = message.lower()
+
+    if "ratelimiterror" in lowered or "error code: 429" in lowered or "temporarily rate-limited upstream" in lowered:
+        return (
+            "El proveedor del modelo rechazo la solicitud por limite temporal de uso. "
+            "Si estas usando un modelo free de OpenRouter, probá de nuevo en unos minutos "
+            "o cambiá a un modelo/credencial con mas capacidad."
+        )
+
+    if "invalid_api_key" in lowered or "incorrect api key" in lowered:
+        return "La credencial del proveedor LLM no es valida para este modelo."
+
+    return message
