@@ -599,6 +599,8 @@ export function AccessPanel() {
                             <span>slug: <code className="rounded bg-slate-100 px-2 py-1">{request.slug}</code></span>
                             <span>owner: {request.owner_name || request.owner_email}</span>
                             <span>{request.owner_email}</span>
+                            {request.company_sector && <span>sector: {request.company_sector}</span>}
+                            {request.job_title && <span>puesto: {request.job_title}</span>}
                             <span>{formatDate(request.created_at)}</span>
                           </div>
                           {request.review_notes && (

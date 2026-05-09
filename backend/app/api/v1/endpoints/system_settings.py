@@ -60,6 +60,8 @@ class FreeRequestOut(BaseModel):
     slug: str
     owner_email: str
     owner_name: str | None = None
+    company_sector: str | None = None
+    job_title: str | None = None
     requested_plan_id: str
     status: str
     review_notes: str | None = None
@@ -122,6 +124,8 @@ def _map_free_request(row) -> FreeRequestOut:
         slug=row.slug,
         owner_email=row.owner_email,
         owner_name=row.owner_name,
+        company_sector=getattr(row, "company_sector", None),
+        job_title=getattr(row, "job_title", None),
         requested_plan_id=row.requested_plan_id,
         status=row.status,
         review_notes=row.review_notes,
@@ -235,6 +239,8 @@ async def list_free_requests(ctx: CurrentContext, status: str | None = None) -> 
             slug,
             owner_email,
             owner_name,
+            company_sector,
+            job_title,
             requested_plan_id,
             status,
             review_notes,
@@ -272,6 +278,8 @@ async def approve_free_request(request_id: str, body: FreeRequestApprove, ctx: C
                     slug,
                     owner_email,
                     owner_name,
+                    company_sector,
+                    job_title,
                     password_hash,
                     requested_plan_id,
                     status,
@@ -368,6 +376,8 @@ async def approve_free_request(request_id: str, body: FreeRequestApprove, ctx: C
                     slug,
                     owner_email,
                     owner_name,
+                    company_sector,
+                    job_title,
                     requested_plan_id,
                     status,
                     review_notes,
@@ -412,6 +422,8 @@ async def reject_free_request(request_id: str, body: FreeRequestDecision, ctx: C
                     slug,
                     owner_email,
                     owner_name,
+                    company_sector,
+                    job_title,
                     requested_plan_id,
                     status,
                     review_notes,

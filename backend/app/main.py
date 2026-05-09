@@ -94,6 +94,14 @@ async def lifespan(app: FastAPI):
             "CREATE INDEX IF NOT EXISTS idx_free_account_requests_status "
             "ON public.free_account_requests(status, created_at DESC)"
         ))
+        await conn.execute(_text(
+            "ALTER TABLE IF EXISTS public.free_account_requests "
+            "ADD COLUMN IF NOT EXISTS company_sector TEXT"
+        ))
+        await conn.execute(_text(
+            "ALTER TABLE IF EXISTS public.free_account_requests "
+            "ADD COLUMN IF NOT EXISTS job_title TEXT"
+        ))
 
     from app.core.plan_limits import seed_default_plans
     await seed_default_plans()

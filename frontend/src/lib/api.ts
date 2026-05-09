@@ -149,10 +149,12 @@ export interface ForgotPasswordResult {
 }
 
 export interface FreeAccountRequestPayload {
-  tenant_name: string
-  slug: string
+  first_name: string
+  last_name: string
   owner_email: string
-  owner_name?: string
+  company_name: string
+  company_sector: string
+  job_title: string
   password: string
 }
 
@@ -162,6 +164,8 @@ export interface FreeAccountRequest {
   slug: string
   owner_email: string
   owner_name?: string | null
+  company_sector?: string | null
+  job_title?: string | null
   requested_plan_id: string
   status: 'pending' | 'approved' | 'rejected'
   review_notes?: string | null

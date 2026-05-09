@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS public.free_account_requests (
     slug            TEXT NOT NULL,
     owner_email     TEXT NOT NULL,
     owner_name      TEXT,
+    company_sector  TEXT,
+    job_title       TEXT,
     password_hash   TEXT NOT NULL,
     requested_plan_id TEXT NOT NULL DEFAULT 'free',
     status          TEXT NOT NULL DEFAULT 'pending',

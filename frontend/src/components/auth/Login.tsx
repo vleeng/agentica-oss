@@ -11,15 +11,30 @@ import { Input } from '../ui/input'
 import { useToast } from '../ui/toast'
 
 export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
+  const sectors = [
+    'Servicios financieros',
+    'Tecnología',
+    'Industria y manufactura',
+    'Salud',
+    'Retail y consumo',
+    'Logística y transporte',
+    'Energía',
+    'Educación',
+    'Consultoría profesional',
+    'Otro',
+  ]
   const [mode, setMode] = useState<'login' | 'forgot' | 'reset' | 'request'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [resetToken, setResetToken] = useState('')
   const [resetPassword, setResetPassword] = useState('')
   const [resetConfirm, setResetConfirm] = useState('')
-  const [requestTenantName, setRequestTenantName] = useState('')
-  const [requestSlug, setRequestSlug] = useState('')
-  const [requestOwnerName, setRequestOwnerName] = useState('')
+  const [requestFirstName, setRequestFirstName] = useState('')
+  const [requestLastName, setRequestLastName] = useState('')
+  const [requestCompanyName, setRequestCompanyName] = useState('')
+  const [requestCompanySector, setRequestCompanySector] = useState(sectors[0])
+  const [requestJobTitle, setRequestJobTitle] = useState('')
+  const [requestPasswordConfirm, setRequestPasswordConfirm] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const setToken = useAuthStore((state) => state.setToken)
@@ -96,13 +111,19 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const handleFreeRequest = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
+    if (password !== requestPasswordConfirm) {
+      setError('Las dos contraseñas tienen que coincidir.')
+      return
+    }
     setLoading(true)
     try {
       const request = await authApi.requestFreeAccount({
-        tenant_name: requestTenantName,
-        slug: requestSlug,
+        first_name: requestFirstName,
+        last_name: requestLastName,
         owner_email: email,
-        owner_name: requestOwnerName,
+        company_name: requestCompanyName,
+        company_sector: requestCompanySector,
+        job_title: requestJobTitle,
         password,
       })
       push({
@@ -110,10 +131,13 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
         title: 'Solicitud enviada',
         description: `Dejamos ${request.tenant_name} en cola para aprobación del admin general.`,
       })
-      setRequestTenantName('')
-      setRequestSlug('')
-      setRequestOwnerName('')
+      setRequestFirstName('')
+      setRequestLastName('')
+      setRequestCompanyName('')
+      setRequestCompanySector(sectors[0])
+      setRequestJobTitle('')
       setPassword('')
+      setRequestPasswordConfirm('')
       setMode('login')
     } catch (e: any) {
       setError(formatApiError(e.response?.data?.detail, 'No pudimos enviar la solicitud.'))
@@ -204,43 +228,76 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                   {mode === 'request' && (
                     <>
                       <div className="grid gap-4 md:grid-cols-2">
-                        <Field label="Nombre del tenant" required>
+                        <Field label="Nombre" required>
                           <Input
                             type="text"
-                            value={requestTenantName}
-                            onChange={(e) => setRequestTenantName(e.target.value)}
-                            placeholder="Zgenmind"
+                            value={requestFirstName}
+                            onChange={(e) => setRequestFirstName(e.target.value)}
+                            placeholder="Guillermo"
                           />
                         </Field>
-                        <Field label="Slug" required hint="Solo minúsculas, números y guiones.">
+                        <Field label="Apellido" required>
                           <Input
                             type="text"
-                            pattern="^[a-z0-9-]+$"
-                            value={requestSlug}
-                            onChange={(e) => setRequestSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                            placeholder="zgenmind"
+                            value={requestLastName}
+                            onChange={(e) => setRequestLastName(e.target.value)}
+                            placeholder="Romani"
                           />
                         </Field>
                       </div>
-                      <Field label="Nombre del owner">
+                      <Field label="Empresa" required hint="El tenant y el slug se generan automáticamente a partir de este dato.">
                         <Input
                           type="text"
-                          value={requestOwnerName}
-                          onChange={(e) => setRequestOwnerName(e.target.value)}
-                          placeholder="Guillermo Romani"
+                          value={requestCompanyName}
+                          onChange={(e) => setRequestCompanyName(e.target.value)}
+                          placeholder="Zgenmind"
                         />
                       </Field>
-                      <Field label="Contraseña inicial" required hint="La va a usar el owner cuando el admin apruebe la cuenta.">
-                        <Input
-                          type="password"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          placeholder="********"
-                          minLength={8}
-                        />
-                      </Field>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Field label="Sector de la empresa" required>
+                          <select
+                            value={requestCompanySector}
+                            onChange={(e) => setRequestCompanySector(e.target.value)}
+                            className="flex h-12 w-full rounded-lg border border-slate-200 bg-white px-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-200"
+                          >
+                            {sectors.map((sector) => (
+                              <option key={sector} value={sector}>
+                                {sector}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Puesto en la empresa" required>
+                          <Input
+                            type="text"
+                            value={requestJobTitle}
+                            onChange={(e) => setRequestJobTitle(e.target.value)}
+                            placeholder="Gerente de operaciones"
+                          />
+                        </Field>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Field label="Contraseña inicial" required hint="La va a usar la persona cuando el admin apruebe la cuenta.">
+                          <Input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="********"
+                            minLength={8}
+                          />
+                        </Field>
+                        <Field label="Repetir contraseña" required>
+                          <Input
+                            type="password"
+                            value={requestPasswordConfirm}
+                            onChange={(e) => setRequestPasswordConfirm(e.target.value)}
+                            placeholder="********"
+                            minLength={8}
+                          />
+                        </Field>
+                      </div>
                       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                        Este pedido crea una solicitud de cuenta <span className="font-medium">free</span>. El tenant se activa cuando el admin general la aprueba.
+                        El admin general revisa la solicitud y, si la aprueba, crea el workspace con plan <span className="font-medium">free</span>.
                       </div>
                     </>
                   )}
@@ -360,7 +417,17 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                         type="submit"
                         className="w-full"
                         size="lg"
-                        disabled={loading || !email || !password || !requestTenantName || !requestSlug}
+                        disabled={
+                          loading ||
+                          !email ||
+                          !password ||
+                          !requestPasswordConfirm ||
+                          !requestFirstName ||
+                          !requestLastName ||
+                          !requestCompanyName ||
+                          !requestCompanySector ||
+                          !requestJobTitle
+                        }
                       >
                         {loading ? 'Enviando solicitud...' : 'Solicitar cuenta free'}
                       </Button>

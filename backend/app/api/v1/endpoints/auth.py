@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import secrets
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -53,10 +55,12 @@ class ResetPasswordInput(BaseModel):
 
 
 class FreeAccountRequestInput(BaseModel):
-    tenant_name: str = Field(..., min_length=2, max_length=100)
-    slug: str = Field(..., min_length=2, max_length=50, pattern=r"^[a-z0-9\-]+$")
+    first_name: str = Field(..., min_length=2, max_length=80)
+    last_name: str = Field(..., min_length=2, max_length=80)
     owner_email: EmailStr
-    owner_name: str | None = Field(default=None, max_length=120)
+    company_name: str = Field(..., min_length=2, max_length=100)
+    company_sector: str = Field(..., min_length=2, max_length=80)
+    job_title: str = Field(..., min_length=2, max_length=100)
     password: str = Field(..., min_length=8)
 
 
@@ -66,9 +70,17 @@ class FreeAccountRequestOut(BaseModel):
     slug: str
     owner_email: EmailStr
     owner_name: str | None = None
+    company_sector: str | None = None
+    job_title: str | None = None
     requested_plan_id: str
     status: str
     created_at: str
+
+
+def _slugify_company_name(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
+    return slug[:50] or "workspace"
 
 
 @router.post("/register", response_model=TokenOut, status_code=201)
@@ -153,19 +165,12 @@ async def request_free_account(body: FreeAccountRequestInput, request: Request) 
     )
 
     logger.info(
-        "[Access] free_request_requested slug=%s owner_email=%s",
-        body.slug,
+        "[Access] free_request_requested company=%s owner_email=%s",
+        body.company_name,
         body.owner_email,
     )
 
     async with PublicSessionFactory() as db:
-        existing_tenant = await db.execute(
-            text("SELECT id FROM tenants WHERE slug = :slug"),
-            {"slug": body.slug},
-        )
-        if existing_tenant.fetchone():
-            raise HTTPException(409, "Ese slug ya estÃ¡ en uso")
-
         existing_user = await db.execute(
             text("SELECT id FROM users WHERE email = :email"),
             {"email": body.owner_email},
@@ -178,16 +183,39 @@ async def request_free_account(body: FreeAccountRequestInput, request: Request) 
                 SELECT id
                 FROM free_account_requests
                 WHERE status = 'pending'
-                  AND (slug = :slug OR owner_email = :owner_email)
+                  AND owner_email = :owner_email
                 LIMIT 1
             """),
-            {"slug": body.slug, "owner_email": body.owner_email},
+            {"owner_email": body.owner_email},
         )
         if existing_request.fetchone():
-            raise HTTPException(409, "Ya existe una solicitud pendiente para ese slug o email")
+            raise HTTPException(409, "Ya existe una solicitud pendiente para ese email")
+
+        base_slug = _slugify_company_name(body.company_name)
+        slug = base_slug
+        suffix = 2
+        while True:
+            slug_conflict = await db.execute(
+                text("""
+                    SELECT 1
+                    FROM (
+                        SELECT slug FROM tenants
+                        UNION ALL
+                        SELECT slug FROM free_account_requests
+                    ) candidates
+                    WHERE slug = :slug
+                    LIMIT 1
+                """),
+                {"slug": slug},
+            )
+            if not slug_conflict.fetchone():
+                break
+            slug = f"{base_slug[: max(1, 50 - len(str(suffix)) - 1)]}-{suffix}"
+            suffix += 1
 
         request_id = str(uuid.uuid4())
         created_at = datetime.now(timezone.utc)
+        owner_name = f"{body.first_name.strip()} {body.last_name.strip()}".strip()
         await db.execute(
             text("""
                 INSERT INTO free_account_requests (
@@ -196,6 +224,8 @@ async def request_free_account(body: FreeAccountRequestInput, request: Request) 
                     slug,
                     owner_email,
                     owner_name,
+                    company_sector,
+                    job_title,
                     password_hash,
                     requested_plan_id,
                     status
@@ -206,6 +236,8 @@ async def request_free_account(body: FreeAccountRequestInput, request: Request) 
                     :slug,
                     :owner_email,
                     :owner_name,
+                    :company_sector,
+                    :job_title,
                     :password_hash,
                     'free',
                     'pending'
@@ -213,10 +245,12 @@ async def request_free_account(body: FreeAccountRequestInput, request: Request) 
             """),
             {
                 "id": request_id,
-                "tenant_name": body.tenant_name,
-                "slug": body.slug,
+                "tenant_name": body.company_name,
+                "slug": slug,
                 "owner_email": body.owner_email,
-                "owner_name": body.owner_name or "",
+                "owner_name": owner_name,
+                "company_sector": body.company_sector,
+                "job_title": body.job_title,
                 "password_hash": hash_password(body.password),
             },
         )
@@ -225,15 +259,17 @@ async def request_free_account(body: FreeAccountRequestInput, request: Request) 
     logger.info(
         "[Access] free_request_success request_id=%s slug=%s owner_email=%s",
         request_id,
-        body.slug,
+        slug,
         body.owner_email,
     )
     return FreeAccountRequestOut(
         id=request_id,
-        tenant_name=body.tenant_name,
-        slug=body.slug,
+        tenant_name=body.company_name,
+        slug=slug,
         owner_email=body.owner_email,
-        owner_name=body.owner_name,
+        owner_name=owner_name,
+        company_sector=body.company_sector,
+        job_title=body.job_title,
         requested_plan_id="free",
         status="pending",
         created_at=created_at.isoformat(),
