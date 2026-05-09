@@ -439,7 +439,9 @@ def _materialize_design(raw_design: Any, *, agent_id: str, tenant_id: str, statu
     if status:
         design_dict["status"] = status
 
-    return AgentDesign.model_validate(design_dict)
+    design = AgentDesign.model_validate(design_dict)
+    _normalize_design_models(design)
+    return design
 
 
 async def _restore_design(agent_id: str, ctx: RequestContext, repo: TenantRepo) -> AgentDesign:
@@ -480,6 +482,10 @@ async def _get_runtime(agent_id: str, ctx: RequestContext, repo: TenantRepo | No
     runtime, design = result
     if str(design.tenant_id) != str(ctx.tenant_id):
         raise HTTPException(403, "Agente no autorizado")
+
+    normalized = _normalize_design_models(design)
+    if normalized:
+        await store.save_design(agent_id, design)
 
     if runtime is None:
         try:
@@ -528,3 +534,37 @@ async def _get_ws_context(websocket: WebSocket) -> RequestContext | None:
             return None
 
     return None
+
+
+def _normalize_design_models(design: AgentDesign) -> bool:
+    changed = False
+
+    base_params = design.spec.model_params
+    base_provider = base_params.provider or infer_provider(base_params)
+    qualified_base_model = qualify_model_name(base_params.model, base_provider)
+    if qualified_base_model != base_params.model:
+        base_params.model = qualified_base_model
+        changed = True
+    if base_params.provider != base_provider:
+        base_params.provider = base_provider
+        changed = True
+
+    if design.spec.manager_model:
+        qualified_manager_model = qualify_model_name(design.spec.manager_model, base_provider)
+        if qualified_manager_model != design.spec.manager_model:
+            design.spec.manager_model = qualified_manager_model
+            changed = True
+
+    for role in design.spec.agents:
+        if not role.model_params:
+            continue
+        role_provider = role.model_params.provider or infer_provider(role.model_params)
+        qualified_role_model = qualify_model_name(role.model_params.model, role_provider)
+        if qualified_role_model != role.model_params.model:
+            role.model_params.model = qualified_role_model
+            changed = True
+        if role.model_params.provider != role_provider:
+            role.model_params.provider = role_provider
+            changed = True
+
+    return changed

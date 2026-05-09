@@ -122,6 +122,12 @@ class RuntimeFactory:
                     {"tid": tenant_id, "prov": provider}
                 )
             row = res.fetchone()
+            if not row and not key_id and provider == "openrouter":
+                res = await db.execute(
+                    text("SELECT provider, encrypted_key FROM llm_provider_keys WHERE tenant_id = CAST(:tid AS uuid) AND provider = 'google' AND is_default = TRUE"),
+                    {"tid": tenant_id}
+                )
+                row = res.fetchone()
             
         if not row:
             import os

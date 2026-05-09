@@ -26,6 +26,9 @@ OPENAI_COMPATIBLE_PROVIDERS = {
 
 PROVIDER_ALIASES = {
     "openroute": "openrouter",
+    # Compatibilidad con llaves legacy cargadas como "google" para modelos
+    # servidos por OpenRouter (ej: google/gemma-...:free).
+    "google": "openrouter",
 }
 
 
@@ -93,6 +96,19 @@ def qualify_model_name(model: str, provider: str) -> str:
     return model
 
 
+def qualify_crewai_model_name(model: str, provider: str) -> str:
+    provider = canonical_provider(provider)
+    normalized = normalize_model_name(model, provider)
+
+    if provider == "anthropic":
+        return f"anthropic/{normalized}"
+    if provider == "openrouter":
+        return f"openrouter/{normalized}"
+    if provider in {"openai", "deepseek", "qwen", "moonshot", "zhipu", "custom_openai"}:
+        return f"openai/{normalized}"
+    return normalized
+
+
 def resolve_base_url(provider: str, explicit_base_url: str | None = None) -> str | None:
     if explicit_base_url:
         return explicit_base_url
@@ -102,9 +118,9 @@ def resolve_base_url(provider: str, explicit_base_url: str | None = None) -> str
 
 
 def create_chat_llm(params: ModelParams, config: LLMConfig):
-    provider = canonical_provider(config.provider)
+    provider = canonical_provider(params.provider or config.provider or infer_provider(params))
     model = normalize_model_name(params.model, provider)
-    if config.is_anthropic:
+    if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
 
         return ChatAnthropic(
@@ -114,7 +130,7 @@ def create_chat_llm(params: ModelParams, config: LLMConfig):
             api_key=config.api_key,
         )
 
-    if config.is_openai_compatible:
+    if provider in OPENAI_COMPATIBLE_PROVIDERS:
         from langchain_openai import ChatOpenAI
 
         kwargs = {
@@ -123,8 +139,9 @@ def create_chat_llm(params: ModelParams, config: LLMConfig):
             "max_tokens": params.max_tokens,
             "api_key": config.api_key,
         }
-        if config.base_url:
-            kwargs["base_url"] = config.base_url
+        base_url = config.base_url or resolve_base_url(provider, params.base_url)
+        if base_url:
+            kwargs["base_url"] = base_url
         return ChatOpenAI(**kwargs)
 
     raise ValueError(f"Proveedor LLM no soportado: {provider}")
