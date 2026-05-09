@@ -121,9 +121,14 @@ def canonical_provider(provider: str) -> str:
 
 
 def normalize_model_name(model: str, provider: str) -> str:
+    provider = canonical_provider(provider)
     if provider == "openrouter" and model.startswith("openrouter:"):
         return model.split(":", 1)[1]
     if provider == "openrouter" and model.startswith("openrouter/"):
+        return model.split("/", 1)[1]
+    if provider in {"openai", "custom_openai"} and model.startswith("openai/"):
+        return model.split("/", 1)[1]
+    if provider == "anthropic" and model.startswith("anthropic/"):
         return model.split("/", 1)[1]
     if provider in {"deepseek", "qwen", "moonshot", "zhipu"} and model.startswith(f"{provider}/"):
         return model.split("/", 1)[1]
