@@ -13,6 +13,35 @@ function logAccess(event: string, payload?: Record<string, unknown>) {
   console.info(`[Agentica][Access] ${event}`, payload || {})
 }
 
+function stringifyDetail(detail: unknown): string | null {
+  if (!detail) return null
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object') {
+          const msg = 'msg' in item ? item.msg : null
+          const loc = 'loc' in item && Array.isArray(item.loc) ? item.loc.join('.') : null
+          if (typeof msg === 'string' && loc) return `${loc}: ${msg}`
+          if (typeof msg === 'string') return msg
+        }
+        return null
+      })
+      .filter(Boolean)
+      .join(' | ')
+  }
+  if (typeof detail === 'object') {
+    if ('msg' in detail && typeof detail.msg === 'string') return detail.msg
+    return JSON.stringify(detail)
+  }
+  return String(detail)
+}
+
+function getErrorDescription(error: any, fallback: string): string {
+  return stringifyDetail(error?.response?.data?.detail) || error?.message || fallback
+}
+
 interface AccessContext {
   tenant_id: string
   user_id: string
@@ -96,7 +125,7 @@ export function AccessPanel() {
       toast.push({
         tone: 'error',
         title: 'No pudimos cargar accesos',
-        description: error.response?.data?.detail || error.message || 'Reintentá en unos segundos.',
+        description: getErrorDescription(error, 'Reintentá en unos segundos.'),
       })
     } finally {
       setLoading(false)
@@ -134,7 +163,7 @@ export function AccessPanel() {
       toast.push({
         tone: 'error',
         title: 'No pudimos guardar el plan',
-        description: error.response?.data?.detail || error.message || 'Reintentá en unos segundos.',
+        description: getErrorDescription(error, 'Reintentá en unos segundos.'),
       })
     } finally {
       setPlansSubmitting(null)
@@ -173,7 +202,7 @@ export function AccessPanel() {
       toast.push({
         tone: 'error',
         title: 'No pudimos crear el usuario',
-        description: error.response?.data?.detail || error.message || 'Revisá los datos e intentá de nuevo.',
+        description: getErrorDescription(error, 'Revisá los datos e intentá de nuevo.'),
       })
     } finally {
       setUserSubmitting(false)
@@ -227,7 +256,7 @@ export function AccessPanel() {
       toast.push({
         tone: 'error',
         title: 'No pudimos crear el tenant',
-        description: error.response?.data?.detail || error.message || 'Verificá slug y credenciales del owner.',
+        description: getErrorDescription(error, 'Verificá slug y credenciales del owner.'),
       })
     } finally {
       setTenantSubmitting(false)
@@ -377,7 +406,12 @@ export function AccessPanel() {
                   placeholder="balanz-labs"
                   pattern="^[a-z0-9-]+$"
                   value={tenantForm.slug}
-                  onChange={(event) => setTenantForm((prev) => ({ ...prev, slug: event.target.value }))}
+                  onChange={(event) =>
+                    setTenantForm((prev) => ({
+                      ...prev,
+                      slug: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                    }))
+                  }
                   required
                 />
               </Field>
