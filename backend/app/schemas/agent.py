@@ -150,6 +150,7 @@ class FrameworkSelection(BaseModel):
 # ── AgentDesign — output del Design Generator ───────────────────────────────
 
 class AgentDesign(BaseModel):
+    schema_version: int = 1
     agent_id: UUID = Field(default_factory=uuid4)
     tenant_id: str
     spec: AgentSpec

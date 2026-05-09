@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, status, Request
@@ -16,6 +17,7 @@ from app.db.session import PublicSessionFactory, engine, provision_tenant
 from app.schemas.tenant import LoginInput, TokenOut, UserCreate
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class TenantUserCreate(BaseModel):
@@ -115,6 +117,7 @@ async def login(body: LoginInput, request: Request) -> TokenOut:
 @router.get("/me")
 async def get_me(ctx: CurrentContext) -> dict:
     ctx.require_human_user()
+    logger.info("[Access] auth_me tenant_id=%s user_id=%s role=%s", ctx.tenant_id, ctx.user_id, ctx.role)
     return {"user_id": ctx.user_id, "tenant_id": ctx.tenant_id, "role": ctx.role}
 
 
@@ -134,6 +137,8 @@ async def list_users(ctx: CurrentContext) -> list[dict]:
         )
         rows = result.fetchall()
 
+    logger.info("[Access] auth_users_list tenant_id=%s owner_user_id=%s count=%s", ctx.tenant_id, ctx.user_id, len(rows))
+
     return [
         {
             "id": str(row.id),
@@ -152,6 +157,13 @@ async def list_users(ctx: CurrentContext) -> list[dict]:
 async def create_user(body: TenantUserCreate, ctx: CurrentContext) -> dict:
     ctx.require_human_user()
     ctx.require_owner()
+    logger.info(
+        "[Access] auth_user_create_requested tenant_id=%s owner_user_id=%s email=%s role=%s",
+        ctx.tenant_id,
+        ctx.user_id,
+        body.email,
+        body.role,
+    )
 
     import uuid
 
@@ -161,6 +173,7 @@ async def create_user(body: TenantUserCreate, ctx: CurrentContext) -> dict:
             {"email": body.email},
         )
         if existing.fetchone():
+            logger.warning("[Access] auth_user_create_conflict email=%s", body.email)
             raise HTTPException(409, "Email ya registrado")
 
         user_id = str(uuid.uuid4())
@@ -179,6 +192,14 @@ async def create_user(body: TenantUserCreate, ctx: CurrentContext) -> dict:
             },
         )
         await db.commit()
+
+    logger.info(
+        "[Access] auth_user_create_success tenant_id=%s created_user_id=%s email=%s role=%s",
+        ctx.tenant_id,
+        user_id,
+        body.email,
+        body.role,
+    )
 
     return {
         "id": user_id,

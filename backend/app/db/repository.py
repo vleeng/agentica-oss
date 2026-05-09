@@ -34,8 +34,14 @@ class AgentRepository:
         await self._db.execute(
             text("""
                 INSERT INTO agents (id, name, description, mode, framework, status, spec_json, design_json)
-                VALUES (:id, :name, :desc, :mode, :fw, 'draft', CAST(:spec AS jsonb), CAST(:design AS jsonb))
+                VALUES (:id, :name, :desc, :mode, :fw, :status, CAST(:spec AS jsonb), CAST(:design AS jsonb))
                 ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    description = EXCLUDED.description,
+                    mode = EXCLUDED.mode,
+                    framework = EXCLUDED.framework,
+                    status = EXCLUDED.status,
+                    spec_json = EXCLUDED.spec_json,
                     design_json = EXCLUDED.design_json,
                     updated_at  = NOW()
             """),
@@ -45,12 +51,13 @@ class AgentRepository:
                 "desc":   spec.description,
                 "mode":   spec.mode.value,
                 "fw":     design.framework.framework,
+                "status": design.status,
                 "spec":   spec.model_dump_json(),
                 "design": design.model_dump_json(),
             },
         )
         await self._db.commit()
-        return {"agent_id": agent_id, "status": "draft"}
+        return {"agent_id": agent_id, "status": design.status}
 
     async def get_agent(self, agent_id: str) -> Optional[dict]:
         result = await self._db.execute(
@@ -88,7 +95,19 @@ class AgentRepository:
 
     async def update_agent_status(self, agent_id: str, status: str) -> None:
         await self._db.execute(
-            text("UPDATE agents SET status = :status, updated_at = NOW() WHERE id = :id"),
+            text("""
+                UPDATE agents
+                SET
+                    status = :status,
+                    design_json = jsonb_set(
+                        COALESCE(design_json, '{}'::jsonb),
+                        '{status}',
+                        to_jsonb(CAST(:status AS text)),
+                        true
+                    ),
+                    updated_at = NOW()
+                WHERE id = :id
+            """),
             {"status": status, "id": agent_id},
         )
         await self._db.commit()

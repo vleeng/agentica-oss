@@ -15,7 +15,7 @@ import {
   Wand2,
   Zap,
 } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 
 import { getAuthRole, useAuthStore } from '../../stores/auth'
@@ -70,6 +70,10 @@ export function AppShell() {
   }
 
   const docsHref = `${import.meta.env.VITE_API_URL || ''}/docs`
+
+  useEffect(() => {
+    console.info('[Agentica][Nav] route', { pathname: location.pathname, role })
+  }, [location.pathname, role])
 
   return (
     <div className="flex min-h-screen bg-slate-50">

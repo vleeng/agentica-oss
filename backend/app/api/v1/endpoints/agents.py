@@ -3,8 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
@@ -23,13 +22,11 @@ from app.services.selector.framework_selector import FrameworkSelectorService
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-selector_svc  = FrameworkSelectorService()
-designer_svc  = DesignGeneratorService()
-eval_svc      = EvalEngineService()
+selector_svc = FrameworkSelectorService()
+designer_svc = DesignGeneratorService()
+eval_svc = EvalEngineService()
 optimizer_svc = OptimizerService()
 
-
-# ── POST /spec ────────────────────────────────────────────────────────────────
 
 @router.post("/spec", response_model=AgentDesign, status_code=201)
 async def create_agent_from_spec(
@@ -40,9 +37,9 @@ async def create_agent_from_spec(
     ctx.require_developer()
     spec.tenant_id = ctx.tenant_id
 
-    # Sprint 6: plan limits + rate limiting
     from app.core.plan_limits import plan_checker
     from app.core.rate_limiter import get_rate_limiter
+
     await plan_checker.check_can_create_agent(ctx.tenant_id)
     if spec.mode.value == "crew":
         await plan_checker.check_can_use_crew(ctx.tenant_id)
@@ -51,16 +48,13 @@ async def create_agent_from_spec(
     await get_rate_limiter().check(ctx.tenant_id, scope="spec")
 
     framework = await selector_svc.select(spec)
-    design    = await designer_svc.generate(spec, framework)
+    design = await designer_svc.generate(spec, framework)
 
-    # Persistir en DB y en RuntimeStore
     await repo.create_agent(design)
     await get_runtime_store().save_design(str(design.agent_id), design)
 
     return design
 
-
-# ── POST /{id}/build ──────────────────────────────────────────────────────────
 
 @router.post("/{agent_id}/build", status_code=202)
 async def build_agent(
@@ -70,34 +64,28 @@ async def build_agent(
 ) -> dict:
     ctx.require_human_user()
     ctx.require_developer()
-    await _assert_agent_access(agent_id, ctx, repo)
 
-    result = await get_runtime_store().get(agent_id)
-    if result is None:
-        raise HTTPException(404, "Design no encontrado — llamá primero a /spec")
-
-    _, design = result
+    design = await _restore_design(agent_id, ctx, repo)
     build_id = await repo.create_build(agent_id, design.version)
 
     try:
         store = get_runtime_store()
         runtime = await RuntimeFactory(redis_client=store.redis_client).build(design)
+        design.status = "testing"
         await store.save_runtime(agent_id, runtime, design)
         await repo.update_build(build_id, "ready")
         await repo.update_agent_status(agent_id, "testing")
-    except Exception as e:
-        await repo.update_build(build_id, "failed", error=str(e))
-        raise HTTPException(500, f"Error en el build: {e}")
+    except Exception as exc:
+        await repo.update_build(build_id, "failed", error=str(exc))
+        raise HTTPException(500, f"Error en el build: {exc}")
 
     return {
-        "agent_id":  agent_id,
-        "build_id":  build_id,
-        "status":    "ready",
+        "agent_id": agent_id,
+        "build_id": build_id,
+        "status": "ready",
         "framework": design.framework.framework,
     }
 
-
-# ── POST /{id}/invoke ─────────────────────────────────────────────────────────
 
 class InvokeRequest(BaseModel):
     input: str = Field(..., min_length=1, max_length=8000)
@@ -114,39 +102,30 @@ async def invoke_agent(
     runtime, design = await _get_runtime(agent_id, ctx, repo)
     session_id = body.session_id or f"{ctx.tenant_id}_{agent_id}_default"
 
-    # Sprint 6: rate limiting por tenant
     from app.core.rate_limiter import get_rate_limiter
-    await get_rate_limiter().check(ctx.tenant_id, scope="invoke")
-
-    # Sprint 6: plan invocation limits
     from app.core.plan_limits import plan_checker
+
+    await get_rate_limiter().check(ctx.tenant_id, scope="invoke")
     await plan_checker.check_can_invoke(ctx.tenant_id)
 
     try:
-        response = await asyncio.wait_for(
-            runtime.invoke(body.input, session_id), timeout=120.0
-        )
+        response = await asyncio.wait_for(runtime.invoke(body.input, session_id), timeout=120.0)
     except asyncio.TimeoutError:
-        raise HTTPException(504, "Timeout — agente tardó más de 120s")
-    except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(504, "Timeout - agente tardo mas de 120s")
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
 
-    # Persistir conversación y billing
     try:
         conv_id = await repo.upsert_conversation(agent_id, session_id, "rest_api")
         await repo.save_message(conv_id, "user", body.input)
-        await repo.save_message(conv_id, "assistant", response.output,
-                                response.tokens_in, response.tokens_out)
+        await repo.save_message(conv_id, "assistant", response.output, response.tokens_in, response.tokens_out)
         cost = response.tokens_in * 3e-6 + response.tokens_out * 15e-6
-        await repo.record_billing_event(agent_id, conv_id,
-                                        response.tokens_in, response.tokens_out, cost)
-    except Exception as e:
-        logger.warning(f"[INVOKE] Error al persistir conversación: {e}")
+        await repo.record_billing_event(agent_id, conv_id, response.tokens_in, response.tokens_out, cost)
+    except Exception as exc:
+        logger.warning("[INVOKE] Error al persistir conversacion: %s", exc)
 
     return response
 
-
-# ── WS /{id}/ws ───────────────────────────────────────────────────────────────
 
 @router.websocket("/{agent_id}/ws")
 async def agent_websocket(websocket: WebSocket, agent_id: str):
@@ -162,24 +141,24 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
-                await websocket.send_json({"type": "error", "message": "JSON inválido"})
+                await websocket.send_json({"type": "error", "message": "JSON invalido"})
                 continue
 
             user_input = data.get("input", "").strip()
             session_id = data.get("session_id", f"ws_{agent_id}_{id(websocket)}")
 
             if not user_input:
-                await websocket.send_json({"type": "error", "message": "Input vacío"})
+                await websocket.send_json({"type": "error", "message": "Input vacio"})
                 continue
-                
+
             if len(user_input) > 8000:
-                await websocket.send_json({"type": "error", "message": "Mensaje demasiado largo (máx 8000 caracteres)"})
+                await websocket.send_json({"type": "error", "message": "Mensaje demasiado largo (max 8000 caracteres)"})
                 continue
 
             try:
-                runtime, design = await _get_runtime(agent_id, ctx)
-            except HTTPException as e:
-                await websocket.send_json({"type": "error", "message": e.detail})
+                runtime, _design = await _get_runtime(agent_id, ctx)
+            except HTTPException as exc:
+                await websocket.send_json({"type": "error", "message": exc.detail})
                 continue
 
             try:
@@ -188,30 +167,25 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
                     async for token in runtime.stream(user_input, session_id):
                         await websocket.send_json({"type": "token", "content": token})
                         collected.append(token)
-                    # If the runtime yielded nothing (e.g. model returned empty),
-                    # fall back to a plain invoke so the user always gets a response.
+
                     if not collected:
-                        logger.warning(f"[WS] stream yielded no tokens for agent {agent_id} — falling back to invoke")
-                        response = await asyncio.wait_for(
-                            runtime.invoke(user_input, session_id), timeout=90.0
-                        )
+                        logger.warning("[WS] stream yielded no tokens for agent %s - falling back to invoke", agent_id)
+                        response = await asyncio.wait_for(runtime.invoke(user_input, session_id), timeout=90.0)
                         if response.output:
                             await websocket.send_json({"type": "token", "content": response.output})
 
                 await asyncio.wait_for(_do_stream(), timeout=90.0)
                 await websocket.send_json({"type": "done", "session_id": session_id})
             except asyncio.TimeoutError:
-                logger.warning(f"[WS] stream timed out after 90s for agent {agent_id}")
-                await websocket.send_json({"type": "error", "message": "El agente tardó demasiado en responder (timeout 90s)"})
-            except Exception as e:
-                logger.exception(f"[WS] error during stream for agent {agent_id}: {e}")
-                await websocket.send_json({"type": "error", "message": str(e)})
+                logger.warning("[WS] stream timed out after 90s for agent %s", agent_id)
+                await websocket.send_json({"type": "error", "message": "El agente tardo demasiado en responder (timeout 90s)"})
+            except Exception as exc:
+                logger.exception("[WS] error during stream for agent %s: %s", agent_id, exc)
+                await websocket.send_json({"type": "error", "message": str(exc)})
 
     except WebSocketDisconnect:
         pass
 
-
-# ── POST /{id}/eval ───────────────────────────────────────────────────────────
 
 @router.post("/{agent_id}/eval", response_model=EvalReport)
 async def eval_agent(
@@ -249,8 +223,6 @@ async def eval_with_feedback(
     return await eval_svc.run(design, human_feedback=body.feedback)
 
 
-# ── POST /{id}/optimize ───────────────────────────────────────────────────────
-
 class OptimizeRequest(BaseModel):
     eval_report: EvalReport
     auto_rebuild: bool = False
@@ -272,34 +244,33 @@ async def optimize_agent(
     if body.auto_rebuild:
         store = get_runtime_store()
         new_runtime = await RuntimeFactory(redis_client=store.redis_client).build(updated_design)
+        updated_design.status = "testing"
         await store.save_runtime(agent_id, new_runtime, updated_design)
-        await repo.create_agent(updated_design)   # upsert nueva versión
+        await repo.create_agent(updated_design)
 
     return {
-        "agent_id":    agent_id,
+        "agent_id": agent_id,
         "new_version": updated_design.version,
         "patch": {
             "system_prompt_changed": patch.system_prompt is not None,
-            "temperature":           patch.temperature,
-            "max_tokens":            patch.max_tokens,
-            "tools_added":           patch.tools_to_add,
-            "tools_removed":         patch.tools_to_remove,
-            "reasoning":             patch.reasoning,
-            "confidence":            patch.confidence,
+            "temperature": patch.temperature,
+            "max_tokens": patch.max_tokens,
+            "tools_added": patch.tools_to_add,
+            "tools_removed": patch.tools_to_remove,
+            "reasoning": patch.reasoning,
+            "confidence": patch.confidence,
         },
         "rebuilt": body.auto_rebuild,
     }
 
 
-# ── PUT /{id} — edición de parámetros core ───────────────────────────────────
-
 class UpdateAgentRequest(BaseModel):
-    name:          Optional[str]   = None
-    model:         Optional[str]   = None
-    llm_key_id:    Optional[str]   = None
-    system_prompt: Optional[str]   = None
-    temperature:   Optional[float] = Field(None, ge=0.0, le=1.0)
-    max_tokens:    Optional[int]   = Field(None, ge=256, le=8192)
+    name: Optional[str] = None
+    model: Optional[str] = None
+    llm_key_id: Optional[str] = None
+    system_prompt: Optional[str] = None
+    temperature: Optional[float] = Field(None, ge=0.0, le=1.0)
+    max_tokens: Optional[int] = Field(None, ge=256, le=8192)
 
 
 @router.put("/{agent_id}", response_model=AgentDesign)
@@ -309,11 +280,6 @@ async def update_agent(
     ctx: CurrentContext,
     repo: TenantRepo,
 ) -> AgentDesign:
-    """
-    Actualiza nombre, modelo, system prompt y/o parámetros del LLM
-    sin necesidad de borrar y recrear el agente.
-    Dispara un rebuild automático al finalizar.
-    """
     ctx.require_human_user()
     ctx.require_developer()
     await _assert_agent_access(agent_id, ctx, repo)
@@ -326,23 +292,20 @@ async def update_agent(
     if not updated_dict:
         raise HTTPException(404, f"Agente '{agent_id}' no encontrado")
 
-    new_design = AgentDesign(**updated_dict)
+    new_design = AgentDesign.model_validate(updated_dict)
     store = get_runtime_store()
     await store.save_design(agent_id, new_design)
 
-    # Rebuild en background para no bloquear la respuesta
     try:
         runtime = await RuntimeFactory(redis_client=store.redis_client).build(new_design)
+        new_design.status = "testing"
         await store.save_runtime(agent_id, runtime, new_design)
         await repo.update_agent_status(agent_id, "testing")
-    except Exception as e:
-        logger.warning(f"[UPDATE] Rebuild fallido tras edición: {e}")
-        # El design quedó guardado; el próximo /build lo levantará
+    except Exception as exc:
+        logger.warning("[UPDATE] Rebuild fallido tras edicion: %s", exc)
 
     return new_design
 
-
-# ── POST /{id}/deploy ─────────────────────────────────────────────────────────
 
 @router.post("/{agent_id}/deploy")
 async def deploy_agent(
@@ -350,31 +313,24 @@ async def deploy_agent(
     ctx: CurrentContext,
     repo: TenantRepo,
 ) -> dict:
-    """
-    Marca el agente como 'deployed' (producción).
-    Requiere que el agente haya sido evaluado y tenga build en estado 'ready'.
-    """
     ctx.require_human_user()
     ctx.require_developer()
     _, design = await _get_runtime(agent_id, ctx, repo)
     await repo.update_agent_status(agent_id, "deployed")
 
-    # Actualizar el status en el RuntimeStore para que getDesign lo refleje
     design.status = "deployed"
     store = get_runtime_store()
     await store.save_design(agent_id, design)
 
-    logger.info(f"[DEPLOY] agent_id={agent_id} tenant={ctx.tenant_id} → deployed")
+    logger.info("[DEPLOY] agent_id=%s tenant=%s -> deployed", agent_id, ctx.tenant_id)
 
     return {
         "agent_id": agent_id,
-        "status":   "deployed",
-        "version":  design.version,
-        "message":  "Agente desplegado correctamente.",
+        "status": "deployed",
+        "version": design.version,
+        "message": "Agente desplegado correctamente.",
     }
 
-
-# ── DELETE /{id} ─────────────────────────────────────────────────────────────
 
 @router.delete("/{agent_id}", status_code=204)
 async def delete_agent(
@@ -392,8 +348,6 @@ async def delete_agent(
     return Response(status_code=204)
 
 
-# ── GET /{id}/design ──────────────────────────────────────────────────────────
-
 @router.get("/{agent_id}/design", response_model=AgentDesign)
 async def get_design(agent_id: str, ctx: CurrentContext, repo: TenantRepo) -> AgentDesign:
     ctx.require_human_user()
@@ -402,10 +356,12 @@ async def get_design(agent_id: str, ctx: CurrentContext, repo: TenantRepo) -> Ag
     if result is not None:
         _, design = result
         return design
-    return AgentDesign(**agent["design"])
 
+    design = _materialize_design(agent["design"], agent_id=agent_id, tenant_id=ctx.tenant_id, status=agent.get("status"))
+    await get_runtime_store().save_design(agent_id, design)
+    logger.info("[RuntimeHydration] design restored from db agent_id=%s tenant_id=%s via=get_design", agent_id, ctx.tenant_id)
+    return design
 
-# ── GET /{id}/state ───────────────────────────────────────────────────────────
 
 @router.get("/{agent_id}/state")
 async def get_state(
@@ -418,15 +374,13 @@ async def get_state(
     ctx.require_developer()
     runtime, design = await _get_runtime(agent_id, ctx, repo)
     return {
-        "agent_id":  agent_id,
+        "agent_id": agent_id,
         "framework": design.framework.framework,
-        "mode":      design.spec.mode.value,
-        "version":   design.version,
-        "state":     runtime.get_state(session_id),
+        "mode": design.spec.mode.value,
+        "version": design.version,
+        "state": runtime.get_state(session_id),
     }
 
-
-# ── GET /{id}/history ─────────────────────────────────────────────────────────
 
 @router.get("/{agent_id}/history")
 async def get_history(
@@ -440,8 +394,6 @@ async def get_history(
     return await repo.get_conversation_history(agent_id, session_id)
 
 
-# ── DELETE /{id}/session/{sid} ────────────────────────────────────────────────
-
 @router.delete("/{agent_id}/session/{session_id}", status_code=204)
 async def reset_session(agent_id: str, session_id: str, ctx: CurrentContext, repo: TenantRepo) -> Response:
     ctx.require_human_user()
@@ -451,31 +403,78 @@ async def reset_session(agent_id: str, session_id: str, ctx: CurrentContext, rep
     return Response(status_code=204)
 
 
-# ── Helper ────────────────────────────────────────────────────────────────────
-
 async def _assert_agent_access(agent_id: str, ctx: RequestContext, repo: TenantRepo) -> dict:
-    if ctx.is_agent_user:
-        if ctx.agent_id != agent_id:
-            raise HTTPException(403, "La API key solo puede acceder a su agente asignado")
+    if ctx.is_agent_user and ctx.agent_id != agent_id:
+        raise HTTPException(403, "La API key solo puede acceder a su agente asignado")
     agent = await repo.get_agent(agent_id)
     if not agent:
         raise HTTPException(404, f"Agente '{agent_id}' no encontrado")
     return agent
 
 
+def _materialize_design(raw_design: Any, *, agent_id: str, tenant_id: str, status: str | None = None) -> AgentDesign:
+    if isinstance(raw_design, str):
+        design_dict = json.loads(raw_design)
+    else:
+        design_dict = dict(raw_design or {})
+
+    design_dict.setdefault("schema_version", 1)
+    design_dict["agent_id"] = design_dict.get("agent_id") or agent_id
+    design_dict["tenant_id"] = design_dict.get("tenant_id") or tenant_id
+    if status:
+        design_dict["status"] = status
+
+    return AgentDesign.model_validate(design_dict)
+
+
+async def _restore_design(agent_id: str, ctx: RequestContext, repo: TenantRepo) -> AgentDesign:
+    agent = await _assert_agent_access(agent_id, ctx, repo)
+    design = _materialize_design(agent["design"], agent_id=agent_id, tenant_id=ctx.tenant_id, status=agent.get("status"))
+    await get_runtime_store().save_design(agent_id, design)
+    logger.info("[RuntimeHydration] design restored from db agent_id=%s tenant_id=%s", agent_id, ctx.tenant_id)
+    return design
+
+
 async def _get_runtime(agent_id: str, ctx: RequestContext, repo: TenantRepo | None = None) -> tuple:
     if ctx.is_agent_user and ctx.agent_id != agent_id:
         raise HTTPException(403, "La API key solo puede invocar su agente asignado")
-    if repo is not None:
-        await _assert_agent_access(agent_id, ctx, repo)
-    result = await get_runtime_store().get(agent_id)
+
+    store = get_runtime_store()
+    result = await store.get(agent_id)
+
     if result is None:
-        raise HTTPException(404, f"Agente '{agent_id}' no encontrado — llamá a /spec primero")
+        if repo is None:
+            from app.db.repository import AgentRepository
+            from app.db.session import get_tenant_session_factory
+
+            session_factory = get_tenant_session_factory(ctx.tenant_id)
+            async with session_factory() as session:
+                repo = AgentRepository(session)
+                design = await _restore_design(agent_id, ctx, repo)
+        else:
+            design = await _restore_design(agent_id, ctx, repo)
+        result = await store.get(agent_id)
+        if result is None:
+            result = (None, design)
+    elif repo is not None:
+        await _assert_agent_access(agent_id, ctx, repo)
+
+    if result is None:
+        raise HTTPException(404, f"Agente '{agent_id}' no encontrado - llama a /spec primero")
+
     runtime, design = result
     if str(design.tenant_id) != str(ctx.tenant_id):
         raise HTTPException(403, "Agente no autorizado")
+
     if runtime is None:
-        raise HTTPException(409, f"Agente sin build — llamá a /{agent_id}/build")
+        try:
+            logger.info("[RuntimeHydration] rebuilding runtime on demand agent_id=%s tenant_id=%s", agent_id, ctx.tenant_id)
+            runtime = await RuntimeFactory(redis_client=store.redis_client).build(design)
+            await store.save_runtime(agent_id, runtime, design)
+        except Exception as exc:
+            logger.exception("[RuntimeHydration] runtime rebuild failed agent_id=%s tenant_id=%s error=%s", agent_id, ctx.tenant_id, exc)
+            raise HTTPException(409, f"Agente sin build - llama a /{agent_id}/build")
+
     return runtime, design
 
 
@@ -501,6 +500,7 @@ async def _get_ws_context(websocket: WebSocket) -> RequestContext | None:
     if api_key:
         try:
             from app.api.v1.endpoints.api_keys import resolve_api_key
+
             result = await resolve_api_key(api_key)
             if result and "invoke" in result.get("scopes", []):
                 return RequestContext(

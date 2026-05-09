@@ -13,6 +13,23 @@ const routerBase = (() => {
   return raw.replace(/\/$/, '')
 })()
 
+window.addEventListener('error', (event) => {
+  console.error('[Agentica][Window] error', {
+    message: event.message,
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno,
+    pathname: window.location.pathname,
+  })
+})
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[Agentica][Window] unhandledrejection', {
+    reason: event.reason,
+    pathname: window.location.pathname,
+  })
+})
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter basename={routerBase}>

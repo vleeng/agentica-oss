@@ -16,18 +16,45 @@ import { clearStoredToken, getAuthToken } from '../stores/auth'
 const BASE_URL = import.meta.env.VITE_API_URL || ''
 const APP_BASE = import.meta.env.BASE_URL || '/'
 
+function logApi(event: string, payload: Record<string, unknown>) {
+  console.info(`[Agentica][API] ${event}`, payload)
+}
+
 function createClient(): AxiosInstance {
   const client = axios.create({ baseURL: `${BASE_URL}/api/v1` })
 
   client.interceptors.request.use((cfg) => {
+    ;(cfg as any).__startedAt = Date.now()
     const token = getAuthToken()
     if (token) cfg.headers.Authorization = `Bearer ${token}`
+    logApi('request', {
+      method: cfg.method?.toUpperCase(),
+      url: cfg.url,
+      has_token: Boolean(token),
+      params: cfg.params || null,
+      body_keys: cfg.data && typeof cfg.data === 'object' ? Object.keys(cfg.data) : null,
+    })
     return cfg
   })
 
   client.interceptors.response.use(
-    (response) => response,
+    (response) => {
+      logApi('response', {
+        method: response.config.method?.toUpperCase(),
+        url: response.config.url,
+        status: response.status,
+        duration_ms: Date.now() - ((response.config as any).__startedAt || Date.now()),
+      })
+      return response
+    },
     (error) => {
+      console.error('[Agentica][API] error', {
+        method: error.config?.method?.toUpperCase?.(),
+        url: error.config?.url,
+        status: error.response?.status,
+        duration_ms: Date.now() - ((error.config as any)?.__startedAt || Date.now()),
+        detail: error.response?.data?.detail || error.message,
+      })
       if (error.response?.status === 401) {
         clearStoredToken()
         window.location.href = APP_BASE

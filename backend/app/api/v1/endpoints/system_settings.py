@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -12,6 +13,7 @@ from app.core.security import CurrentContext
 from app.db.session import PublicSessionFactory
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 class BuilderConfig(BaseModel):
     provider: str           # e.g. "openrouter", "anthropic"
@@ -108,12 +110,15 @@ async def set_builder_config(body: BuilderConfig, ctx: CurrentContext) -> Builde
 @router.get("/system/plans", response_model=list[PlanOut])
 async def get_plans(ctx: CurrentContext) -> list[PlanOut]:
     await _require_system_admin(ctx)
-    return [PlanOut(**plan) for plan in await list_plans()]
+    plans = [PlanOut(**plan) for plan in await list_plans()]
+    logger.info("[Access] system_plans_list tenant_id=%s user_id=%s count=%s", ctx.tenant_id, ctx.user_id, len(plans))
+    return plans
 
 
 @router.put("/system/plans/{plan_id}", response_model=PlanOut)
 async def update_plan(plan_id: str, body: PlanUpdate, ctx: CurrentContext) -> PlanOut:
     await _require_system_admin(ctx)
+    logger.info("[Access] system_plan_update_requested tenant_id=%s user_id=%s plan_id=%s", ctx.tenant_id, ctx.user_id, plan_id)
     async with PublicSessionFactory() as db:
         result = await db.execute(
             text("""
@@ -141,6 +146,7 @@ async def update_plan(plan_id: str, body: PlanUpdate, ctx: CurrentContext) -> Pl
             raise HTTPException(status_code=404, detail="Plan no encontrado")
         await db.commit()
 
+    logger.info("[Access] system_plan_update_success tenant_id=%s user_id=%s plan_id=%s", ctx.tenant_id, ctx.user_id, plan_id)
     return PlanOut(
         id=row.id,
         name=row.name,

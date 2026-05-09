@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import text
 
@@ -9,6 +11,7 @@ from app.db.session import engine, provision_tenant
 from app.schemas.tenant import TenantCreate, TokenOut, UserCreate
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/register", response_model=TokenOut, status_code=201)
@@ -16,12 +19,21 @@ async def register_tenant(body: TenantCreate, user: UserCreate) -> TokenOut:
     from app.db.session import PublicSessionFactory
     import uuid
 
+    logger.info(
+        "[Access] tenant_register_requested slug=%s plan_id=%s owner_email=%s",
+        body.slug,
+        body.plan_id,
+        user.email,
+    )
+
     async with PublicSessionFactory() as db:
         existing = await db.execute(text("SELECT id FROM tenants WHERE slug = :s"), {"s": body.slug})
         if existing.fetchone():
+            logger.warning("[Access] tenant_register_conflict_slug slug=%s", body.slug)
             raise HTTPException(409, f"Slug '{body.slug}' ya en uso")
         existing_email = await db.execute(text("SELECT id FROM users WHERE email = :e"), {"e": user.email})
         if existing_email.fetchone():
+            logger.warning("[Access] tenant_register_conflict_email owner_email=%s", user.email)
             raise HTTPException(409, "Email ya registrado")
 
         tenant_id = str(uuid.uuid4())
@@ -39,6 +51,13 @@ async def register_tenant(body: TenantCreate, user: UserCreate) -> TokenOut:
     async with engine.begin() as conn:
         await provision_tenant(tenant_id, conn)
 
+    logger.info(
+        "[Access] tenant_register_success tenant_id=%s user_id=%s slug=%s plan_id=%s",
+        tenant_id,
+        user_id,
+        body.slug,
+        body.plan_id,
+    )
     token = create_access_token(tenant_id=tenant_id, user_id=user_id, role="owner")
     return TokenOut(access_token=token, tenant_id=tenant_id, user_id=user_id, role="owner")
 

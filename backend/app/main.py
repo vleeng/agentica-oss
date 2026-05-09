@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
+import time
 
 from contextlib import asynccontextmanager
 
@@ -22,6 +24,7 @@ from app.api.v1.endpoints import (
 
 settings = get_settings()
 _redis_client = None
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -145,7 +148,25 @@ app.add_middleware(
 
 @app.middleware("http")
 async def add_rate_limit_headers(request: Request, call_next):
-    response = await call_next(request)
+    started_at = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "[HTTP] unhandled_error method=%s path=%s query=%s",
+            request.method,
+            request.url.path,
+            request.url.query,
+        )
+        raise
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    logger.info(
+        "[HTTP] method=%s path=%s status=%s duration_ms=%s",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
     response.headers["X-Powered-By"] = "AGENTICA"
     return response
 

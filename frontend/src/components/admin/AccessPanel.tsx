@@ -9,6 +9,10 @@ import { Field } from '../ui/field'
 import { Input, Select } from '../ui/input'
 import { useToast } from '../ui/toast'
 
+function logAccess(event: string, payload?: Record<string, unknown>) {
+  console.info(`[Agentica][Access] ${event}`, payload || {})
+}
+
 interface AccessContext {
   tenant_id: string
   user_id: string
@@ -65,23 +69,30 @@ export function AccessPanel() {
 
   const loadData = async () => {
     setLoading(true)
+    logAccess('load:start')
     try {
       const [me, tenantUsers] = await Promise.all([authApi.me(), usersApi.list()])
+      logAccess('load:me', { tenant_id: me.tenant_id, user_id: me.user_id, role: me.role })
+      logAccess('load:users', { count: tenantUsers.length })
       setContext(me)
       setUsers(tenantUsers)
       try {
         const planCatalog = await systemApi.listPlans()
+        logAccess('load:plans', { count: planCatalog.length })
         setPlans(planCatalog)
         setCanManagePlans(true)
       } catch (error: any) {
         if (error.response?.status === 403) {
+          logAccess('load:plans:forbidden')
           setCanManagePlans(false)
           setPlans([])
         } else {
+          console.error('[Agentica][Access] load:plans:error', error)
           throw error
         }
       }
     } catch (error: any) {
+      console.error('[Agentica][Access] load:error', error)
       toast.push({
         tone: 'error',
         title: 'No pudimos cargar accesos',
@@ -108,8 +119,10 @@ export function AccessPanel() {
 
   const savePlan = async (plan: PlanDefinition) => {
     setPlansSubmitting(plan.id)
+    logAccess('plan:save:start', { plan_id: plan.id })
     try {
       const updated = await systemApi.updatePlan(plan.id, plan)
+      logAccess('plan:save:success', { plan_id: updated.id })
       setPlans((prev) => prev.map((entry) => (entry.id === plan.id ? updated : entry)))
       toast.push({
         tone: 'success',
@@ -117,6 +130,7 @@ export function AccessPanel() {
         description: `Guardamos los límites de ${updated.name}.`,
       })
     } catch (error: any) {
+      console.error('[Agentica][Access] plan:save:error', { plan_id: plan.id, error })
       toast.push({
         tone: 'error',
         title: 'No pudimos guardar el plan',
@@ -143,8 +157,10 @@ export function AccessPanel() {
   const handleCreateUser = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setUserSubmitting(true)
+    logAccess('user:create:start', { email: userForm.email, role: userForm.role })
     try {
       const created = await usersApi.create(userForm)
+      logAccess('user:create:success', { user_id: created.id, email: created.email, role: created.role })
       setUsers((prev) => [created, ...prev])
       setUserForm(emptyUserForm)
       toast.push({
@@ -153,6 +169,7 @@ export function AccessPanel() {
         description: `${created.email} ya puede ingresar con rol ${created.role}.`,
       })
     } catch (error: any) {
+      console.error('[Agentica][Access] user:create:error', { email: userForm.email, role: userForm.role, error })
       toast.push({
         tone: 'error',
         title: 'No pudimos crear el usuario',
@@ -166,6 +183,11 @@ export function AccessPanel() {
   const handleCreateTenant = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setTenantSubmitting(true)
+    logAccess('tenant:create:start', {
+      slug: tenantForm.slug,
+      plan_id: tenantForm.plan_id,
+      owner_email: tenantForm.owner_email,
+    })
     try {
       const created = await tenantsApi.register({
         body: {
@@ -179,6 +201,11 @@ export function AccessPanel() {
           full_name: tenantForm.owner_name,
         },
       })
+      logAccess('tenant:create:success', {
+        tenant_id: created.tenant_id,
+        user_id: created.user_id,
+        role: created.role,
+      })
       setLastTenantCreated({
         tenant_id: created.tenant_id,
         user_id: created.user_id,
@@ -191,6 +218,12 @@ export function AccessPanel() {
         description: `Se creó el tenant ${created.tenant_id} con owner inicial listo para entrar.`,
       })
     } catch (error: any) {
+      console.error('[Agentica][Access] tenant:create:error', {
+        slug: tenantForm.slug,
+        plan_id: tenantForm.plan_id,
+        owner_email: tenantForm.owner_email,
+        error,
+      })
       toast.push({
         tone: 'error',
         title: 'No pudimos crear el tenant',
