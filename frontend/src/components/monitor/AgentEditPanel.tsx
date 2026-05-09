@@ -36,8 +36,10 @@ export function AgentEditPanel({ design, onUpdated }: Props) {
 
   // Flat list of {keyId, modelId} options
   const modelOptions = keys.flatMap((k) =>
-    (k.models ?? []).map((m) => ({ keyId: k.id, modelId: m, keyName: k.name }))
+    (k.models ?? []).map((m) => ({ keyId: k.id, modelId: m, keyName: k.name, provider: k.provider }))
   )
+
+  const selectedOption = modelOptions.find((o) => o.modelId === model && o.keyId === llmKeyId)
 
   // When model select changes, set both model id and key id
   const handleModelChange = (value: string) => {
@@ -57,6 +59,7 @@ export function AgentEditPanel({ design, onUpdated }: Props) {
       const updated = await agentsApi.update(design.agent_id, {
         name:          name.trim(),
         model:         model || undefined,
+        provider:      selectedOption?.provider,
         llm_key_id:    llmKeyId || undefined,
         system_prompt: systemPrompt,
         temperature,

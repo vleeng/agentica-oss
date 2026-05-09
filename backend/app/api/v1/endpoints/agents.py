@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import TenantRepo
 from app.core.security import CurrentContext, RequestContext, decode_access_token
 from app.runtime.factory import RuntimeFactory
-from app.runtime.llm import infer_provider
+from app.runtime.llm import infer_provider, qualify_model_name
 from app.runtime.store import get_runtime_store
 from app.schemas.agent import AgentDesign, AgentResponse, AgentSpec, ModelParams
 from app.schemas.eval import EvalReport, FeedbackItem
@@ -298,6 +298,10 @@ async def update_agent(
                 top_p=1.0,
             )
         )
+    if body.model:
+        provider_for_model = patch.get("provider") or body.provider
+        if provider_for_model:
+            patch["model"] = qualify_model_name(body.model, provider_for_model)
 
     updated_dict = await repo.update_agent_core(agent_id, patch)
     if not updated_dict:

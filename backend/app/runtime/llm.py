@@ -82,6 +82,17 @@ def normalize_model_name(model: str, provider: str) -> str:
     return model
 
 
+def qualify_model_name(model: str, provider: str) -> str:
+    provider = canonical_provider(provider)
+    if provider == "openrouter":
+        if model.startswith("openrouter:"):
+            return f"openrouter/{model.split(':', 1)[1]}"
+        if model.startswith("openrouter/"):
+            return model
+        return f"openrouter/{model}"
+    return model
+
+
 def resolve_base_url(provider: str, explicit_base_url: str | None = None) -> str | None:
     if explicit_base_url:
         return explicit_base_url

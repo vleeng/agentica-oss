@@ -281,6 +281,7 @@ export const agentsApi = {
     patch: {
       name?: string
       model?: string
+      provider?: string
       llm_key_id?: string
       system_prompt?: string
       temperature?: number
