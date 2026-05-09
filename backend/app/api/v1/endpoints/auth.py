@@ -378,7 +378,7 @@ async def create_user(body: TenantUserCreate, ctx: CurrentContext) -> dict:
     }
 
 
-@router.post("/change-password", status_code=204, response_class=Response)
+@router.post("/change-password", status_code=204, response_class=Response, response_model=None)
 async def change_password(body: ChangePasswordInput, ctx: CurrentContext) -> None:
     ctx.require_human_user()
     async with PublicSessionFactory() as db:
@@ -475,7 +475,7 @@ async def forgot_password(body: ForgotPasswordInput, request: Request) -> Forgot
     return ForgotPasswordOut(reset_token=raw_token)
 
 
-@router.post("/reset-password", status_code=204, response_class=Response)
+@router.post("/reset-password", status_code=204, response_class=Response, response_model=None)
 async def reset_password(body: ResetPasswordInput, request: Request) -> None:
     from app.core.rate_limiter import get_rate_limiter
 
