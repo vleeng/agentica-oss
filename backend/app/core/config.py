@@ -27,6 +27,18 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24  # 24 horas
     allow_direct_signup: bool = False
+    email_return_tokens_in_response: bool = False
+
+    # SMTP / transactional email
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from_email: Optional[str] = None
+    smtp_from_name: str = "Agentica"
+    smtp_use_starttls: bool = True
+    smtp_use_ssl: bool = False
+    smtp_timeout_seconds: int = 20
 
     # LLM
     anthropic_api_key: str = ""

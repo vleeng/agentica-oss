@@ -67,8 +67,18 @@ services:
       OPENAI_API_KEY:    ${OPENAI_API_KEY:-}
       JWT_SECRET:        ${JWT_SECRET}
       ADMIN_PASSWORD:    ${ADMIN_PASSWORD}
+      EMAIL_RETURN_TOKENS_IN_RESPONSE: ${EMAIL_RETURN_TOKENS_IN_RESPONSE:-false}
       ENCRYPTION_KEY:    ${ENCRYPTION_KEY}
       ENVIRONMENT:       production
+      SMTP_HOST:         ${SMTP_HOST:-}
+      SMTP_PORT:         ${SMTP_PORT:-587}
+      SMTP_USERNAME:     ${SMTP_USERNAME:-}
+      SMTP_PASSWORD:     ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL:   ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME:    ${SMTP_FROM_NAME:-Agentica}
+      SMTP_USE_STARTTLS: ${SMTP_USE_STARTTLS:-true}
+      SMTP_USE_SSL:      ${SMTP_USE_SSL:-false}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-20}
       CORS_ORIGINS:      '${CORS_ORIGINS:-["https://${BASE_DOMAIN:-axenova.com}"]}'
       BASE_DOMAIN:       ${BASE_DOMAIN:-axenova.com}
       BUILDER_PROVIDER:  ${BUILDER_PROVIDER:-anthropic}
@@ -118,6 +128,15 @@ services:
       OPENAI_API_KEY:    ${OPENAI_API_KEY:-}
       ENCRYPTION_KEY:    ${ENCRYPTION_KEY}
       ENVIRONMENT:       production
+      SMTP_HOST:         ${SMTP_HOST:-}
+      SMTP_PORT:         ${SMTP_PORT:-587}
+      SMTP_USERNAME:     ${SMTP_USERNAME:-}
+      SMTP_PASSWORD:     ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL:   ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME:    ${SMTP_FROM_NAME:-Agentica}
+      SMTP_USE_STARTTLS: ${SMTP_USE_STARTTLS:-true}
+      SMTP_USE_SSL:      ${SMTP_USE_SSL:-false}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-20}
       BUILDER_PROVIDER:  ${BUILDER_PROVIDER:-anthropic}
       BUILDER_MODEL:     ${BUILDER_MODEL:-claude-sonnet-4-5}
       BUILDER_BASE_URL:  ${BUILDER_BASE_URL:-}

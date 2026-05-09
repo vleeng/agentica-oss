@@ -13,6 +13,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import text
 
 from app.core.config import get_settings
+from app.core.mailer import MailerNotConfiguredError, is_mailer_configured, send_email
 from app.core.security import (
     CurrentContext,
     create_access_token,
@@ -47,6 +48,7 @@ class ForgotPasswordOut(BaseModel):
     accepted: bool = True
     reset_token: str | None = None
     expires_in_minutes: int = 60
+    email_sent: bool = False
 
 
 class ResetPasswordInput(BaseModel):
@@ -502,13 +504,51 @@ async def forgot_password(body: ForgotPasswordInput, request: Request) -> Forgot
         )
         await db.commit()
 
-    logger.warning(
-        "[Access] auth_forgot_password_token_issued email=%s expires_at=%s reset_token=%s",
-        body.email,
-        expires_at.isoformat(),
-        raw_token,
+    if not is_mailer_configured():
+        logger.warning("[Access] auth_forgot_password_mailer_missing email=%s", body.email)
+        if settings.email_return_tokens_in_response:
+            return ForgotPasswordOut(reset_token=raw_token, email_sent=False)
+        raise HTTPException(503, "El correo de recuperacion no esta configurado")
+
+    reset_url = f"{request.base_url}agentica/login"
+    subject = "Recuperacion de contrasena - Agentica"
+    text_body = (
+        "Recibimos un pedido para restablecer tu contrasena de Agentica.\n\n"
+        f"Token de recuperacion: {raw_token}\n"
+        f"Vence en {60} minutos.\n\n"
+        f"Podes usarlo desde: {reset_url}\n\n"
+        "Si no hiciste este pedido, podes ignorar este correo."
     )
-    return ForgotPasswordOut(reset_token=raw_token)
+    html_body = f"""
+        <p>Recibimos un pedido para restablecer tu contrase&ntilde;a de Agentica.</p>
+        <p><strong>Token de recuperaci&oacute;n:</strong> <code>{raw_token}</code></p>
+        <p>Vence en 60 minutos.</p>
+        <p>Pod&eacute;s usarlo desde: <a href="{reset_url}">{reset_url}</a></p>
+        <p>Si no hiciste este pedido, pod&eacute;s ignorar este correo.</p>
+    """
+
+    try:
+        await send_email(
+            to_email=body.email,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        )
+    except MailerNotConfiguredError:
+        if settings.email_return_tokens_in_response:
+            return ForgotPasswordOut(reset_token=raw_token, email_sent=False)
+        raise HTTPException(503, "El correo de recuperacion no esta configurado")
+    except Exception:
+        logger.exception("[Access] auth_forgot_password_mail_error email=%s", body.email)
+        if settings.email_return_tokens_in_response:
+            return ForgotPasswordOut(reset_token=raw_token, email_sent=False)
+        raise HTTPException(502, "No pudimos enviar el correo de recuperacion")
+
+    logger.info("[Access] auth_forgot_password_email_sent email=%s expires_at=%s", body.email, expires_at.isoformat())
+    return ForgotPasswordOut(
+        reset_token=raw_token if settings.email_return_tokens_in_response else None,
+        email_sent=True,
+    )
 
 
 @router.post("/reset-password", status_code=204, response_class=Response, response_model=None)

@@ -146,6 +146,7 @@ export interface ForgotPasswordResult {
   accepted: boolean
   reset_token?: string | null
   expires_in_minutes?: number
+  email_sent?: boolean
 }
 
 export interface FreeAccountRequestPayload {

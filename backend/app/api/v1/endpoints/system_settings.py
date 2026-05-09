@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from app.core.mailer import send_email
 from app.core.plan_limits import get_tenant_plan, get_tenant_usage, list_plans
 from app.core.security import CurrentContext
 from app.db.session import PublicSessionFactory, engine, provision_tenant
@@ -133,6 +134,49 @@ def _map_free_request(row) -> FreeRequestOut:
         processed_by_user_id=str(row.processed_by_user_id) if row.processed_by_user_id else None,
         processed_at=row.processed_at.isoformat() if row.processed_at else None,
         created_at=row.created_at.isoformat(),
+    )
+
+
+async def _send_free_request_approval_email(owner_email: str, owner_name: str | None, tenant_name: str, plan_id: str) -> None:
+    greeting = owner_name or owner_email
+    await send_email(
+        to_email=owner_email,
+        subject="Tu cuenta de Agentica fue aprobada",
+        text_body=(
+            f"Hola {greeting},\n\n"
+            f"Tu solicitud para {tenant_name} fue aprobada.\n"
+            f"El workspace ya esta activo con plan {plan_id}.\n\n"
+            "Ya podes ingresar con tu email y la contrasena que definiste al solicitar la cuenta.\n"
+            "Si no recordas la contrasena, usa el flujo de recuperacion en la pantalla de login.\n"
+        ),
+        html_body=(
+            f"<p>Hola {greeting},</p>"
+            f"<p>Tu solicitud para <strong>{tenant_name}</strong> fue aprobada.</p>"
+            f"<p>El workspace ya est&aacute; activo con plan <strong>{plan_id}</strong>.</p>"
+            "<p>Ya pod&eacute;s ingresar con tu email y la contrase&ntilde;a que definiste al solicitar la cuenta.</p>"
+            "<p>Si no record&aacute;s la contrase&ntilde;a, us&aacute; el flujo de recuperaci&oacute;n en la pantalla de login.</p>"
+        ),
+    )
+
+
+async def _send_free_request_rejection_email(owner_email: str, owner_name: str | None, tenant_name: str, notes: str | None) -> None:
+    greeting = owner_name or owner_email
+    notes_block = f"\n\nObservaciones del equipo:\n{notes}" if notes else ""
+    notes_html = f"<p><strong>Observaciones del equipo:</strong><br>{notes}</p>" if notes else ""
+    await send_email(
+        to_email=owner_email,
+        subject="Actualizacion de tu solicitud de Agentica",
+        text_body=(
+            f"Hola {greeting},\n\n"
+            f"Por ahora no pudimos aprobar la solicitud para {tenant_name}.{notes_block}\n\n"
+            "Si queres volver a intentarlo, podes enviar una nueva solicitud con informacion actualizada."
+        ),
+        html_body=(
+            f"<p>Hola {greeting},</p>"
+            f"<p>Por ahora no pudimos aprobar la solicitud para <strong>{tenant_name}</strong>.</p>"
+            f"{notes_html}"
+            "<p>Si quer&eacute;s volver a intentarlo, pod&eacute;s enviar una nueva solicitud con informaci&oacute;n actualizada.</p>"
+        ),
     )
 
 @router.get("/system/builder", response_model=BuilderConfigOut)
@@ -399,6 +443,15 @@ async def approve_free_request(request_id: str, body: FreeRequestApprove, ctx: C
         user_id,
         ctx.user_id,
     )
+    try:
+        await _send_free_request_approval_email(
+            owner_email=request_row.owner_email,
+            owner_name=request_row.owner_name,
+            tenant_name=request_row.tenant_name,
+            plan_id=plan_id,
+        )
+    except Exception:
+        logger.exception("[Access] system_free_request_approval_email_error request_id=%s", request_id)
     return _map_free_request(approved_row)
 
 
@@ -444,6 +497,15 @@ async def reject_free_request(request_id: str, body: FreeRequestDecision, ctx: C
         await db.commit()
 
     logger.info("[Access] system_free_request_rejected request_id=%s admin_user_id=%s", request_id, ctx.user_id)
+    try:
+        await _send_free_request_rejection_email(
+            owner_email=row.owner_email,
+            owner_name=row.owner_name,
+            tenant_name=row.tenant_name,
+            notes=body.notes,
+        )
+    except Exception:
+        logger.exception("[Access] system_free_request_rejection_email_error request_id=%s", request_id)
     return _map_free_request(row)
 
 
