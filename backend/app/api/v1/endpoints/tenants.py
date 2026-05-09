@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import text
 
 from app.api.deps import TenantRepo
-from app.core.security import CurrentContext, create_access_token, hash_password, verify_password
+from app.core.security import (
+    CurrentContext,
+    RequestContext,
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    verify_password,
+)
 from app.db.session import engine, provision_tenant
 from app.schemas.tenant import TenantCreate, TokenOut, UserCreate
 
@@ -15,14 +22,35 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/register", response_model=TokenOut, status_code=201)
-async def register_tenant(body: TenantCreate, user: UserCreate) -> TokenOut:
+async def register_tenant(body: TenantCreate, user: UserCreate, request: Request) -> TokenOut:
     from app.db.session import PublicSessionFactory
     import uuid
+
+    caller_ctx = await _get_optional_context(request)
+    requested_plan = body.plan_id or "free"
+
+    if caller_ctx is not None:
+        caller_ctx.require_human_user()
+        if not await _is_system_admin(caller_ctx):
+            logger.warning(
+                "[Access] tenant_register_forbidden_non_admin tenant_id=%s user_id=%s requested_plan=%s",
+                caller_ctx.tenant_id,
+                caller_ctx.user_id,
+                requested_plan,
+            )
+            raise HTTPException(403, "Solo el admin general puede crear tenants desde la consola")
+    elif requested_plan != "free":
+        logger.warning(
+            "[Access] tenant_register_forbidden_public_plan owner_email=%s requested_plan=%s",
+            user.email,
+            requested_plan,
+        )
+        raise HTTPException(403, "El registro publico solo permite crear tenants en plan free")
 
     logger.info(
         "[Access] tenant_register_requested slug=%s plan_id=%s owner_email=%s",
         body.slug,
-        body.plan_id,
+        requested_plan,
         user.email,
     )
 
@@ -40,7 +68,7 @@ async def register_tenant(body: TenantCreate, user: UserCreate) -> TokenOut:
         user_id   = str(uuid.uuid4())
         await db.execute(
             text("INSERT INTO tenants (id, name, slug, plan_id) VALUES (:id, :n, :s, :p)"),
-            {"id": tenant_id, "n": body.name, "s": body.slug, "p": body.plan_id},
+            {"id": tenant_id, "n": body.name, "s": body.slug, "p": requested_plan},
         )
         await db.execute(
             text("INSERT INTO users (id, tenant_id, email, full_name, password_hash, role) VALUES (:id, :t, :e, :n, :h, 'owner')"),
@@ -56,7 +84,7 @@ async def register_tenant(body: TenantCreate, user: UserCreate) -> TokenOut:
         tenant_id,
         user_id,
         body.slug,
-        body.plan_id,
+        requested_plan,
     )
     token = create_access_token(tenant_id=tenant_id, user_id=user_id, role="owner")
     return TokenOut(access_token=token, tenant_id=tenant_id, user_id=user_id, role="owner")
@@ -90,3 +118,32 @@ async def list_agents(ctx: CurrentContext, repo: TenantRepo) -> list[dict]:
 async def billing_summary(ctx: CurrentContext, repo: TenantRepo) -> dict:
     ctx.require_human_user()
     return await repo.get_billing_summary()
+
+
+async def _get_optional_context(request: Request) -> RequestContext | None:
+    auth_header = request.headers.get("authorization")
+    if not auth_header or not auth_header.lower().startswith("bearer "):
+        return None
+
+    payload = decode_access_token(auth_header[7:])
+    return RequestContext(
+        tenant_id=payload["tenant_id"],
+        user_id=payload["sub"],
+        role=payload["role"],
+    )
+
+
+async def _is_system_admin(ctx: RequestContext) -> bool:
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text("""
+                SELECT t.slug
+                FROM users u
+                JOIN tenants t ON t.id = u.tenant_id
+                WHERE u.id = :user_id AND t.id = :tenant_id
+            """),
+            {"user_id": ctx.user_id, "tenant_id": ctx.tenant_id},
+        )
+        row = result.fetchone()
+
+    return bool(row and row.slug == "admin" and ctx.role == "owner")

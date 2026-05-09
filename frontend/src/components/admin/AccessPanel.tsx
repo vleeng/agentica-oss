@@ -285,7 +285,7 @@ export function AccessPanel() {
         <MetricCard label="Viewers" value={String(counts.viewers)} icon={<ShieldCheck className="h-4 w-4" />} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr,0.9fr]">
+      <div className={`grid gap-6 ${canManagePlans ? 'xl:grid-cols-[1.1fr,0.9fr]' : ''}`}>
         <Card className="border-slate-200/80">
           <CardHeader>
             <CardTitle>Equipo del tenant actual</CardTitle>
@@ -384,102 +384,104 @@ export function AccessPanel() {
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200/80">
-          <CardHeader>
-            <CardTitle>Alta de tenant nuevo</CardTitle>
-            <CardDescription>
-              Crea otro workspace con owner inicial sin cerrar tu sesión actual. El nuevo owner recibe acceso propio.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <form className="space-y-4" onSubmit={handleCreateTenant}>
-              <Field label="Nombre del tenant" required>
-                <Input
-                  placeholder="Balanz Labs"
-                  value={tenantForm.name}
-                  onChange={(event) => setTenantForm((prev) => ({ ...prev, name: event.target.value }))}
-                  required
-                />
-              </Field>
-              <Field label="Slug" required hint="Solo minúsculas, números y guiones.">
-                <Input
-                  placeholder="balanz-labs"
-                  pattern="^[a-z0-9-]+$"
-                  value={tenantForm.slug}
-                  onChange={(event) =>
-                    setTenantForm((prev) => ({
-                      ...prev,
-                      slug: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                    }))
-                  }
-                  required
-                />
-              </Field>
-              <Field label="Plan">
-                <Select
-                  value={tenantForm.plan_id}
-                  onChange={(event) => setTenantForm((prev) => ({ ...prev, plan_id: event.target.value }))}
-                >
-                  <option value="free">free</option>
-                  <option value="starter">starter</option>
-                  <option value="pro">pro</option>
-                  <option value="business">business</option>
-                  <option value="enterprise">enterprise</option>
-                </Select>
-              </Field>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Owner email" required>
+        {canManagePlans && (
+          <Card className="border-slate-200/80">
+            <CardHeader>
+              <CardTitle>Alta de tenant nuevo</CardTitle>
+              <CardDescription>
+                Consola reservada al admin general para crear workspaces y asignarles plan inicial.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <form className="space-y-4" onSubmit={handleCreateTenant}>
+                <Field label="Nombre del tenant" required>
                   <Input
-                    type="email"
-                    placeholder="owner@nuevo-tenant.com"
-                    value={tenantForm.owner_email}
-                    onChange={(event) => setTenantForm((prev) => ({ ...prev, owner_email: event.target.value }))}
+                    placeholder="Balanz Labs"
+                    value={tenantForm.name}
+                    onChange={(event) => setTenantForm((prev) => ({ ...prev, name: event.target.value }))}
                     required
                   />
                 </Field>
-                <Field label="Owner nombre">
+                <Field label="Slug" required hint="Solo minúsculas, números y guiones.">
                   <Input
-                    placeholder="Responsable"
-                    value={tenantForm.owner_name}
-                    onChange={(event) => setTenantForm((prev) => ({ ...prev, owner_name: event.target.value }))}
+                    placeholder="balanz-labs"
+                    pattern="^[a-z0-9-]+$"
+                    value={tenantForm.slug}
+                    onChange={(event) =>
+                      setTenantForm((prev) => ({
+                        ...prev,
+                        slug: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                      }))
+                    }
+                    required
                   />
                 </Field>
-              </div>
-              <Field label="Owner password" required hint="Se usa para el primer ingreso del nuevo tenant.">
-                <Input
-                  type="password"
-                  placeholder="********"
-                  minLength={8}
-                  value={tenantForm.owner_password}
-                  onChange={(event) => setTenantForm((prev) => ({ ...prev, owner_password: event.target.value }))}
-                  required
-                />
-              </Field>
-              <Button type="submit" className="w-full" disabled={tenantSubmitting}>
-                {tenantSubmitting ? 'Creando tenant...' : 'Crear tenant'}
-              </Button>
-            </form>
-
-            {lastTenantCreated && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-                <p className="font-medium">Tenant creado con éxito</p>
-                <div className="mt-3 space-y-2 text-emerald-800">
-                  <p>
-                    <span className="font-medium">Tenant:</span>{' '}
-                    <code className="rounded bg-white px-2 py-1 text-xs">{lastTenantCreated.tenant_id}</code>
-                  </p>
-                  <p>
-                    <span className="font-medium">Owner:</span>{' '}
-                    <code className="rounded bg-white px-2 py-1 text-xs">{lastTenantCreated.user_id}</code>
-                  </p>
-                  <p>
-                    <span className="font-medium">Rol inicial:</span> {lastTenantCreated.role}
-                  </p>
+                <Field label="Plan">
+                  <Select
+                    value={tenantForm.plan_id}
+                    onChange={(event) => setTenantForm((prev) => ({ ...prev, plan_id: event.target.value }))}
+                  >
+                    <option value="free">free</option>
+                    <option value="starter">starter</option>
+                    <option value="pro">pro</option>
+                    <option value="business">business</option>
+                    <option value="enterprise">enterprise</option>
+                  </Select>
+                </Field>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="Owner email" required>
+                    <Input
+                      type="email"
+                      placeholder="owner@nuevo-tenant.com"
+                      value={tenantForm.owner_email}
+                      onChange={(event) => setTenantForm((prev) => ({ ...prev, owner_email: event.target.value }))}
+                      required
+                    />
+                  </Field>
+                  <Field label="Owner nombre">
+                    <Input
+                      placeholder="Responsable"
+                      value={tenantForm.owner_name}
+                      onChange={(event) => setTenantForm((prev) => ({ ...prev, owner_name: event.target.value }))}
+                    />
+                  </Field>
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                <Field label="Owner password" required hint="Se usa para el primer ingreso del nuevo tenant.">
+                  <Input
+                    type="password"
+                    placeholder="********"
+                    minLength={8}
+                    value={tenantForm.owner_password}
+                    onChange={(event) => setTenantForm((prev) => ({ ...prev, owner_password: event.target.value }))}
+                    required
+                  />
+                </Field>
+                <Button type="submit" className="w-full" disabled={tenantSubmitting}>
+                  {tenantSubmitting ? 'Creando tenant...' : 'Crear tenant'}
+                </Button>
+              </form>
+
+              {lastTenantCreated && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+                  <p className="font-medium">Tenant creado con éxito</p>
+                  <div className="mt-3 space-y-2 text-emerald-800">
+                    <p>
+                      <span className="font-medium">Tenant:</span>{' '}
+                      <code className="rounded bg-white px-2 py-1 text-xs">{lastTenantCreated.tenant_id}</code>
+                    </p>
+                    <p>
+                      <span className="font-medium">Owner:</span>{' '}
+                      <code className="rounded bg-white px-2 py-1 text-xs">{lastTenantCreated.user_id}</code>
+                    </p>
+                    <p>
+                      <span className="font-medium">Rol inicial:</span> {lastTenantCreated.role}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {canManagePlans && (
