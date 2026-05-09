@@ -147,7 +147,7 @@ class AgentRepository:
 
         # model_params
         model_params = spec.get("model_params", {})
-        for field in ("model", "llm_key_id", "temperature", "max_tokens"):
+        for field in ("model", "provider", "base_url", "llm_key_id", "temperature", "max_tokens"):
             if field in patch and patch[field] is not None:
                 model_params[field] = patch[field]
         spec["model_params"] = model_params

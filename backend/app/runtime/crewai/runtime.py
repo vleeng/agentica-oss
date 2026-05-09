@@ -12,6 +12,7 @@ from app.components.guardrails.guardrail_engine import check_input, check_output
 
 if TYPE_CHECKING:
     from crewai import Crew
+    from app.components.memory.adapters import MemoryAdapter
 
 GUARDRAIL_BLOCKED_MSG = "[Respuesta bloqueada por política de seguridad]"
 
@@ -28,11 +29,13 @@ class CrewAIRuntime(AgentRuntime):
         spec: AgentSpec,
         agent_id: str = "",
         session_factory=None,
+        memory_adapter: "MemoryAdapter" | None = None,
     ):
         self._crew = crew
         self.spec = spec
         self._agent_id = agent_id
         self._session_factory = session_factory
+        self._memory = memory_adapter
         self._last_results: dict[str, str] = {}
 
     async def _load_guardrail_rules(self) -> list[dict]:
@@ -53,9 +56,14 @@ class CrewAIRuntime(AgentRuntime):
         if gr_in.action == "block":
             raise HTTPException(status_code=400, detail=f"Input bloqueado: {gr_in.reason}")
 
+        contextual_input = input
+        if self._memory:
+            chat_history = await self._memory.load(session_id)
+            contextual_input = _inject_history(input, chat_history)
+
         result = await asyncio.to_thread(
             self._crew.kickoff,
-            inputs={"input": input, "session_id": session_id},
+            inputs={"input": contextual_input, "session_id": session_id},
         )
 
         output = str(result) if not isinstance(result, str) else result
@@ -65,6 +73,8 @@ class CrewAIRuntime(AgentRuntime):
             output = GUARDRAIL_BLOCKED_MSG
 
         self._last_results[session_id] = output
+        if self._memory:
+            await self._memory.save(session_id, input, output)
 
         return AgentResponse(
             output=output,
@@ -94,6 +104,7 @@ class CrewAIRuntime(AgentRuntime):
             "framework": "crewai",
             "process": self.spec.process.value,
             "num_agents": len(self.spec.agents),
+            "memory_type": self.spec.memory.type.value,
             "last_output_preview": (
                 self._last_results.get(session_id, "")[:100]
                 if session_id in self._last_results else None
@@ -102,6 +113,8 @@ class CrewAIRuntime(AgentRuntime):
 
     def reset(self, session_id: str) -> None:
         self._last_results.pop(session_id, None)
+        if self._memory:
+            self._memory.clear(session_id)
 
 
 def _split_into_sentences(text: str) -> list[str]:
@@ -117,3 +130,26 @@ def _split_into_sentences(text: str) -> list[str]:
         if stripped:
             result.append(stripped + " ")
     return result if result else [text]
+
+
+def _inject_history(user_input: str, chat_history: list[dict]) -> str:
+    if not chat_history:
+        return user_input
+
+    recent_turns = chat_history[-12:]
+    history_lines: list[str] = []
+    for item in recent_turns:
+        role = "Usuario" if item.get("role") == "user" else "Asistente"
+        content = str(item.get("content", "")).strip()
+        if content:
+            history_lines.append(f"{role}: {content}")
+
+    if not history_lines:
+        return user_input
+
+    return (
+        "Contexto reciente de la conversación:\n"
+        + "\n".join(history_lines)
+        + "\n\nMensaje actual del usuario:\n"
+        + user_input
+    )

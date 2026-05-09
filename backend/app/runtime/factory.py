@@ -46,7 +46,10 @@ class RuntimeFactory:
             return await builder.build(design, llm_config=llm_config)
 
         elif design.spec.mode == AgentMode.crew:
-            builder = CrewAIAgentBuilder(session_factory=self._session_factory)
+            builder = CrewAIAgentBuilder(
+                redis_client=self._redis,
+                session_factory=self._session_factory,
+            )
             return await builder.build(design, llm_config=llm_config)
 
         else:

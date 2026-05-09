@@ -11,8 +11,9 @@ from pydantic import BaseModel, Field
 from app.api.deps import TenantRepo
 from app.core.security import CurrentContext, RequestContext, decode_access_token
 from app.runtime.factory import RuntimeFactory
+from app.runtime.llm import infer_provider
 from app.runtime.store import get_runtime_store
-from app.schemas.agent import AgentDesign, AgentResponse, AgentSpec
+from app.schemas.agent import AgentDesign, AgentResponse, AgentSpec, ModelParams
 from app.schemas.eval import EvalReport, FeedbackItem
 from app.services.designer.design_generator import DesignGeneratorService
 from app.services.evaluator.eval_engine import EvalEngineService
@@ -267,6 +268,7 @@ async def optimize_agent(
 class UpdateAgentRequest(BaseModel):
     name: Optional[str] = None
     model: Optional[str] = None
+    provider: Optional[str] = None
     llm_key_id: Optional[str] = None
     system_prompt: Optional[str] = None
     temperature: Optional[float] = Field(None, ge=0.0, le=1.0)
@@ -287,6 +289,15 @@ async def update_agent(
     patch = body.model_dump(exclude_none=True)
     if not patch:
         raise HTTPException(400, "No hay campos para actualizar")
+    if body.model and "provider" not in patch:
+        patch["provider"] = infer_provider(
+            ModelParams(
+                model=body.model,
+                temperature=body.temperature if body.temperature is not None else 0.3,
+                max_tokens=body.max_tokens if body.max_tokens is not None else 2048,
+                top_p=1.0,
+            )
+        )
 
     updated_dict = await repo.update_agent_core(agent_id, patch)
     if not updated_dict:

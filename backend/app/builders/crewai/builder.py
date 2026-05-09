@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from app.components.memory.adapters import (
+    InMemoryAdapter,
+    PostgreSQLAdapter,
+    RedisAdapter,
+)
 from app.components.tools.builtin import get_tool
 from app.runtime.crewai.runtime import CrewAIRuntime
 from app.runtime.llm import LLMConfig, create_chat_llm
-from app.schemas.agent import AgentDesign, AgentRoleSpec, CrewProcess
+from app.schemas.agent import AgentDesign, AgentRoleSpec, CrewProcess, MemoryType
 
 
 class CrewAIAgentBuilder:
@@ -13,7 +18,8 @@ class CrewAIAgentBuilder:
     desde el graph_blueprint del design.
     """
 
-    def __init__(self, session_factory=None):
+    def __init__(self, redis_client=None, session_factory=None):
+        self._redis = redis_client
         self._session_factory = session_factory
 
     async def build(self, design: AgentDesign, api_key: str = "", llm_config: LLMConfig | None = None) -> CrewAIRuntime:
@@ -52,7 +58,11 @@ class CrewAIAgentBuilder:
             process=process,
             manager_llm=manager_llm,
             verbose=True,
-            memory=spec.memory.type.value != "none",
+            # CrewAI memory usa internamente embeddings OpenAI/Chroma y puede
+            # desacoplarse del proveedor/modelo configurado para el agente.
+            # Mantenemos la memoria en nuestra propia capa para evitar esa
+            # dependencia oculta y reconstruir contexto de forma consistente.
+            memory=False,
         )
 
         return CrewAIRuntime(
@@ -60,6 +70,7 @@ class CrewAIAgentBuilder:
             spec=spec,
             agent_id=str(design.agent_id),
             session_factory=self._session_factory,
+            memory_adapter=self._build_memory(design),
         )
 
     def _make_llm(self, params, llm_config: LLMConfig):
@@ -116,6 +127,31 @@ class CrewAIAgentBuilder:
             verbose=True,
             max_iter=10,
         )
+
+    def _build_memory(self, design: AgentDesign):
+        mem_type = design.spec.memory.type
+        ttl = design.spec.memory.ttl_seconds
+        max_msg = design.spec.memory.max_messages
+        agent_id = str(design.agent_id)
+
+        if mem_type == MemoryType.none:
+            return InMemoryAdapter(max_messages=0)
+
+        if mem_type == MemoryType.session and self._redis:
+            return RedisAdapter(
+                redis_client=self._redis,
+                ttl_seconds=ttl or 3600,
+                max_messages=max_msg,
+            )
+
+        if mem_type in (MemoryType.persistent, MemoryType.summary) and self._session_factory:
+            return PostgreSQLAdapter(
+                session_factory=self._session_factory,
+                agent_id=agent_id,
+                max_messages=max_msg,
+            )
+
+        return InMemoryAdapter(max_messages=max_msg)
 
     def _build_tasks(self, design: AgentDesign, crew_agents: dict) -> list:
         from crewai import Task
