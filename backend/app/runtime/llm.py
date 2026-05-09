@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import os
+from types import MethodType
 from typing import Any
 
 from app.schemas.agent import ModelParams
@@ -48,18 +49,11 @@ class LLMConfig:
         return canonical_provider(self.provider) in OPENAI_COMPATIBLE_PROVIDERS
 
 
-@dataclass
-class CrewAILLMAdapter:
-    model: str
-    provider: str
-    api_key: str
-    temperature: float
-    max_tokens: int
-    base_url: str | None = None
-    timeout: float = 120.0
-    stop: list[str] = field(default_factory=list)
+def bind_crewai_call_adapter(llm: Any, provider: str):
+    provider = canonical_provider(provider)
+    llm._agentica_provider = provider
 
-    def call(self, messages: list[dict[str, Any]] | str, callbacks: list[Any] | None = None) -> str:
+    def _call(self, messages: list[dict[str, Any]] | str, callbacks: list[Any] | None = None) -> str:
         import litellm
 
         payload = messages
@@ -69,20 +63,33 @@ class CrewAILLMAdapter:
         params: dict[str, Any] = {
             "model": self.model,
             "messages": payload,
-            "timeout": self.timeout,
-            "temperature": self.temperature,
-            "api_key": self.api_key,
-            "base_url": self.base_url,
-            "stop": self.stop or None,
+            "timeout": getattr(self, "timeout", 120.0),
+            "temperature": getattr(self, "temperature", None),
+            "top_p": getattr(self, "top_p", None),
+            "n": getattr(self, "n", None),
+            "stop": getattr(self, "stop", None),
+            "presence_penalty": getattr(self, "presence_penalty", None),
+            "frequency_penalty": getattr(self, "frequency_penalty", None),
+            "logit_bias": getattr(self, "logit_bias", None),
+            "response_format": getattr(self, "response_format", None),
+            "seed": getattr(self, "seed", None),
+            "logprobs": getattr(self, "logprobs", None),
+            "top_logprobs": getattr(self, "top_logprobs", None),
+            "api_key": getattr(self, "api_key", None),
+            "base_url": getattr(self, "base_url", None),
             "stream": False,
         }
-        if uses_max_completion_tokens(self.model, self.provider):
-            params["max_completion_tokens"] = self.max_tokens
+
+        if uses_max_completion_tokens(self.model, self._agentica_provider):
+            params["max_completion_tokens"] = getattr(self, "max_completion_tokens", None) or getattr(self, "max_tokens", None)
         else:
-            params["max_tokens"] = self.max_tokens
+            params["max_tokens"] = getattr(self, "max_tokens", None)
 
         response = litellm.completion(**{k: v for k, v in params.items() if v is not None})
         return response["choices"][0]["message"]["content"]
+
+    llm.call = MethodType(_call, llm)
+    return llm
 
 
 def infer_provider(params: ModelParams) -> str:

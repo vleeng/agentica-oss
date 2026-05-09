@@ -8,8 +8,8 @@ from app.components.memory.adapters import (
 from app.components.tools.builtin import get_tool
 from app.runtime.crewai.runtime import CrewAIRuntime
 from app.runtime.llm import (
-    CrewAILLMAdapter,
     LLMConfig,
+    bind_crewai_call_adapter,
     canonical_provider,
     infer_provider,
     qualify_crewai_model_name,
@@ -81,17 +81,21 @@ class CrewAIAgentBuilder:
         )
 
     def _make_llm(self, params, llm_config: LLMConfig):
+        from crewai import LLM
+
         provider = canonical_provider(params.provider or llm_config.provider or infer_provider(params))
         model = qualify_crewai_model_name(params.model, provider)
         base_url = llm_config.base_url or resolve_base_url(provider, params.base_url)
-        return CrewAILLMAdapter(
+        llm = LLM(
             model=model,
-            provider=provider,
             api_key=llm_config.api_key,
             temperature=params.temperature,
             max_tokens=params.max_tokens,
             base_url=base_url,
         )
+        if hasattr(llm, "max_completion_tokens"):
+            llm.max_completion_tokens = params.max_tokens
+        return bind_crewai_call_adapter(llm, provider)
 
     async def _build_agent_async(
         self,
