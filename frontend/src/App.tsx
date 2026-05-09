@@ -10,6 +10,7 @@ import {
 } from 'react-router-dom'
 
 import { Login } from './components/auth/Login'
+import { AccountPanel } from './components/account/AccountPanel'
 import { AccessPanel } from './components/admin/AccessPanel'
 import { AgentDashboard } from './components/builder/AgentDashboard'
 import { APIKeysPanel } from './components/builder/APIKeysPanel'
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="wizard" element={<DeveloperOnly><WizardRoute /></DeveloperOnly>} />
           <Route path="agents/:agentId" element={<MonitorRoute />} />
           <Route path="usage" element={<UsageDashboard />} />
+          <Route path="account" element={<AccountPanel />} />
           <Route path="access" element={<OwnerOnly><AccessPanel /></OwnerOnly>} />
           <Route path="providers" element={<DeveloperOnly><ProvidersPanel /></DeveloperOnly>} />
           <Route path="custom-tools" element={<DeveloperOnly><CustomToolsPanel /></DeveloperOnly>} />

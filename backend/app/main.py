@@ -59,6 +59,41 @@ async def lifespan(app: FastAPI):
             "CREATE INDEX IF NOT EXISTS idx_api_keys_tenant_agent "
             "ON public.api_keys (tenant_id, agent_id)"
         ))
+        await conn.execute(_text(
+            "CREATE TABLE IF NOT EXISTS public.password_reset_tokens ("
+            "  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),"
+            "  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,"
+            "  token_hash TEXT NOT NULL UNIQUE,"
+            "  expires_at TIMESTAMPTZ NOT NULL,"
+            "  used_at TIMESTAMPTZ,"
+            "  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+            ")"
+        ))
+        await conn.execute(_text(
+            "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user "
+            "ON public.password_reset_tokens (user_id)"
+        ))
+        await conn.execute(_text(
+            "CREATE TABLE IF NOT EXISTS public.free_account_requests ("
+            "  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),"
+            "  tenant_name TEXT NOT NULL,"
+            "  slug TEXT NOT NULL,"
+            "  owner_email TEXT NOT NULL,"
+            "  owner_name TEXT,"
+            "  password_hash TEXT NOT NULL,"
+            "  requested_plan_id TEXT NOT NULL DEFAULT 'free',"
+            "  status TEXT NOT NULL DEFAULT 'pending',"
+            "  review_notes TEXT,"
+            "  approved_tenant_id UUID REFERENCES public.tenants(id) ON DELETE SET NULL,"
+            "  processed_by_user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,"
+            "  processed_at TIMESTAMPTZ,"
+            "  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+            ")"
+        ))
+        await conn.execute(_text(
+            "CREATE INDEX IF NOT EXISTS idx_free_account_requests_status "
+            "ON public.free_account_requests(status, created_at DESC)"
+        ))
 
     from app.core.plan_limits import seed_default_plans
     await seed_default_plans()

@@ -1,4 +1,4 @@
-import { Bot, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react'
+import { Bot, Building2, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 import { authApi } from '../../lib/api'
@@ -11,8 +11,15 @@ import { Input } from '../ui/input'
 import { useToast } from '../ui/toast'
 
 export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
+  const [mode, setMode] = useState<'login' | 'forgot' | 'reset' | 'request'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [resetToken, setResetToken] = useState('')
+  const [resetPassword, setResetPassword] = useState('')
+  const [resetConfirm, setResetConfirm] = useState('')
+  const [requestTenantName, setRequestTenantName] = useState('')
+  const [requestSlug, setRequestSlug] = useState('')
+  const [requestOwnerName, setRequestOwnerName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const setToken = useAuthStore((state) => state.setToken)
@@ -34,6 +41,92 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleForgotPassword = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const data = await authApi.forgotPassword(email)
+      push({
+        tone: 'info',
+        title: 'Recuperación iniciada',
+        description: data.reset_token
+          ? 'Te dejamos un token temporal para esta etapa de pruebas.'
+          : 'Si la cuenta existe, ya dejamos lista la recuperación.',
+      })
+      if (data.reset_token) {
+        setResetToken(data.reset_token)
+      }
+      setMode('reset')
+    } catch (e: any) {
+      setError(formatApiError(e.response?.data?.detail, 'No pudimos iniciar la recuperación.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResetPassword = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setError('')
+    if (resetPassword !== resetConfirm) {
+      setError('La confirmación no coincide con la nueva contraseña.')
+      return
+    }
+    setLoading(true)
+    try {
+      await authApi.resetPassword(resetToken, resetPassword)
+      push({
+        tone: 'success',
+        title: 'Contraseña renovada',
+        description: 'Ya podés volver a ingresar con tu nueva contraseña.',
+      })
+      setPassword('')
+      setResetPassword('')
+      setResetConfirm('')
+      setMode('login')
+    } catch (e: any) {
+      setError(formatApiError(e.response?.data?.detail, 'No pudimos completar la recuperación.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleFreeRequest = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const request = await authApi.requestFreeAccount({
+        tenant_name: requestTenantName,
+        slug: requestSlug,
+        owner_email: email,
+        owner_name: requestOwnerName,
+        password,
+      })
+      push({
+        tone: 'success',
+        title: 'Solicitud enviada',
+        description: `Dejamos ${request.tenant_name} en cola para aprobación del admin general.`,
+      })
+      setRequestTenantName('')
+      setRequestSlug('')
+      setRequestOwnerName('')
+      setPassword('')
+      setMode('login')
+    } catch (e: any) {
+      setError(formatApiError(e.response?.data?.detail, 'No pudimos enviar la solicitud.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmit = (event: React.FormEvent) => {
+    if (mode === 'request') return handleFreeRequest(event)
+    if (mode === 'forgot') return handleForgotPassword(event)
+    if (mode === 'reset') return handleResetPassword(event)
+    return handleLogin(event)
   }
 
   return (
@@ -87,24 +180,103 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
 
             <Card className="border-slate-200/80 shadow-none">
               <CardContent className="pt-5">
-                <form onSubmit={handleLogin} className="space-y-5">
-                  <Field label="Usuario o correo" required>
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  <Field label={mode === 'request' ? 'Correo del owner inicial' : 'Usuario o correo'} required>
                     <Input
                       type="text"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="admin"
+                      placeholder={mode === 'request' ? 'owner@empresa.com' : 'admin'}
                     />
                   </Field>
 
-                  <Field label="Contraseña" required>
-                    <Input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                    />
-                  </Field>
+                  {mode === 'login' && (
+                    <Field label="Contraseña" required>
+                      <Input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                      />
+                    </Field>
+                  )}
+
+                  {mode === 'request' && (
+                    <>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Field label="Nombre del tenant" required>
+                          <Input
+                            type="text"
+                            value={requestTenantName}
+                            onChange={(e) => setRequestTenantName(e.target.value)}
+                            placeholder="Zgenmind"
+                          />
+                        </Field>
+                        <Field label="Slug" required hint="Solo minúsculas, números y guiones.">
+                          <Input
+                            type="text"
+                            pattern="^[a-z0-9-]+$"
+                            value={requestSlug}
+                            onChange={(e) => setRequestSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                            placeholder="zgenmind"
+                          />
+                        </Field>
+                      </div>
+                      <Field label="Nombre del owner">
+                        <Input
+                          type="text"
+                          value={requestOwnerName}
+                          onChange={(e) => setRequestOwnerName(e.target.value)}
+                          placeholder="Guillermo Romani"
+                        />
+                      </Field>
+                      <Field label="Contraseña inicial" required hint="La va a usar el owner cuando el admin apruebe la cuenta.">
+                        <Input
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="********"
+                          minLength={8}
+                        />
+                      </Field>
+                      <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                        Este pedido crea una solicitud de cuenta <span className="font-medium">free</span>. El tenant se activa cuando el admin general la aprueba.
+                      </div>
+                    </>
+                  )}
+
+                  {mode === 'reset' && (
+                    <>
+                      <Field label="Token de recuperación" required hint="En esta etapa de pruebas lo mostramos al solicitar el reset.">
+                        <Input
+                          type="text"
+                          value={resetToken}
+                          onChange={(e) => setResetToken(e.target.value)}
+                          placeholder="token temporal"
+                        />
+                      </Field>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Field label="Nueva contraseña" required>
+                          <Input
+                            type="password"
+                            value={resetPassword}
+                            onChange={(e) => setResetPassword(e.target.value)}
+                            placeholder="********"
+                            minLength={8}
+                          />
+                        </Field>
+                        <Field label="Confirmar nueva contraseña" required>
+                          <Input
+                            type="password"
+                            value={resetConfirm}
+                            onChange={(e) => setResetConfirm(e.target.value)}
+                            placeholder="********"
+                            minLength={8}
+                          />
+                        </Field>
+                      </div>
+                    </>
+                  )}
 
                   {error && (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
@@ -112,9 +284,98 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                     </div>
                   )}
 
-                  <Button type="submit" className="w-full" size="lg" disabled={loading || !email || !password}>
-                    {loading ? 'Validando acceso...' : 'Ingresar al workspace'}
-                  </Button>
+                  {mode === 'login' && (
+                    <>
+                      <Button type="submit" className="w-full" size="lg" disabled={loading || !email || !password}>
+                        {loading ? 'Validando acceso...' : 'Ingresar al workspace'}
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError('')
+                          setMode('request')
+                        }}
+                        className="flex w-full items-center justify-center gap-2 text-sm text-slate-600 hover:text-slate-800"
+                      >
+                        <Building2 className="h-4 w-4" />
+                        Pedir cuenta free
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError('')
+                          setMode('forgot')
+                        }}
+                        className="w-full text-sm text-violet-700 hover:text-violet-800"
+                      >
+                        Olvidé mi contraseña
+                      </button>
+                    </>
+                  )}
+
+                  {mode === 'forgot' && (
+                    <>
+                      <Button type="submit" className="w-full" size="lg" disabled={loading || !email}>
+                        {loading ? 'Generando recuperación...' : 'Generar token de recuperación'}
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError('')
+                          setMode('login')
+                        }}
+                        className="w-full text-sm text-slate-500 hover:text-slate-700"
+                      >
+                        Volver al login
+                      </button>
+                    </>
+                  )}
+
+                  {mode === 'reset' && (
+                    <>
+                      <Button
+                        type="submit"
+                        className="w-full"
+                        size="lg"
+                        disabled={loading || !email || !resetToken || !resetPassword || !resetConfirm}
+                      >
+                        {loading ? 'Actualizando contraseña...' : 'Guardar nueva contraseña'}
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError('')
+                          setMode('login')
+                        }}
+                        className="w-full text-sm text-slate-500 hover:text-slate-700"
+                      >
+                        Volver al login
+                      </button>
+                    </>
+                  )}
+
+                  {mode === 'request' && (
+                    <>
+                      <Button
+                        type="submit"
+                        className="w-full"
+                        size="lg"
+                        disabled={loading || !email || !password || !requestTenantName || !requestSlug}
+                      >
+                        {loading ? 'Enviando solicitud...' : 'Solicitar cuenta free'}
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError('')
+                          setMode('login')
+                        }}
+                        className="w-full text-sm text-slate-500 hover:text-slate-700"
+                      >
+                        Volver al login
+                      </button>
+                    </>
+                  )}
                 </form>
               </CardContent>
             </Card>

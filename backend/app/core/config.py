@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     jwt_secret: str = "change_this_in_production"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24  # 24 horas
+    allow_direct_signup: bool = False
 
     # LLM
     anthropic_api_key: str = ""

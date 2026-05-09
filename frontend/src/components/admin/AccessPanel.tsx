@@ -1,7 +1,16 @@
 import { Building2, ShieldCheck, UserPlus, Users, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 
-import { authApi, systemApi, tenantsApi, usersApi, type PlanDefinition, type TenantUser } from '../../lib/api'
+import {
+  authApi,
+  systemApi,
+  tenantsApi,
+  usersApi,
+  type FreeAccountRequest,
+  type PlanDefinition,
+  type TenantOverview,
+  type TenantUser,
+} from '../../lib/api'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
@@ -90,6 +99,9 @@ export function AccessPanel() {
   const [tenantForm, setTenantForm] = useState(emptyTenantForm)
   const [plans, setPlans] = useState<PlanDefinition[]>([])
   const [canManagePlans, setCanManagePlans] = useState(false)
+  const [freeRequests, setFreeRequests] = useState<FreeAccountRequest[]>([])
+  const [overview, setOverview] = useState<TenantOverview[]>([])
+  const [decisionLoading, setDecisionLoading] = useState<string | null>(null)
   const [lastTenantCreated, setLastTenantCreated] = useState<null | {
     tenant_id: string
     user_id: string
@@ -110,11 +122,19 @@ export function AccessPanel() {
         logAccess('load:plans', { count: planCatalog.length })
         setPlans(planCatalog)
         setCanManagePlans(true)
+        const [requests, tenantOverview] = await Promise.all([
+          systemApi.listFreeRequests(),
+          systemApi.getOverview(),
+        ])
+        setFreeRequests(requests)
+        setOverview(tenantOverview)
       } catch (error: any) {
         if (error.response?.status === 403) {
           logAccess('load:plans:forbidden')
           setCanManagePlans(false)
           setPlans([])
+          setFreeRequests([])
+          setOverview([])
         } else {
           console.error('[Agentica][Access] load:plans:error', error)
           throw error
@@ -181,6 +201,10 @@ export function AccessPanel() {
       viewers: users.filter((user) => user.role === 'viewer').length,
     }),
     [users]
+  )
+  const pendingRequests = useMemo(
+    () => freeRequests.filter((request) => request.status === 'pending'),
+    [freeRequests]
   )
 
   const handleCreateUser = async (event: FormEvent<HTMLFormElement>) => {
@@ -260,6 +284,53 @@ export function AccessPanel() {
       })
     } finally {
       setTenantSubmitting(false)
+    }
+  }
+
+  const handleApproveRequest = async (requestId: string) => {
+    setDecisionLoading(requestId)
+    logAccess('free-request:approve:start', { request_id: requestId })
+    try {
+      const updated = await systemApi.approveFreeRequest(requestId)
+      setFreeRequests((prev) => prev.map((entry) => (entry.id === requestId ? updated : entry)))
+      await loadData()
+      toast.push({
+        tone: 'success',
+        title: 'Solicitud aprobada',
+        description: `Ya activamos el tenant ${updated.slug}.`,
+      })
+    } catch (error: any) {
+      console.error('[Agentica][Access] free-request:approve:error', { request_id: requestId, error })
+      toast.push({
+        tone: 'error',
+        title: 'No pudimos aprobar la solicitud',
+        description: getErrorDescription(error, 'Reintentá en unos segundos.'),
+      })
+    } finally {
+      setDecisionLoading(null)
+    }
+  }
+
+  const handleRejectRequest = async (requestId: string) => {
+    setDecisionLoading(requestId)
+    logAccess('free-request:reject:start', { request_id: requestId })
+    try {
+      const updated = await systemApi.rejectFreeRequest(requestId)
+      setFreeRequests((prev) => prev.map((entry) => (entry.id === requestId ? updated : entry)))
+      toast.push({
+        tone: 'success',
+        title: 'Solicitud rechazada',
+        description: `La solicitud ${updated.slug} quedó marcada como rechazada.`,
+      })
+    } catch (error: any) {
+      console.error('[Agentica][Access] free-request:reject:error', { request_id: requestId, error })
+      toast.push({
+        tone: 'error',
+        title: 'No pudimos rechazar la solicitud',
+        description: getErrorDescription(error, 'Reintentá en unos segundos.'),
+      })
+    } finally {
+      setDecisionLoading(null)
     }
   }
 
@@ -485,6 +556,159 @@ export function AccessPanel() {
       </div>
 
       {canManagePlans && (
+        <div className="grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
+          <Card className="border-slate-200/80">
+            <CardHeader>
+              <CardTitle>Solicitudes de cuenta free</CardTitle>
+              <CardDescription>
+                Bandeja del admin general para aprobar o rechazar altas públicas antes de crear el tenant.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
+                <span className="font-medium text-slate-900">{pendingRequests.length}</span> solicitudes pendientes sobre{' '}
+                <span className="font-medium text-slate-900">{freeRequests.length}</span> registradas.
+              </div>
+
+              {freeRequests.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-sm text-slate-500">
+                  Todavía no entraron pedidos de cuenta free.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {freeRequests.map((request) => (
+                    <div key={request.id} className="rounded-xl border border-slate-200 px-4 py-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-slate-950">{request.tenant_name}</p>
+                            <Badge
+                              tone={
+                                request.status === 'approved'
+                                  ? 'green'
+                                  : request.status === 'rejected'
+                                    ? 'rose'
+                                    : 'amber'
+                              }
+                            >
+                              {request.status}
+                            </Badge>
+                            <Badge tone="slate">{request.requested_plan_id}</Badge>
+                          </div>
+                          <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+                            <span>slug: <code className="rounded bg-slate-100 px-2 py-1">{request.slug}</code></span>
+                            <span>owner: {request.owner_name || request.owner_email}</span>
+                            <span>{request.owner_email}</span>
+                            <span>{formatDate(request.created_at)}</span>
+                          </div>
+                          {request.review_notes && (
+                            <p className="text-sm text-slate-500">{request.review_notes}</p>
+                          )}
+                        </div>
+                        {request.status === 'pending' && (
+                          <div className="flex shrink-0 gap-2">
+                            <Button
+                              variant="secondary"
+                              disabled={decisionLoading === request.id}
+                              onClick={() => handleRejectRequest(request.id)}
+                            >
+                              Rechazar
+                            </Button>
+                            <Button
+                              disabled={decisionLoading === request.id}
+                              onClick={() => handleApproveRequest(request.id)}
+                            >
+                              {decisionLoading === request.id ? 'Procesando...' : 'Aprobar'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200/80">
+            <CardHeader>
+              <CardTitle>Mapa global de tenants y uso</CardTitle>
+              <CardDescription>
+                Snapshot del parque actual: plan activo, equipo cargado y consumo operativo por tenant.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {overview.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-sm text-slate-500">
+                  Todavía no hay tenants para mostrar.
+                </div>
+              ) : (
+                overview.map((tenant) => (
+                  <div key={tenant.tenant_id} className="rounded-xl border border-slate-200 px-4 py-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-slate-950">{tenant.name}</p>
+                          <Badge tone="violet">{tenant.plan_id}</Badge>
+                          <code className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-600">{tenant.slug}</code>
+                        </div>
+                        <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+                          <span>owner: {tenant.owner_name || tenant.owner_email || 'sin owner'}</span>
+                          {tenant.owner_email && <span>{tenant.owner_email}</span>}
+                          <span>alta: {formatDate(tenant.created_at)}</span>
+                        </div>
+                      </div>
+                      <div className="grid gap-2 text-sm text-slate-600 md:text-right">
+                        <span>
+                          agentes: <span className="font-medium text-slate-950">{tenant.agents_used}</span> / {tenant.agents_limit}
+                        </span>
+                        <span>
+                          invocaciones: <span className="font-medium text-slate-950">{tenant.invocations_used}</span> / {tenant.invocations_limit}
+                        </span>
+                        <span>
+                          usuarios: <span className="font-medium text-slate-950">{tenant.user_count}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <MiniMetric label="Owners + developers + viewers" value={`${tenant.user_count} usuarios`} />
+                      <MiniMetric label="Developers" value={String(tenant.developer_count)} />
+                      <MiniMetric label="Viewers" value={String(tenant.viewer_count)} />
+                    </div>
+
+                    <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                      <div className="grid grid-cols-[1.5fr,1fr,0.9fr] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        <span>Usuario</span>
+                        <span>Rol</span>
+                        <span>Alta</span>
+                      </div>
+                      <div className="divide-y divide-slate-200">
+                        {tenant.users.map((user) => (
+                          <div key={user.id} className="grid grid-cols-[1.5fr,1fr,0.9fr] gap-3 px-4 py-3 text-sm">
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-slate-900">{user.full_name || user.email}</p>
+                              <p className="truncate text-xs text-slate-500">{user.email}</p>
+                            </div>
+                            <div className="flex items-center">
+                              <Badge tone={user.role === 'owner' ? 'violet' : user.role === 'developer' ? 'blue' : 'slate'}>
+                                {user.role}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center text-slate-500">{formatDate(user.created_at)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {canManagePlans && (
         <Card className="border-slate-200/80">
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -613,5 +837,14 @@ function MetricCard({
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className="mt-2 text-base font-semibold text-slate-950">{value}</p>
+    </div>
   )
 }

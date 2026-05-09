@@ -3,6 +3,7 @@ import {
   BookOpen,
   BrainCircuit,
   Building2,
+  CircleUserRound,
   Code2,
   ExternalLink,
   KeyRound,
@@ -25,6 +26,7 @@ const navItems = [
   { to: '/', label: 'Agentes', end: true, icon: <LayoutDashboard className="h-4 w-4" /> },
   { to: '/wizard', label: 'Crear agente', icon: <Wand2 className="h-4 w-4" /> },
   { to: '/usage', label: 'Observabilidad', icon: <BarChart3 className="h-4 w-4" /> },
+  { to: '/account', label: 'Cuenta', icon: <CircleUserRound className="h-4 w-4" /> },
   { to: '/access', label: 'Accesos', icon: <Building2 className="h-4 w-4" /> },
   { to: '/providers', label: 'Boveda IA', icon: <Shield className="h-4 w-4" /> },
   { to: '/custom-tools', label: 'Mis tools', icon: <Code2 className="h-4 w-4" /> },
@@ -49,7 +51,7 @@ export function AppShell() {
   const visibleNavItems = useMemo(
     () =>
       navItems.filter((item) => {
-        if (isViewer) return ['/', '/usage'].includes(item.to)
+        if (isViewer) return ['/', '/usage', '/account'].includes(item.to)
         if (item.to === '/access') return isOwner
         return true
       }),

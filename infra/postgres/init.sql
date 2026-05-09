@@ -53,6 +53,31 @@ CREATE TABLE IF NOT EXISTS public.api_keys (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.password_reset_tokens (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    token_hash  TEXT NOT NULL UNIQUE,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    used_at     TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.free_account_requests (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_name     TEXT NOT NULL,
+    slug            TEXT NOT NULL,
+    owner_email     TEXT NOT NULL,
+    owner_name      TEXT,
+    password_hash   TEXT NOT NULL,
+    requested_plan_id TEXT NOT NULL DEFAULT 'free',
+    status          TEXT NOT NULL DEFAULT 'pending',
+    review_notes    TEXT,
+    approved_tenant_id UUID REFERENCES public.tenants(id) ON DELETE SET NULL,
+    processed_by_user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    processed_at    TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS public.llm_provider_keys (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
@@ -72,3 +97,7 @@ CREATE INDEX IF NOT EXISTS idx_llm_keys_tenant_provider
 CREATE INDEX IF NOT EXISTS idx_users_tenant    ON public.users(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_tenant ON public.api_keys(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_tenants_slug    ON public.tenants(slug);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user
+  ON public.password_reset_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_free_account_requests_status
+  ON public.free_account_requests(status, created_at DESC);

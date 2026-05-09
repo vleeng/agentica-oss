@@ -138,6 +138,37 @@ export interface AuthMe {
   user_id: string
   tenant_id: string
   role: 'owner' | 'developer' | 'viewer'
+  email?: string | null
+  full_name?: string | null
+}
+
+export interface ForgotPasswordResult {
+  accepted: boolean
+  reset_token?: string | null
+  expires_in_minutes?: number
+}
+
+export interface FreeAccountRequestPayload {
+  tenant_name: string
+  slug: string
+  owner_email: string
+  owner_name?: string
+  password: string
+}
+
+export interface FreeAccountRequest {
+  id: string
+  tenant_name: string
+  slug: string
+  owner_email: string
+  owner_name?: string | null
+  requested_plan_id: string
+  status: 'pending' | 'approved' | 'rejected'
+  review_notes?: string | null
+  approved_tenant_id?: string | null
+  processed_by_user_id?: string | null
+  processed_at?: string | null
+  created_at: string
 }
 
 export interface TenantRegistrationPayload {
@@ -173,6 +204,33 @@ export interface PlanDefinition {
   }
 }
 
+export interface TenantOverviewUser {
+  id: string
+  email: string
+  full_name?: string | null
+  role: 'owner' | 'developer' | 'viewer'
+  status: string
+  created_at: string
+}
+
+export interface TenantOverview {
+  tenant_id: string
+  name: string
+  slug: string
+  plan_id: string
+  created_at: string
+  owner_email?: string | null
+  owner_name?: string | null
+  user_count: number
+  developer_count: number
+  viewer_count: number
+  agents_used: number
+  agents_limit: number
+  invocations_used: number
+  invocations_limit: number
+  users: TenantOverviewUser[]
+}
+
 export const authApi = {
   register: (email: string, password: string) =>
     api.post('/auth/register', { email, password }).then((r) => r.data),
@@ -181,6 +239,18 @@ export const authApi = {
     api.post('/auth/login', { email, password }).then((r) => r.data),
 
   me: (): Promise<AuthMe> => api.get('/auth/me').then((r) => r.data),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.post('/auth/change-password', { current_password: currentPassword, new_password: newPassword }).then((r) => r.data),
+
+  forgotPassword: (email: string): Promise<ForgotPasswordResult> =>
+    api.post('/auth/forgot-password', { email }).then((r) => r.data),
+
+  resetPassword: (token: string, newPassword: string) =>
+    api.post('/auth/reset-password', { token, new_password: newPassword }).then((r) => r.data),
+
+  requestFreeAccount: (payload: FreeAccountRequestPayload): Promise<FreeAccountRequest> =>
+    api.post('/auth/free-request', payload).then((r) => r.data),
 }
 
 export const agentsApi = {
@@ -483,6 +553,13 @@ export const systemApi = {
   listPlans: (): Promise<PlanDefinition[]> => api.get('/system/plans').then(r => r.data),
   updatePlan: (planId: string, body: PlanDefinition): Promise<PlanDefinition> =>
     api.put(`/system/plans/${planId}`, body).then(r => r.data),
+  listFreeRequests: (status?: 'pending' | 'approved' | 'rejected'): Promise<FreeAccountRequest[]> =>
+    api.get('/system/free-requests', { params: status ? { status } : undefined }).then(r => r.data),
+  approveFreeRequest: (requestId: string, body?: { notes?: string; plan_id?: string }): Promise<FreeAccountRequest> =>
+    api.post(`/system/free-requests/${requestId}/approve`, body || {}).then(r => r.data),
+  rejectFreeRequest: (requestId: string, body?: { notes?: string }): Promise<FreeAccountRequest> =>
+    api.post(`/system/free-requests/${requestId}/reject`, body || {}).then(r => r.data),
+  getOverview: (): Promise<TenantOverview[]> => api.get('/system/overview').then(r => r.data),
 }
 
 export const guardrailsApi = {
