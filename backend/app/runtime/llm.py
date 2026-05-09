@@ -67,7 +67,6 @@ def bind_crewai_call_adapter(llm: Any, provider: str):
             "temperature": getattr(self, "temperature", None),
             "top_p": getattr(self, "top_p", None),
             "n": getattr(self, "n", None),
-            "stop": getattr(self, "stop", None),
             "presence_penalty": getattr(self, "presence_penalty", None),
             "frequency_penalty": getattr(self, "frequency_penalty", None),
             "logit_bias": getattr(self, "logit_bias", None),
@@ -79,6 +78,8 @@ def bind_crewai_call_adapter(llm: Any, provider: str):
             "base_url": getattr(self, "base_url", None),
             "stream": False,
         }
+        if supports_stop_parameter(self.model, self._agentica_provider):
+            params["stop"] = getattr(self, "stop", None)
 
         if uses_max_completion_tokens(self.model, self._agentica_provider):
             params["max_completion_tokens"] = getattr(self, "max_completion_tokens", None) or getattr(self, "max_tokens", None)
@@ -170,6 +171,10 @@ def uses_max_completion_tokens(model: str, provider: str) -> bool:
         or normalized.startswith("o3")
         or normalized.startswith("o4")
     )
+
+
+def supports_stop_parameter(model: str, provider: str) -> bool:
+    return not uses_max_completion_tokens(model, provider)
 
 
 def resolve_base_url(provider: str, explicit_base_url: str | None = None) -> str | None:
