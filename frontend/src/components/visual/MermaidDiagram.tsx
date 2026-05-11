@@ -9,6 +9,34 @@ mermaid.initialize({
   theme: 'neutral',
 })
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function sanitizeMermaidChart(chart: string) {
+  const lines = chart.split('\n')
+  const nodeIdMap = new Map<string, string>()
+
+  for (const line of lines) {
+    const match = line.match(/^\s*([A-Za-z0-9_-]+)\s*(?:\(\[|\[\(|\[|\{)/)
+    if (!match) continue
+    const rawId = match[1]
+    const safeId = `node_${rawId.replace(/[^A-Za-z0-9_]/g, '_').replace(/^(\d)/, 'n_$1').toLowerCase()}`
+    if (safeId !== rawId) {
+      nodeIdMap.set(rawId, safeId)
+    }
+  }
+
+  if (nodeIdMap.size === 0) return chart
+
+  let sanitized = chart
+  for (const [rawId, safeId] of nodeIdMap.entries()) {
+    const pattern = new RegExp(`\\b${escapeRegExp(rawId)}\\b`, 'g')
+    sanitized = sanitized.replace(pattern, safeId)
+  }
+  return sanitized
+}
+
 export function MermaidDiagram({ chart }: { chart: string }) {
   const [svg, setSvg] = useState('')
   const [error, setError] = useState('')
@@ -22,9 +50,10 @@ export function MermaidDiagram({ chart }: { chart: string }) {
     }
 
     let active = true
+    const safeChart = sanitizeMermaidChart(chart)
 
     mermaid
-      .parse(chart)
+      .parse(safeChart)
       .then((valid) => {
         if (!active) return
         if (!valid) {
@@ -33,7 +62,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
           return
         }
         mermaid
-          .render(`agentica-${id}`, chart)
+          .render(`agentica-${id}`, safeChart)
           .then(({ svg: renderedSvg }) => {
             if (!active) return
             setSvg(renderedSvg)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from uuid import uuid4
 
 from app.core.config import get_settings
@@ -160,8 +161,13 @@ Respondé SOLO con el JSON array, sin markdown."""
 
     def _blueprint_to_mermaid(self, blueprint: dict, spec: AgentSpec) -> str:
         lines = ["flowchart TD"]
+        node_id_map = {
+            node["id"]: self._mermaid_node_id(node["id"])
+            for node in blueprint.get("nodes", [])
+            if node.get("id")
+        }
         for node in blueprint.get("nodes", []):
-            node_id = node["id"].replace("-", "_")
+            node_id = node_id_map.get(node["id"], self._mermaid_node_id(node["id"]))
             label = node["label"]
             node_type = node.get("type", "agent")
             if node_type == "start":
@@ -174,8 +180,8 @@ Respondé SOLO con el JSON array, sin markdown."""
                 lines.append(f'    {node_id}["{label}"]')
 
         for edge in blueprint.get("edges", []):
-            src = edge["from"].replace("-", "_")
-            dst = edge["to"].replace("-", "_")
+            src = node_id_map.get(edge["from"], self._mermaid_node_id(edge["from"]))
+            dst = node_id_map.get(edge["to"], self._mermaid_node_id(edge["to"]))
             cond = edge.get("condition")
             if cond:
                 lines.append(f'    {src} -->|"{cond}"| {dst}')
@@ -183,3 +189,12 @@ Respondé SOLO con el JSON array, sin markdown."""
                 lines.append(f'    {src} --> {dst}')
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _mermaid_node_id(raw_id: str) -> str:
+        normalized = re.sub(r"[^a-zA-Z0-9_]", "_", raw_id or "").strip("_")
+        if not normalized:
+            normalized = "node"
+        if normalized[0].isdigit():
+            normalized = f"n_{normalized}"
+        return f"node_{normalized.lower()}"
