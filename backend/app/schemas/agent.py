@@ -106,7 +106,7 @@ class FlowNode(BaseModel):
 
 
 class FlowEdge(BaseModel):
-    id: str
+    id: Optional[str] = None
     from_: str = Field(alias="from")
     to: str
     condition: Optional[str] = None
