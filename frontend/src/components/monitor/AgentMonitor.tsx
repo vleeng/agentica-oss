@@ -2,10 +2,11 @@ import { ExternalLink, Gauge, Play, RefreshCcw, Rocket, Sparkles, Wand2 } from '
 import { useEffect, useRef, useState } from 'react'
 
 import type { AgentDesign } from '../../types/agent'
-import { agentsApi, createAgentWebSocket } from '../../lib/api'
+import { agentsApi, authApi, createAgentWebSocket, type AuthMe } from '../../lib/api'
 import { KnowledgePanel } from './KnowledgePanel'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { AgentEditPanel } from './AgentEditPanel'
+import { ChatContextHeader } from './ChatContextHeader'
 import { FlowEditor } from './FlowEditor'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
@@ -55,6 +56,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [showFlowEditor, setShowFlowEditor] = useState(false)
+  const [viewerContext, setViewerContext] = useState<AuthMe | null>(null)
   const sessionId = useRef(`sandbox_${design.agent_id}_${Date.now()}`)
   const wsRef = useRef<ReturnType<typeof createAgentWebSocket> | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -67,6 +69,21 @@ export function AgentMonitor({ design, onOptimized }: Props) {
     handleBuild()
     return () => wsRef.current?.close()
   }, [design.agent_id])
+
+  useEffect(() => {
+    let cancelled = false
+    authApi
+      .me()
+      .then((me) => {
+        if (!cancelled) setViewerContext(me)
+      })
+      .catch(() => {
+        if (!cancelled) setViewerContext(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -303,6 +320,16 @@ export function AgentMonitor({ design, onOptimized }: Props) {
             <CardDescription>Probá el agente en vivo antes de desplegarlo.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <ChatContextHeader
+              agentName={currentDesign.spec.name}
+              agentId={String(currentDesign.agent_id)}
+              tenantName={viewerContext?.tenant_name}
+              tenantId={viewerContext?.tenant_id || currentDesign.tenant_id}
+              userName={viewerContext?.full_name}
+              userEmail={viewerContext?.email}
+              environmentLabel="Sandbox interno"
+              channelLabel="Web chat"
+            />
             <div className="h-[28rem] space-y-4 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-4">
               {messages.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center text-center">

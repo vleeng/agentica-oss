@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { agentsApi, createAgentWebSocket } from '../../lib/api'
+import { agentsApi, authApi, createAgentWebSocket, type AuthMe } from '../../lib/api'
+import type { AgentDesign } from '../../types/agent'
+import { getAuthToken } from '../../stores/auth'
 import { RichText } from '../visual/RichText'
 import { Bot, Send } from 'lucide-react'
+import { ChatContextHeader } from './ChatContextHeader'
 
 interface Props {
   agentId: string
@@ -18,6 +21,8 @@ export function StandaloneChat({ agentId }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [viewerContext, setViewerContext] = useState<AuthMe | null>(null)
+  const [agentDesign, setAgentDesign] = useState<AgentDesign | null>(null)
   
   const sessionId = useRef(`pub_${agentId}_${Date.now()}`)
   const wsRef = useRef<ReturnType<typeof createAgentWebSocket> | null>(null)
@@ -38,6 +43,35 @@ export function StandaloneChat({ agentId }: Props) {
     agentsApi.getState(agentId)
       .then(() => setAgentReady('ok'))
       .catch(() => setAgentReady('error'))
+  }, [agentId, apiKey])
+
+  useEffect(() => {
+    let cancelled = false
+    const token = getAuthToken()
+
+    if (!apiKey && token) {
+      authApi
+        .me()
+        .then((me) => {
+          if (!cancelled) setViewerContext(me)
+        })
+        .catch(() => {
+          if (!cancelled) setViewerContext(null)
+        })
+
+      agentsApi
+        .getDesign(agentId)
+        .then((design) => {
+          if (!cancelled) setAgentDesign(design)
+        })
+        .catch(() => {
+          if (!cancelled) setAgentDesign(null)
+        })
+    }
+
+    return () => {
+      cancelled = true
+    }
   }, [agentId, apiKey])
 
   useEffect(() => {
@@ -146,6 +180,16 @@ export function StandaloneChat({ agentId }: Props) {
 
       {/* Caja de mensajes */}
       <main className="flex-1 overflow-y-auto w-full max-w-3xl mx-auto p-4 md:p-6 space-y-6">
+        <ChatContextHeader
+          agentName={agentDesign?.spec.name || `Agente ${agentId.slice(0, 8)}`}
+          agentId={agentId}
+          tenantName={viewerContext?.tenant_name}
+          tenantId={viewerContext?.tenant_id || agentDesign?.tenant_id}
+          userName={viewerContext?.full_name}
+          userEmail={viewerContext?.email}
+          environmentLabel="Agente desplegado"
+          channelLabel={apiKey ? 'Link/API key' : 'Web chat'}
+        />
         {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2`}>
             {msg.role === 'assistant' && (
