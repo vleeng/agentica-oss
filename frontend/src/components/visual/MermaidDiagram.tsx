@@ -1,4 +1,5 @@
 import mermaid from 'mermaid'
+import type { ReactNode } from 'react'
 import { useEffect, useId, useState } from 'react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
@@ -37,7 +38,7 @@ function sanitizeMermaidChart(chart: string) {
   return sanitized
 }
 
-export function MermaidDiagram({ chart }: { chart: string }) {
+export function MermaidDiagram({ chart, actions }: { chart: string; actions?: ReactNode }) {
   const [svg, setSvg] = useState('')
   const [error, setError] = useState('')
   const id = useId().replace(/:/g, '')
@@ -88,7 +89,10 @@ export function MermaidDiagram({ chart }: { chart: string }) {
   return (
     <Card className="overflow-hidden">
       <CardHeader>
-        <CardTitle>Flujo del agente</CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle>Flujo del agente</CardTitle>
+          {actions}
+        </div>
       </CardHeader>
       <CardContent>
         {error ? (

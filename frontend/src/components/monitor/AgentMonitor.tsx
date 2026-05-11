@@ -54,6 +54,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [showFlowEditor, setShowFlowEditor] = useState(false)
   const sessionId = useRef(`sandbox_${design.agent_id}_${Date.now()}`)
   const wsRef = useRef<ReturnType<typeof createAgentWebSocket> | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -368,7 +369,6 @@ export function AgentMonitor({ design, onOptimized }: Props) {
 
       {activeTab === 'design' && (
         <div className="space-y-6">
-          <FlowEditor design={currentDesign} onSaved={handleFlowSaved} />
           <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
           <Card>
             <CardHeader>
@@ -398,9 +398,16 @@ export function AgentMonitor({ design, onOptimized }: Props) {
               </CardContent>
             </Card>
 
-            {currentDesign.mermaid_diagram && (
-              <MermaidDiagram chart={currentDesign.mermaid_diagram} />
-            )}
+              {currentDesign.mermaid_diagram && (
+              <MermaidDiagram
+                chart={currentDesign.mermaid_diagram}
+                actions={
+                  <Button variant="secondary" onClick={() => setShowFlowEditor((prev) => !prev)}>
+                    {showFlowEditor ? 'Ocultar editor' : 'Editar flujo'}
+                  </Button>
+                }
+              />
+              )}
 
             <Card>
               <CardHeader>
@@ -418,6 +425,10 @@ export function AgentMonitor({ design, onOptimized }: Props) {
             </Card>
           </div>
           </div>
+
+          {showFlowEditor && (
+            <FlowEditor design={currentDesign} onSaved={handleFlowSaved} />
+          )}
         </div>
       )}
 
