@@ -309,9 +309,10 @@ async def get_me(ctx: CurrentContext) -> dict:
     async with PublicSessionFactory() as db:
         result = await db.execute(
             text("""
-                SELECT email, full_name
-                FROM users
-                WHERE id = :user_id AND tenant_id = :tenant_id
+                SELECT u.email, u.full_name, t.name AS tenant_name, t.slug AS tenant_slug
+                FROM users u
+                JOIN tenants t ON t.id = u.tenant_id
+                WHERE u.id = :user_id AND u.tenant_id = :tenant_id
             """),
             {"user_id": ctx.user_id, "tenant_id": ctx.tenant_id},
         )
@@ -323,6 +324,8 @@ async def get_me(ctx: CurrentContext) -> dict:
         "role": ctx.role,
         "email": row.email if row else None,
         "full_name": row.full_name if row else None,
+        "tenant_name": row.tenant_name if row else None,
+        "tenant_slug": row.tenant_slug if row else None,
     }
 
 

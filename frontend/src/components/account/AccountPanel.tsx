@@ -78,12 +78,20 @@ export function AccountPanel() {
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Badge tone="violet">{me?.role || '...'}</Badge>
-                <code className="rounded bg-white px-2 py-1 text-xs text-slate-600">{me?.tenant_id || '...'}</code>
+                <span className="rounded bg-white px-2 py-1 text-xs text-slate-600">
+                  {me?.tenant_name || me?.tenant_slug || '...'}
+                </span>
               </div>
             </div>
             <div className="text-sm text-slate-500">
               <div>
                 <span className="font-medium text-slate-700">Email:</span> {loading ? 'Cargando...' : me?.email || 'Sin dato'}
+              </div>
+              <div className="mt-2">
+                <span className="font-medium text-slate-700">Tenant interno:</span> {loading ? 'Cargando...' : me?.tenant_id || 'Sin dato'}
+              </div>
+              <div className="mt-2">
+                <span className="font-medium text-slate-700">Usuario interno:</span> {loading ? 'Cargando...' : me?.user_id || 'Sin dato'}
               </div>
               <div className="mt-2">
                 <span className="font-medium text-slate-700">Recuperación:</span> si olvidás tu contraseña, pedí un token desde la pantalla de login.

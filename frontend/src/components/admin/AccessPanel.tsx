@@ -55,6 +55,10 @@ interface AccessContext {
   tenant_id: string
   user_id: string
   role: 'owner' | 'developer' | 'viewer'
+  email?: string | null
+  full_name?: string | null
+  tenant_name?: string | null
+  tenant_slug?: string | null
 }
 
 const emptyUserForm = {
@@ -87,6 +91,10 @@ function formatDate(value: string) {
   }
 }
 
+function shortId(value: string | null | undefined) {
+  return value ? value.slice(0, 8) : '...'
+}
+
 export function AccessPanel() {
   const toast = useToast()
   const [context, setContext] = useState<AccessContext | null>(null)
@@ -106,6 +114,9 @@ export function AccessPanel() {
     tenant_id: string
     user_id: string
     role: string
+    tenant_name: string
+    owner_email: string
+    owner_name?: string
   }>(null)
 
   const loadData = async () => {
@@ -263,6 +274,9 @@ export function AccessPanel() {
         tenant_id: created.tenant_id,
         user_id: created.user_id,
         role: created.role,
+        tenant_name: tenantForm.name,
+        owner_email: tenantForm.owner_email,
+        owner_name: tenantForm.owner_name || undefined,
       })
       setTenantForm(emptyTenantForm)
       toast.push({
@@ -350,7 +364,11 @@ export function AccessPanel() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard label="Tenant activo" value={context?.tenant_id.slice(0, 8) || '...'} icon={<Building2 className="h-4 w-4" />} />
+        <MetricCard
+          label="Tenant activo"
+          value={context?.tenant_name || context?.tenant_slug || shortId(context?.tenant_id)}
+          icon={<Building2 className="h-4 w-4" />}
+        />
         <MetricCard label="Usuarios" value={String(counts.total)} icon={<Users className="h-4 w-4" />} />
         <MetricCard label="Developers" value={String(counts.developers)} icon={<UserPlus className="h-4 w-4" />} />
         <MetricCard label="Viewers" value={String(counts.viewers)} icon={<ShieldCheck className="h-4 w-4" />} />
@@ -368,8 +386,19 @@ export function AccessPanel() {
             <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-4">
               <div className="flex flex-wrap items-center gap-3">
                 <Badge tone="violet">Tenant actual</Badge>
-                <code className="rounded bg-white px-2 py-1 text-xs text-slate-700">{context?.tenant_id || 'Cargando...'}</code>
+                <span className="rounded bg-white px-2 py-1 text-xs text-slate-700">
+                  {context?.tenant_name || context?.tenant_slug || 'Cargando...'}
+                </span>
                 <Badge tone="blue">{context?.role || '...'}</Badge>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
+                {context?.email && <span>owner: {context.full_name || context.email}</span>}
+                {context?.email && <span>{context.email}</span>}
+                {context?.tenant_id && (
+                  <span>
+                    id interno: <code className="rounded bg-white px-2 py-1">{context.tenant_id}</code>
+                  </span>
+                )}
               </div>
               <p className="mt-3 text-sm text-slate-500">
                 Esta vista trabaja sobre tu tenant actual. Los usuarios creados acá quedan aislados dentro de este workspace.
@@ -444,7 +473,14 @@ export function AccessPanel() {
                         </Badge>
                       </div>
                       <div className="flex items-center">
-                        <code className="truncate rounded bg-slate-100 px-2 py-1 text-xs text-slate-600">{user.tenant_id.slice(0, 8)}</code>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-medium text-slate-700">
+                            {context?.tenant_name || context?.tenant_slug || 'Tenant actual'}
+                          </p>
+                          <code className="truncate rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+                            {shortId(user.tenant_id)}
+                          </code>
+                        </div>
                       </div>
                       <div className="flex items-center text-slate-500">{formatDate(user.created_at)}</div>
                     </div>
@@ -538,10 +574,13 @@ export function AccessPanel() {
                   <div className="mt-3 space-y-2 text-emerald-800">
                     <p>
                       <span className="font-medium">Tenant:</span>{' '}
+                      <span>{lastTenantCreated.tenant_name}</span>{' '}
                       <code className="rounded bg-white px-2 py-1 text-xs">{lastTenantCreated.tenant_id}</code>
                     </p>
                     <p>
                       <span className="font-medium">Owner:</span>{' '}
+                      <span>{lastTenantCreated.owner_name || lastTenantCreated.owner_email}</span>{' '}
+                      <span className="text-xs">{lastTenantCreated.owner_email}</span>{' '}
                       <code className="rounded bg-white px-2 py-1 text-xs">{lastTenantCreated.user_id}</code>
                     </p>
                     <p>

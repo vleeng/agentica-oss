@@ -149,6 +149,8 @@ export interface AuthMe {
   role: 'owner' | 'developer' | 'viewer'
   email?: string | null
   full_name?: string | null
+  tenant_name?: string | null
+  tenant_slug?: string | null
 }
 
 export interface ForgotPasswordResult {
