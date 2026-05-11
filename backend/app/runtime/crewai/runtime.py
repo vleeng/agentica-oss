@@ -33,6 +33,8 @@ class CrewAIRuntime(AgentRuntime):
         session_factory=None,
         memory_adapter: "MemoryAdapter" | None = None,
         task_plan: list[dict] | None = None,
+        decision_plan: list[dict] | None = None,
+        review_llm=None,
     ):
         self._crew = crew
         self.spec = spec
@@ -41,6 +43,8 @@ class CrewAIRuntime(AgentRuntime):
         self._memory = memory_adapter
         self._last_results: dict[str, str] = {}
         self._task_plan = task_plan or []
+        self._decision_plan = decision_plan or []
+        self._review_llm = review_llm
         self._max_review_loops = 1
 
     async def _load_guardrail_rules(self) -> list[dict]:
@@ -107,6 +111,7 @@ class CrewAIRuntime(AgentRuntime):
             "num_agents": len(self.spec.agents),
             "memory_type": self.spec.memory.type.value,
             "graph_task_count": len(self._task_plan),
+            "decision_count": len(self._decision_plan),
             "last_output_preview": (
                 self._last_results.get(session_id, "")[:100]
                 if session_id in self._last_results
@@ -131,6 +136,7 @@ class CrewAIRuntime(AgentRuntime):
             )
             last_result = str(result) if not isinstance(result, str) else result
             last_steps = self._collect_steps()
+            last_steps = await self._evaluate_decisions(last_steps, attempt_input)
 
             decision = self._find_rejection_decision(last_steps)
             if not decision:
@@ -171,6 +177,32 @@ class CrewAIRuntime(AgentRuntime):
             steps.append(step)
 
         return steps
+
+    async def _evaluate_decisions(self, steps: list[dict], contextual_input: str) -> list[dict]:
+        if not self._decision_plan or self._review_llm is None:
+            return steps
+
+        evaluated_steps = list(steps)
+        for plan in self._decision_plan:
+            prompt = _build_runtime_decision_input(
+                plan=plan,
+                steps=evaluated_steps,
+                user_input=contextual_input,
+            )
+            raw_output = await asyncio.to_thread(self._review_llm.call, prompt)
+            decision = _parse_decision_output(raw_output)
+            evaluated_steps.append(
+                {
+                    "node_id": plan.get("node_id"),
+                    "node_type": "decision",
+                    "label": plan.get("label") or plan.get("node_id"),
+                    "agent_name": plan.get("agent_name"),
+                    "output": raw_output,
+                    "retry_targets": plan.get("retry_targets", []),
+                    "decision": decision,
+                }
+            )
+        return evaluated_steps
 
     @staticmethod
     def _find_rejection_decision(steps: list[dict]) -> dict | None:
@@ -275,6 +307,37 @@ def _parse_decision_output(raw_output: str) -> dict | None:
         "retry_from": retry_from,
         "final_answer": str(data.get("final_answer") or "").strip(),
     }
+
+
+def _build_runtime_decision_input(plan: dict, steps: list[dict], user_input: str) -> str:
+    relevant_outputs: list[str] = []
+    upstream_ids = set(plan.get("upstream_node_ids") or [])
+
+    for step in steps:
+        if step.get("node_type") == "decision":
+            continue
+        if upstream_ids and step.get("node_id") not in upstream_ids:
+            continue
+        label = str(step.get("label") or step.get("node_id") or "paso")
+        output = str(step.get("output") or "").strip()
+        if output:
+            relevant_outputs.append(f"[{label}]\n{output}")
+
+    if not relevant_outputs:
+        for step in steps:
+            if step.get("node_type") == "decision":
+                continue
+            label = str(step.get("label") or step.get("node_id") or "paso")
+            output = str(step.get("output") or "").strip()
+            if output:
+                relevant_outputs.append(f"[{label}]\n{output}")
+
+    return (
+        f"{plan.get('prompt', '').strip()}\n\n"
+        f"Input original del usuario:\n{user_input}\n\n"
+        "Resultados previos del flujo:\n"
+        + ("\n\n".join(relevant_outputs) if relevant_outputs else "Sin resultados previos disponibles.")
+    )
 
 
 def _augment_input_with_review_feedback(original_input: str, reason: str, retry_from: str | None) -> str:

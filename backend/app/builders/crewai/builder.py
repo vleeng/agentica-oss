@@ -45,7 +45,7 @@ class CrewAIAgentBuilder:
             crew_agents[role_spec.name] = agent
 
         # 2. Construir tasks desde el graph_blueprint
-        tasks, task_plan = self._build_tasks(design, crew_agents)
+        tasks, task_plan, decision_plan = self._build_tasks(design, crew_agents)
 
         # 3. Determinar proceso
         process_map = {
@@ -81,6 +81,8 @@ class CrewAIAgentBuilder:
             session_factory=self._session_factory,
             memory_adapter=self._build_memory(design),
             task_plan=task_plan,
+            decision_plan=decision_plan,
+            review_llm=llm,
         )
 
     def _make_llm(self, params, llm_config: LLMConfig):
@@ -177,7 +179,7 @@ class CrewAIAgentBuilder:
 
         return InMemoryAdapter(max_messages=max_msg)
 
-    def _build_tasks(self, design: AgentDesign, crew_agents: dict) -> tuple[list, list[dict]]:
+    def _build_tasks(self, design: AgentDesign, crew_agents: dict) -> tuple[list, list[dict], list[dict]]:
         from crewai import Task
 
         """
@@ -187,12 +189,14 @@ class CrewAIAgentBuilder:
         """
         tasks: list[Task] = []
         task_plan: list[dict] = []
+        decision_plan: list[dict] = []
         blueprint = design.graph_blueprint
         nodes = blueprint.get("nodes", [])
         edges = blueprint.get("edges", [])
         nodes_by_id = {node["id"]: node for node in nodes if node.get("id")}
         if not nodes_by_id or not crew_agents:
-            return self._build_fallback_tasks(design, crew_agents)
+            tasks, task_plan = self._build_fallback_tasks(design, crew_agents)
+            return tasks, task_plan, []
 
         outgoing: dict[str, list[dict]] = defaultdict(list)
         incoming: dict[str, list[dict]] = defaultdict(list)
@@ -212,7 +216,8 @@ class CrewAIAgentBuilder:
             if nodes_by_id.get(node_id, {}).get("type") in executable_types
         ]
         if not executable_node_ids:
-            return self._build_fallback_tasks(design, crew_agents)
+            tasks, task_plan = self._build_fallback_tasks(design, crew_agents)
+            return tasks, task_plan, []
 
         node_order = {node_id: index for index, node_id in enumerate(ordered_node_ids)}
         task_by_node: dict[str, Task] = {}
@@ -248,11 +253,19 @@ class CrewAIAgentBuilder:
             )
 
             if node.get("type") == "decision":
-                description = self._build_decision_description(node, design, retry_targets)
-                expected_output = (
-                    "Un Final Answer de CrewAI cuyo contenido sea un JSON valido con las claves "
-                    "approved (boolean), reason (string), retry_from (string o null) y final_answer (string)."
-                )
+                plan = {
+                    "node_id": node_id,
+                    "node_type": node.get("type", "decision"),
+                    "label": node.get("label", node_id),
+                    "agent_name": assigned_agent_name,
+                    "upstream_node_ids": upstream_node_ids,
+                    "retry_targets": retry_targets,
+                    "tool_hints": tool_hints,
+                    "prompt": self._build_runtime_decision_prompt(node, design, retry_targets),
+                }
+                decision_plan.append(plan)
+                plan_by_node[node_id] = plan
+                continue
             else:
                 description = self._build_agent_task_description(
                     node=node,
@@ -272,8 +285,6 @@ class CrewAIAgentBuilder:
             }
             if context_tasks:
                 task_kwargs["context"] = context_tasks
-            if node.get("type") == "decision":
-                task_kwargs["tools"] = []
             task = Task(**task_kwargs)
             tasks.append(task)
 
@@ -292,9 +303,10 @@ class CrewAIAgentBuilder:
 
         # Fallback: si no hay tareas en el blueprint, crear una tarea global
         if not tasks and crew_agents:
-            return self._build_fallback_tasks(design, crew_agents)
+            tasks, task_plan = self._build_fallback_tasks(design, crew_agents)
+            return tasks, task_plan, decision_plan
 
-        return tasks, task_plan
+        return tasks, task_plan, decision_plan
 
     def _build_fallback_tasks(self, design: AgentDesign, crew_agents: dict) -> tuple[list, list[dict]]:
         from crewai import Task
@@ -532,7 +544,7 @@ class CrewAIAgentBuilder:
         return expected
 
     @staticmethod
-    def _build_decision_description(node: dict, design: AgentDesign, retry_targets: list[dict]) -> str:
+    def _build_runtime_decision_prompt(node: dict, design: AgentDesign, retry_targets: list[dict]) -> str:
         retry_lines = (
             "\n".join(
                 f"- {target['node_id']}: {target['label']}"
@@ -549,13 +561,12 @@ class CrewAIAgentBuilder:
                 f"Objetivo general: {design.spec.goal}",
                 "Revisa cuidadosamente el contexto recibido y decide si el resultado esta listo para el usuario.",
                 "No uses herramientas en esta etapa. Solo hace la revision final.",
-                "Debes responder usando el formato de CrewAI y cerrar con 'Final Answer:'.",
-                "El contenido de ese Final Answer debe ser UNICAMENTE un JSON valido, sin markdown ni texto extra.",
+                "Debes responder UNICAMENTE con JSON valido, sin markdown ni texto extra.",
                 "Si esta aprobado, devolve approved=true y una respuesta final lista para entregar en final_answer.",
                 "Si no esta aprobado, devolve approved=false, explica el motivo en reason y elige retry_from usando uno de estos node_id:",
                 retry_lines,
                 "",
-                "Ejemplo exacto del contenido esperado en Final Answer:",
-                '{{"approved": true, "reason": "listo para entregar", "retry_from": null, "final_answer": "respuesta final para el usuario"}}',
+                "Ejemplo exacto del JSON esperado:",
+                '{"approved": true, "reason": "listo para entregar", "retry_from": null, "final_answer": "respuesta final para el usuario"}',
             ]
         )
