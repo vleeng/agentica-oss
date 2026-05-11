@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Type
 
 from langchain.tools import BaseTool
@@ -41,3 +42,28 @@ class RAGTool(BaseTool):
             import logging
             logging.getLogger(__name__).warning(f"[RAGTool] Error en retrieval: {e}")
             return "No se pudo consultar la base de conocimiento en este momento."
+
+
+class CrewAIRAGTool(BaseTool):
+    """
+    Adaptador sincrónico para CrewAI.
+
+    CrewAI usa el ciclo de herramientas en modo sincrónico con más
+    confiabilidad cuando la tool expone un único argumento.
+    """
+
+    name: str = "knowledge_base"
+    description: str = (
+        "Consulta la base de conocimiento interna del agente. "
+        "Usala cuando necesites contexto del negocio o documentos ya cargados."
+    )
+    args_schema: Type[BaseModel] = RAGQueryInput
+    agent_id: str = ""
+    top_k: int = 4
+
+    def _run(self, query: str) -> str:
+        return asyncio.run(self._arun(query))
+
+    async def _arun(self, query: str) -> str:
+        delegate = RAGTool(agent_id=self.agent_id, top_k=self.top_k)
+        return await delegate._arun(query)

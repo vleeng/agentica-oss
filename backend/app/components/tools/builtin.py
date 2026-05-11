@@ -6,6 +6,7 @@ Cada tool es una LangChain BaseTool lista para ser inyectada en cualquier AgentE
 También son compatibles con CrewAI a través del adaptador en builders/crewai/.
 """
 
+import asyncio
 import json
 from typing import Any, Optional, Type
 
@@ -59,6 +60,77 @@ class WebSearchTool(BaseTool):
 
 
 # ── 2. SQL Query ──────────────────────────────────────────────────────────────
+
+class CrewAIWebSearchInput(BaseModel):
+    query: str = Field(
+        description=(
+            "Consulta de bÃºsqueda en lenguaje natural. "
+            "TambiÃ©n acepta JSON serializado con una clave 'query'."
+        )
+    )
+
+
+def _extract_search_payload(raw_query: str) -> tuple[str, int]:
+    text = str(raw_query or "").strip()
+    default_results = 5
+    if not text:
+        return "", default_results
+
+    try:
+        payload = json.loads(text)
+    except Exception:
+        return text, default_results
+
+    if isinstance(payload, dict):
+        query = str(payload.get("query") or payload.get("input") or text).strip()
+        max_results = payload.get("max_results", default_results)
+        try:
+            max_results = max(1, min(int(max_results), 10))
+        except Exception:
+            max_results = default_results
+        return query or text, max_results
+
+    if isinstance(payload, list) and payload:
+        first = payload[0]
+        if isinstance(first, dict):
+            query = str(first.get("query") or first.get("input") or text).strip()
+            max_results = first.get("max_results", default_results)
+            try:
+                max_results = max(1, min(int(max_results), 10))
+            except Exception:
+                max_results = default_results
+            return query or text, max_results
+
+    return text, default_results
+
+
+class CrewAIWebSearchTool(BaseTool):
+    """
+    Adaptador para CrewAI.
+
+    CrewAI tiende a funcionar mejor con tools de un solo argumento y
+    ejecuciÃ³n sincrÃ³nica. AdemÃ¡s toleramos inputs serializados para que
+    un Action Input ligeramente malformado no haga caer toda la ejecuciÃ³n.
+    """
+
+    name: str = "web_search"
+    description: str = (
+        "Busca informaciÃ³n actualizada en internet. "
+        "Recibe una consulta simple en lenguaje natural y devuelve hallazgos resumidos."
+    )
+    args_schema: Type[BaseModel] = CrewAIWebSearchInput
+    api_key: str = ""
+
+    def _run(self, query: str) -> str:
+        normalized_query, max_results = _extract_search_payload(query)
+        if not normalized_query:
+            return "[web_search error: consulta vacia. PedÃ­ una bÃºsqueda concreta.]"
+        return asyncio.run(self._arun(normalized_query, max_results=max_results))
+
+    async def _arun(self, query: str, max_results: int = 5) -> str:
+        delegate = WebSearchTool(api_key=self.api_key)
+        return await delegate._arun(query=query, max_results=max_results)
+
 
 class SQLQueryInput(BaseModel):
     query: str = Field(description="Query SQL SELECT (solo lectura)")
@@ -250,15 +322,18 @@ TOOL_REGISTRY: dict[str, type[BaseTool]] = {
 }
 
 
-def get_tool(name: str, config: dict) -> BaseTool:
+def get_tool(name: str, config: dict, framework: str = "langchain") -> BaseTool:
     """Instancia una tool por nombre con su configuración."""
     if name not in TOOL_REGISTRY:
         raise ValueError(f"Tool '{name}' no encontrada en la Component Library.")
-    cls = TOOL_REGISTRY[name]
     hydrated_config = dict(config or {})
     settings = get_settings()
 
     if name == "web_search" and not hydrated_config.get("api_key"):
         hydrated_config["api_key"] = settings.tavily_api_key or ""
 
+    if framework == "crewai" and name == "web_search":
+        return CrewAIWebSearchTool(**hydrated_config)
+
+    cls = TOOL_REGISTRY[name]
     return cls(**hydrated_config)

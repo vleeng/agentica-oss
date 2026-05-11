@@ -40,8 +40,18 @@ class CrewAIAgentBuilder:
 
         # 1. Construir agentes desde los roles del spec
         crew_agents = {}
+        extra_tools = list(getattr(design, "_extra_lc_tools", []) or [])
         for role_spec in spec.agents:
-            agent = await self._build_agent_async(role_spec, llm, llm_config, design.tenant_id)
+            agent = await self._build_agent_async(
+                role_spec,
+                llm,
+                llm_config,
+                design.tenant_id,
+                str(design.agent_id),
+                spec.rag.enabled,
+                spec.rag.top_k,
+                extra_tools,
+            )
             crew_agents[role_spec.name] = agent
 
         # 2. Construir tasks desde el graph_blueprint
@@ -108,16 +118,26 @@ class CrewAIAgentBuilder:
         default_llm,
         llm_config: LLMConfig,
         tenant_id: str = "",
+        agent_id: str = "",
+        rag_enabled: bool = False,
+        rag_top_k: int = 4,
+        extra_tools: list | None = None,
     ):
         from crewai import Agent
+        from app.components.rag.rag_tool import CrewAIRAGTool
 
         tools = []
         for t in role_spec.tools:
             if t.source == "library":
-                tools.append(get_tool(t.name, t.config))
+                tools.append(get_tool(t.name, t.config, framework="crewai"))
             else:
                 from app.builders.langchain.builder import _load_custom_tool
                 tools.append(await _load_custom_tool(t.name, t.config, tenant_id))
+
+        if rag_enabled:
+            tools.append(CrewAIRAGTool(agent_id=agent_id, top_k=rag_top_k))
+        if extra_tools:
+            tools.extend(extra_tools)
 
         llm = default_llm
         if role_spec.model_params:
@@ -137,7 +157,7 @@ class CrewAIAgentBuilder:
     def _build_agent(self, role_spec: AgentRoleSpec, default_llm, api_key: str = ""):
         from crewai import Agent
 
-        tools = [get_tool(t.name, t.config) for t in role_spec.tools if t.source == "library"]
+        tools = [get_tool(t.name, t.config, framework="crewai") for t in role_spec.tools if t.source == "library"]
 
         llm = default_llm
         if role_spec.model_params:

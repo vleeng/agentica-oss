@@ -101,7 +101,7 @@ def build_mcp_tool(server_row: dict, tool_meta: dict) -> BaseTool:
         description: str = Field(default=tool_description)
 
         def _run(self, tool_input: str, **kwargs: Any) -> str:
-            raise NotImplementedError("Use async version")
+            return asyncio.run(self._arun(tool_input, **kwargs))
 
         async def _arun(self, tool_input: str, **kwargs: Any) -> str:
             try:
