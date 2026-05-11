@@ -32,7 +32,49 @@ const NODE_TYPES: Array<{ value: FlowNodeType; label: string }> = [
 ]
 
 function cloneGraph(graph: GraphBlueprint): GraphBlueprint {
-  return JSON.parse(JSON.stringify(graph))
+  const cloned = JSON.parse(JSON.stringify(graph ?? {}))
+  return {
+    nodes: Array.isArray(cloned.nodes) ? cloned.nodes : [],
+    edges: Array.isArray(cloned.edges) ? cloned.edges : [],
+    meta: cloned.meta ?? { version: 1, layout: 'manual' },
+  }
+}
+
+function normalizeValidationReport(value: unknown): GraphValidationReport | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as Partial<GraphValidationReport>
+  const errors = Array.isArray(candidate.errors) ? candidate.errors : null
+  const warnings = Array.isArray(candidate.warnings) ? candidate.warnings : null
+  if (!errors || !warnings) return null
+  return {
+    ok: Boolean(candidate.ok),
+    errors,
+    warnings,
+  }
+}
+
+function asErrorMessage(value: unknown, fallback: string): string {
+  if (typeof value === 'string' && value.trim()) return value
+  if (value && typeof value === 'object') {
+    const candidate = value as {
+      message?: unknown
+      detail?: unknown
+      errors?: Array<{ message?: unknown }>
+      warnings?: Array<{ message?: unknown }>
+    }
+    if (typeof candidate.message === 'string' && candidate.message.trim()) return candidate.message
+    if (typeof candidate.detail === 'string' && candidate.detail.trim()) return candidate.detail
+    const firstIssue = [...(candidate.errors ?? []), ...(candidate.warnings ?? [])].find(
+      (issue) => typeof issue?.message === 'string' && issue.message.trim(),
+    )
+    if (typeof firstIssue?.message === 'string') return firstIssue.message
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return fallback
+    }
+  }
+  return fallback
 }
 
 function defaultNode(type: FlowNodeType, index: number, design: AgentDesign): FlowNode {
@@ -131,7 +173,11 @@ export function FlowEditor({ design, onSaved }: Props) {
     setValidating(true)
     setErrorMsg('')
     try {
-      const report = await agentsApi.validateGraph(design.agent_id, draft)
+      const report = normalizeValidationReport(await agentsApi.validateGraph(design.agent_id, draft)) ?? {
+        ok: false,
+        errors: [],
+        warnings: [],
+      }
       setValidation(report)
       push({
         tone: report.ok ? 'success' : 'info',
@@ -141,7 +187,10 @@ export function FlowEditor({ design, onSaved }: Props) {
           : `${report.errors.length} errores y ${report.warnings.length} warnings para revisar.`,
       })
     } catch (e: any) {
-      setErrorMsg(e.response?.data?.detail || 'No se pudo validar el flujo.')
+      const detail = e?.response?.data?.detail ?? e?.response?.data
+      const report = normalizeValidationReport(detail)
+      if (report) setValidation(report)
+      setErrorMsg(asErrorMessage(detail, 'No se pudo validar el flujo.'))
     } finally {
       setValidating(false)
     }
@@ -166,12 +215,13 @@ export function FlowEditor({ design, onSaved }: Props) {
       })
       onSaved(nextDesign)
     } catch (e: any) {
-      const detail = e.response?.data?.detail
-      if (detail?.errors || detail?.warnings) {
-        setValidation(detail)
+      const detail = e?.response?.data?.detail ?? e?.response?.data
+      const report = normalizeValidationReport(detail)
+      if (report) {
+        setValidation(report)
         setErrorMsg('El flujo tiene errores de validación. Revisalos antes de guardar.')
       } else {
-        setErrorMsg(detail || 'No se pudo guardar el flujo.')
+        setErrorMsg(asErrorMessage(detail, 'No se pudo guardar el flujo.'))
       }
     } finally {
       setSaving(false)
