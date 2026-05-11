@@ -12,6 +12,7 @@ Plataforma de construcción, prueba y despliegue automático de agentes IA.
 ## Documentacion
 
 - [Manual de usuario](docs/manual-usuario-agentica.md)
+- [Plan de desarrollo de tools](docs/plan-desarrollo-tools.md)
 
 ## Arranque rápido (desarrollo)
 
