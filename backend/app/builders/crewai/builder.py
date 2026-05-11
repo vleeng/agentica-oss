@@ -556,6 +556,6 @@ class CrewAIAgentBuilder:
                 retry_lines,
                 "",
                 "Ejemplo exacto del contenido esperado en Final Answer:",
-                '{"approved": true, "reason": "listo para entregar", "retry_from": null, "final_answer": "respuesta final para el usuario"}',
+                '{{"approved": true, "reason": "listo para entregar", "retry_from": null, "final_answer": "respuesta final para el usuario"}}',
             ]
         )
