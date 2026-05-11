@@ -4,6 +4,9 @@ import type {
   AgentResponse,
   AgentSpec,
   BehaviorPolicy,
+  GraphBlueprint,
+  GraphUpdateResponse,
+  GraphValidationReport,
   GuardrailRule,
   KnowledgeBase,
   MCPServer,
@@ -297,6 +300,15 @@ export const agentsApi = {
 
   getDesign: (agentId: string): Promise<AgentDesign> =>
     api.get(`/agents/${agentId}/design`).then((r) => r.data),
+
+  validateGraph: (agentId: string, graphBlueprint: GraphBlueprint): Promise<GraphValidationReport> =>
+    api.post(`/agents/${agentId}/graph/validate`, { graph_blueprint: graphBlueprint }).then((r) => r.data),
+
+  updateGraph: (agentId: string, graphBlueprint: GraphBlueprint): Promise<GraphUpdateResponse> =>
+    api.put(`/agents/${agentId}/graph`, {
+      graph_blueprint: graphBlueprint,
+      auto_regenerate_mermaid: true,
+    }).then((r) => r.data),
 
   getState: (agentId: string, sessionId = 'default') =>
     api.get(`/agents/${agentId}/state`, { params: { session_id: sessionId } }).then((r) => r.data),

@@ -75,6 +75,88 @@ class ModelParams(BaseModel):
     llm_key_id: Optional[str] = None
 
 
+class FlowNodeType(str, Enum):
+    start = "start"
+    agent = "agent"
+    decision = "decision"
+    tool = "tool"
+    end = "end"
+
+
+class FlowNodePosition(BaseModel):
+    x: float = 0.0
+    y: float = 0.0
+
+
+class FlowNodeData(BaseModel):
+    description: Optional[str] = None
+    assigned_agent: Optional[str] = None
+    allowed_tools: list[str] = Field(default_factory=list)
+    tool_name: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FlowNode(BaseModel):
+    id: str
+    type: FlowNodeType
+    label: str
+    description: str = ""
+    position: Optional[FlowNodePosition] = None
+    data: FlowNodeData = Field(default_factory=FlowNodeData)
+
+
+class FlowEdge(BaseModel):
+    id: str
+    from_: str = Field(alias="from")
+    to: str
+    condition: Optional[str] = None
+
+    model_config = {"populate_by_name": True}
+
+    def model_dump(self, *args, **kwargs):
+        kwargs.setdefault("by_alias", True)
+        return super().model_dump(*args, **kwargs)
+
+
+class GraphMeta(BaseModel):
+    version: int = 1
+    layout: Literal["manual", "auto"] = "manual"
+
+
+class GraphBlueprint(BaseModel):
+    nodes: list[FlowNode] = Field(default_factory=list)
+    edges: list[FlowEdge] = Field(default_factory=list)
+    meta: GraphMeta = Field(default_factory=GraphMeta)
+
+    def as_dict(self) -> dict:
+        return self.model_dump(by_alias=True)
+
+
+class GraphValidationIssue(BaseModel):
+    level: Literal["error", "warning"]
+    code: str
+    message: str
+    node_id: Optional[str] = None
+    edge_id: Optional[str] = None
+
+
+class GraphValidationReport(BaseModel):
+    ok: bool
+    errors: list[GraphValidationIssue] = Field(default_factory=list)
+    warnings: list[GraphValidationIssue] = Field(default_factory=list)
+
+
+class GraphUpdateRequest(BaseModel):
+    graph_blueprint: GraphBlueprint
+    auto_regenerate_mermaid: bool = True
+
+
+class GraphUpdateResponse(BaseModel):
+    graph_blueprint: GraphBlueprint
+    mermaid_diagram: str
+    validation: GraphValidationReport
+
+
 # ── AgentRoleSpec (solo para mode=crew) ─────────────────────────────────────
 
 class AgentRoleSpec(BaseModel):

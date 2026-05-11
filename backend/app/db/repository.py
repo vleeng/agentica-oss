@@ -172,6 +172,34 @@ class AgentRepository:
         await self._db.commit()
         return design_dict
 
+    async def update_agent_graph(self, agent_id: str, *, graph_blueprint: dict, mermaid_diagram: str) -> Optional[dict]:
+        result = await self._db.execute(
+            text("SELECT design_json FROM agents WHERE id = CAST(:id AS uuid)"),
+            {"id": agent_id},
+        )
+        row = result.fetchone()
+        if not row:
+            return None
+
+        design_dict = row.design_json if isinstance(row.design_json, dict) else json.loads(row.design_json)
+        design_dict["graph_blueprint"] = graph_blueprint
+        design_dict["mermaid_diagram"] = mermaid_diagram
+
+        await self._db.execute(
+            text("""
+                UPDATE agents
+                SET design_json = CAST(:design AS jsonb),
+                    updated_at = NOW()
+                WHERE id = CAST(:id AS uuid)
+            """),
+            {
+                "id": agent_id,
+                "design": json.dumps(design_dict),
+            },
+        )
+        await self._db.commit()
+        return design_dict
+
     # ── Builds ────────────────────────────────────────────────────────────────
 
     async def create_build(self, agent_id: str, version: int) -> str:

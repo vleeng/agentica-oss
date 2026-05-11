@@ -6,6 +6,7 @@ import { agentsApi, createAgentWebSocket } from '../../lib/api'
 import { KnowledgePanel } from './KnowledgePanel'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { AgentEditPanel } from './AgentEditPanel'
+import { FlowEditor } from './FlowEditor'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
@@ -191,6 +192,11 @@ export function AgentMonitor({ design, onOptimized }: Props) {
     setActiveTab('sandbox')
   }
 
+  const handleFlowSaved = (newDesign: AgentDesign) => {
+    setCurrentDesign(newDesign)
+    if (onOptimized) onOptimized(newDesign)
+  }
+
   const displaySystemPrompt = stripMermaidFromPrompt(currentDesign.system_prompt)
 
   return (
@@ -361,7 +367,9 @@ export function AgentMonitor({ design, onOptimized }: Props) {
       )}
 
       {activeTab === 'design' && (
-        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="space-y-6">
+          <FlowEditor design={currentDesign} onSaved={handleFlowSaved} />
+          <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
           <Card>
             <CardHeader>
               <CardTitle>System prompt</CardTitle>
@@ -408,6 +416,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
                 ))}
               </CardContent>
             </Card>
+          </div>
           </div>
         </div>
       )}

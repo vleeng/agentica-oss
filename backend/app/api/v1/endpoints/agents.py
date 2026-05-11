@@ -13,8 +13,18 @@ from app.core.security import CurrentContext, RequestContext, decode_access_toke
 from app.runtime.factory import RuntimeFactory
 from app.runtime.llm import infer_provider, qualify_model_name
 from app.runtime.store import get_runtime_store
-from app.schemas.agent import AgentDesign, AgentResponse, AgentSpec, ModelParams
+from app.schemas.agent import (
+    AgentDesign,
+    AgentResponse,
+    AgentSpec,
+    GraphBlueprint,
+    GraphUpdateRequest,
+    GraphUpdateResponse,
+    GraphValidationReport,
+    ModelParams,
+)
 from app.schemas.eval import EvalReport, FeedbackItem
+from app.services.designer.graph_validator import normalize_graph_blueprint, validate_graph_blueprint
 from app.services.model_catalog import calculate_model_cost, estimate_usage_tokens, resolve_model_pricing
 from app.services.designer.design_generator import DesignGeneratorService
 from app.services.evaluator.eval_engine import EvalEngineService
@@ -308,6 +318,10 @@ class UpdateAgentRequest(BaseModel):
     max_tokens: Optional[int] = Field(None, ge=256, le=8192)
 
 
+class ValidateGraphRequest(BaseModel):
+    graph_blueprint: GraphBlueprint
+
+
 @router.put("/{agent_id}", response_model=AgentDesign)
 async def update_agent(
     agent_id: str,
@@ -353,6 +367,59 @@ async def update_agent(
         logger.warning("[UPDATE] Rebuild fallido tras edicion: %s", exc)
 
     return new_design
+
+
+@router.post("/{agent_id}/graph/validate", response_model=GraphValidationReport)
+async def validate_agent_graph(
+    agent_id: str,
+    body: ValidateGraphRequest,
+    ctx: CurrentContext,
+    repo: TenantRepo,
+) -> GraphValidationReport:
+    ctx.require_human_user()
+    ctx.require_developer()
+    design = await _restore_design(agent_id, ctx, repo)
+    normalized_graph = normalize_graph_blueprint(design, body.graph_blueprint)
+    return validate_graph_blueprint(design, normalized_graph)
+
+
+@router.put("/{agent_id}/graph", response_model=GraphUpdateResponse)
+async def update_agent_graph(
+    agent_id: str,
+    body: GraphUpdateRequest,
+    ctx: CurrentContext,
+    repo: TenantRepo,
+) -> GraphUpdateResponse:
+    ctx.require_human_user()
+    ctx.require_developer()
+    design = await _restore_design(agent_id, ctx, repo)
+
+    normalized_graph = normalize_graph_blueprint(design, body.graph_blueprint)
+    validation = validate_graph_blueprint(design, normalized_graph)
+    if not validation.ok:
+        raise HTTPException(status_code=400, detail=validation.model_dump())
+
+    mermaid = design.mermaid_diagram
+    if body.auto_regenerate_mermaid:
+        mermaid = designer_svc.blueprint_to_mermaid(normalized_graph, design.spec)
+
+    updated_dict = await repo.update_agent_graph(
+        agent_id,
+        graph_blueprint=normalized_graph.as_dict(),
+        mermaid_diagram=mermaid,
+    )
+    if not updated_dict:
+        raise HTTPException(404, f"Agente '{agent_id}' no encontrado")
+
+    updated_design = AgentDesign.model_validate(updated_dict)
+    store = get_runtime_store()
+    await store.save_runtime(agent_id, None, updated_design)
+
+    return GraphUpdateResponse(
+        graph_blueprint=normalized_graph,
+        mermaid_diagram=mermaid,
+        validation=validation,
+    )
 
 
 @router.post("/{agent_id}/deploy")
@@ -474,6 +541,13 @@ def _materialize_design(raw_design: Any, *, agent_id: str, tenant_id: str, statu
 
     design = AgentDesign.model_validate(design_dict)
     _normalize_design_models(design)
+    try:
+        blueprint = GraphBlueprint.model_validate(design.graph_blueprint or {})
+        normalized_blueprint = normalize_graph_blueprint(design, blueprint)
+        design.graph_blueprint = normalized_blueprint.as_dict()
+        design.mermaid_diagram = designer_svc.blueprint_to_mermaid(normalized_blueprint, design.spec)
+    except Exception:
+        pass
     return design
 
 

@@ -5,7 +5,7 @@ import re
 from uuid import uuid4
 
 from app.core.config import get_settings
-from app.schemas.agent import AgentDesign, AgentSpec, FrameworkSelection
+from app.schemas.agent import AgentDesign, AgentSpec, FrameworkSelection, GraphBlueprint
 from app.services.llm_client import TextGenerationClient
 
 settings = get_settings()
@@ -28,7 +28,7 @@ class DesignGeneratorService:
         system_prompt = await self._generate_system_prompt(spec)
         graph_blueprint = await self._generate_graph_blueprint(spec, framework)
         test_cases = await self._generate_test_cases(spec)
-        mermaid = self._blueprint_to_mermaid(graph_blueprint, spec)
+        mermaid = self.blueprint_to_mermaid(graph_blueprint, spec)
 
         return AgentDesign(
             agent_id=uuid4(),
@@ -159,7 +159,9 @@ Respondé SOLO con el JSON array, sin markdown."""
 
     # ── Conversión blueprint → Mermaid ────────────────────────────────────────
 
-    def _blueprint_to_mermaid(self, blueprint: dict, spec: AgentSpec) -> str:
+    def blueprint_to_mermaid(self, blueprint: dict | GraphBlueprint, spec: AgentSpec) -> str:
+        if isinstance(blueprint, GraphBlueprint):
+            blueprint = blueprint.as_dict()
         lines = ["flowchart TD"]
         node_id_map = {
             node["id"]: self._mermaid_node_id(node["id"])

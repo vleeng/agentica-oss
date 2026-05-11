@@ -89,16 +89,75 @@ export interface FrameworkSelection {
   estimated_complexity: 'low' | 'medium' | 'high'
 }
 
+export type FlowNodeType = 'start' | 'agent' | 'decision' | 'tool' | 'end'
+
+export interface FlowNodePosition {
+  x: number
+  y: number
+}
+
+export interface FlowNodeData {
+  description?: string
+  assigned_agent?: string
+  allowed_tools?: string[]
+  tool_name?: string
+  notes?: string
+}
+
+export interface FlowNode {
+  id: string
+  type: FlowNodeType
+  label: string
+  description: string
+  position?: FlowNodePosition
+  data?: FlowNodeData
+}
+
+export interface FlowEdge {
+  id: string
+  from: string
+  to: string
+  condition?: string | null
+}
+
+export interface GraphMeta {
+  version: number
+  layout: 'manual' | 'auto'
+}
+
+export interface GraphBlueprint {
+  nodes: FlowNode[]
+  edges: FlowEdge[]
+  meta?: GraphMeta
+}
+
+export interface GraphValidationIssue {
+  level: 'error' | 'warning'
+  code: string
+  message: string
+  node_id?: string | null
+  edge_id?: string | null
+}
+
+export interface GraphValidationReport {
+  ok: boolean
+  errors: GraphValidationIssue[]
+  warnings: GraphValidationIssue[]
+}
+
+export interface GraphUpdateResponse {
+  graph_blueprint: GraphBlueprint
+  mermaid_diagram: string
+  validation: GraphValidationReport
+}
+
 export interface AgentDesign {
   agent_id: string
   tenant_id: string
   spec: AgentSpec
   framework: FrameworkSelection
   system_prompt: string
-  graph_blueprint: {
-    nodes: Array<{ id: string; type: string; label: string; description: string }>
-    edges: Array<{ from: string; to: string; condition: string | null }>
-  }
+  graph_blueprint: GraphBlueprint
   test_cases: Array<{
     id: number
     description: string
