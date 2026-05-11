@@ -27,6 +27,21 @@ interface ChatMessage {
   streaming?: boolean
 }
 
+function stripMermaidFromPrompt(prompt: string) {
+  if (!prompt) return ''
+
+  const mermaidStart = /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline)\b/im
+  const match = prompt.match(mermaidStart)
+  if (!match || match.index == null) return prompt.trim()
+
+  const before = prompt.slice(0, match.index).trim()
+  const after = prompt.slice(match.index).trim()
+  const nextSectionIndex = after.search(/\n\s*\n/)
+  const trailing = nextSectionIndex >= 0 ? after.slice(nextSectionIndex).trim() : ''
+
+  return [before, trailing].filter(Boolean).join('\n\n').trim()
+}
+
 export function AgentMonitor({ design, onOptimized }: Props) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [evalReport, setEvalReport] = useState<any>(null)
@@ -175,6 +190,8 @@ export function AgentMonitor({ design, onOptimized }: Props) {
     setPhase('ready')
     setActiveTab('sandbox')
   }
+
+  const displaySystemPrompt = stripMermaidFromPrompt(currentDesign.system_prompt)
 
   return (
     <div className="space-y-6">
@@ -351,9 +368,15 @@ export function AgentMonitor({ design, onOptimized }: Props) {
               <CardDescription>Base operativa generada para el runtime.</CardDescription>
             </CardHeader>
             <CardContent>
-              <pre className="max-h-[26rem] overflow-y-auto whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-xs leading-6 text-slate-700">
-                {currentDesign.system_prompt}
-              </pre>
+              {displaySystemPrompt ? (
+                <pre className="max-h-[26rem] overflow-y-auto whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-xs leading-6 text-slate-700">
+                  {displaySystemPrompt}
+                </pre>
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-500">
+                  El detalle visual del flujo se muestra en el diagrama. Este prompt no agrega texto operativo adicional en la vista de diseño.
+                </div>
+              )}
             </CardContent>
           </Card>
 
