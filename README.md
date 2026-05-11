@@ -9,6 +9,10 @@ Plataforma de construcción, prueba y despliegue automático de agentes IA.
 - **DB**: PostgreSQL 16 (schema por tenant) + Redis + Qdrant
 - **Infra**: Docker Compose + Traefik
 
+## Documentacion
+
+- [Manual de usuario](docs/manual-usuario-agentica.md)
+
 ## Arranque rápido (desarrollo)
 
 ```bash
