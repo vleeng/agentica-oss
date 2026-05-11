@@ -250,8 +250,8 @@ class CrewAIAgentBuilder:
             if node.get("type") == "decision":
                 description = self._build_decision_description(node, design, retry_targets)
                 expected_output = (
-                    "JSON valido con las claves approved (boolean), reason (string), "
-                    "retry_from (string o null) y final_answer (string)."
+                    "Un Final Answer de CrewAI cuyo contenido sea un JSON valido con las claves "
+                    "approved (boolean), reason (string), retry_from (string o null) y final_answer (string)."
                 )
             else:
                 description = self._build_agent_task_description(
@@ -272,6 +272,8 @@ class CrewAIAgentBuilder:
             }
             if context_tasks:
                 task_kwargs["context"] = context_tasks
+            if node.get("type") == "decision":
+                task_kwargs["tools"] = []
             task = Task(**task_kwargs)
             tasks.append(task)
 
@@ -540,12 +542,20 @@ class CrewAIAgentBuilder:
             if retry_targets
             else "- null: no hace falta re-trabajo"
         )
-        return (
-            f"{node.get('description', node.get('label', 'Revision del flujo'))}\n\n"
-            f"Objetivo general: {design.spec.goal}\n"
-            "Revisa cuidadosamente el contexto recibido y decide si el resultado esta listo para el usuario.\n"
-            "Si esta aprobado, devolve approved=true y una respuesta final lista para entregar en final_answer.\n"
-            "Si no esta aprobado, devolve approved=false, explica el motivo en reason y elige retry_from usando uno de estos node_id:\n"
-            f"{retry_lines}\n\n"
-            "RespondÃ© SOLO con JSON valido, sin markdown."
+        return "\n".join(
+            [
+                f"{node.get('description', node.get('label', 'Revision del flujo'))}",
+                "",
+                f"Objetivo general: {design.spec.goal}",
+                "Revisa cuidadosamente el contexto recibido y decide si el resultado esta listo para el usuario.",
+                "No uses herramientas en esta etapa. Solo hace la revision final.",
+                "Debes responder usando el formato de CrewAI y cerrar con 'Final Answer:'.",
+                "El contenido de ese Final Answer debe ser UNICAMENTE un JSON valido, sin markdown ni texto extra.",
+                "Si esta aprobado, devolve approved=true y una respuesta final lista para entregar en final_answer.",
+                "Si no esta aprobado, devolve approved=false, explica el motivo en reason y elige retry_from usando uno de estos node_id:",
+                retry_lines,
+                "",
+                "Ejemplo exacto del contenido esperado en Final Answer:",
+                '{"approved": true, "reason": "listo para entregar", "retry_from": null, "final_answer": "respuesta final para el usuario"}',
+            ]
         )
