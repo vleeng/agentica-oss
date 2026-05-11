@@ -306,12 +306,68 @@ export interface GuardrailRule {
 
 // ── Available tools en la Component Library ──────────────────────────────────
 
-export const AVAILABLE_TOOLS: Array<{ name: string; description: string; category: string }> = [
-  { name: 'web_search',    description: 'Buscar información en internet (Tavily)', category: 'información' },
-  { name: 'sql_query',     description: 'Consultar bases de datos SQL',            category: 'datos' },
-  { name: 'rest_api_call', description: 'Llamar APIs REST externas',               category: 'integración' },
-  { name: 'calculator',    description: 'Evaluar expresiones matemáticas',         category: 'utilidad' },
-  { name: 'send_email',    description: 'Enviar emails via SMTP',                  category: 'comunicación' },
+export type ToolOperationalState = 'ready' | 'needs_config' | 'framework_limited' | 'disabled'
+export type ToolFrameworkState = 'ready' | 'limited' | 'unsupported'
+
+export interface AvailableToolDescriptor {
+  name: string
+  description: string
+  category: string
+  state: ToolOperationalState
+  state_label: string
+  setup_hint?: string
+  frameworks: {
+    langchain: ToolFrameworkState
+    crewai: ToolFrameworkState
+  }
+}
+
+export const AVAILABLE_TOOLS: AvailableToolDescriptor[] = [
+  {
+    name: 'web_search',
+    description: 'Buscar información en internet (Tavily)',
+    category: 'información',
+    state: 'needs_config',
+    state_label: 'Requiere credencial',
+    setup_hint: 'Necesita una clave Tavily configurada en el backend. En CrewAI sigue en ajuste fino de compatibilidad.',
+    frameworks: { langchain: 'ready', crewai: 'limited' },
+  },
+  {
+    name: 'sql_query',
+    description: 'Consultar bases de datos SQL',
+    category: 'datos',
+    state: 'needs_config',
+    state_label: 'Requiere datasource',
+    setup_hint: 'Necesita un DSN o conexión segura y todavía no tiene una UX completa de configuración.',
+    frameworks: { langchain: 'ready', crewai: 'ready' },
+  },
+  {
+    name: 'rest_api_call',
+    description: 'Llamar APIs REST externas',
+    category: 'integración',
+    state: 'needs_config',
+    state_label: 'Requiere política',
+    setup_hint: 'Conviene definir dominios permitidos y headers por defecto antes de usarla en producción.',
+    frameworks: { langchain: 'ready', crewai: 'ready' },
+  },
+  {
+    name: 'calculator',
+    description: 'Evaluar expresiones matemáticas',
+    category: 'utilidad',
+    state: 'ready',
+    state_label: 'Lista',
+    setup_hint: 'No requiere credenciales ni configuración adicional.',
+    frameworks: { langchain: 'ready', crewai: 'ready' },
+  },
+  {
+    name: 'send_email',
+    description: 'Enviar emails via SMTP',
+    category: 'comunicación',
+    state: 'needs_config',
+    state_label: 'Requiere SMTP',
+    setup_hint: 'Depende de una configuración SMTP válida. Su integración operativa todavía necesita cerrarse mejor.',
+    frameworks: { langchain: 'ready', crewai: 'ready' },
+  },
 ]
 
 export const AVAILABLE_MODELS: Array<{ id: string; name: string; provider: string; providerId: string }> = [

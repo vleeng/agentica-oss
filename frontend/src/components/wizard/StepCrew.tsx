@@ -266,21 +266,40 @@ function RoleEditor({
         <div className="flex flex-wrap gap-2">
           {AVAILABLE_TOOLS.map(tool => {
             const selected = agent.tools.some(t => t.name === tool.name)
+            const frameworkState = tool.frameworks.crewai
+            const frameworkTone =
+              frameworkState === 'ready'
+                ? 'border-emerald-200 text-emerald-700 bg-emerald-50'
+                : frameworkState === 'limited'
+                ? 'border-amber-200 text-amber-700 bg-amber-50'
+                : 'border-rose-200 text-rose-700 bg-rose-50'
             return (
-              <button
-                key={tool.name}
-                onClick={() => toggleTool(tool.name)}
-                className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
-                  selected
-                    ? 'border-violet-400 bg-violet-50 text-violet-700'
-                    : 'border-gray-200 text-gray-600 hover:border-violet-200'
-                }`}
-              >
-                {selected ? '✓ ' : ''}{tool.name}
-              </button>
+              <div key={tool.name} className="space-y-1">
+                <button
+                  onClick={() => toggleTool(tool.name)}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                    selected
+                      ? 'border-violet-400 bg-violet-50 text-violet-700'
+                      : 'border-gray-200 text-gray-600 hover:border-violet-200'
+                  }`}
+                >
+                  {selected ? '✓ ' : ''}{tool.name}
+                </button>
+                <div className="flex flex-wrap gap-1">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full border ${frameworkTone}`}>
+                    CrewAI: {frameworkState === 'ready' ? 'lista' : frameworkState === 'limited' ? 'limitada' : 'no soportada'}
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                    {tool.state_label}
+                  </span>
+                </div>
+              </div>
             )
           })}
         </div>
+        <p className="text-[11px] text-gray-500 mt-2">
+          Las tools marcadas como limitadas pueden necesitar ajustes de compatibilidad adicionales en CrewAI.
+        </p>
       </div>
 
       <label className="flex items-center gap-2 cursor-pointer">

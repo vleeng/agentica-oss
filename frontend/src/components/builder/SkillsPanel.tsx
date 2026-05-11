@@ -158,6 +158,9 @@ export function SkillsPanel() {
                     }`}>
                     <span className="font-medium">{t.name}</span>
                     <span className="text-gray-400 ml-1">({t.category})</span>
+                    <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
+                      {t.state_label}
+                    </span>
                   </button>
                 )
               })}

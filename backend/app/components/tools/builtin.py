@@ -13,6 +13,8 @@ import httpx
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 
+from app.core.config import get_settings
+
 
 # ── 1. Web Search (Tavily) ────────────────────────────────────────────────────
 
@@ -253,4 +255,10 @@ def get_tool(name: str, config: dict) -> BaseTool:
     if name not in TOOL_REGISTRY:
         raise ValueError(f"Tool '{name}' no encontrada en la Component Library.")
     cls = TOOL_REGISTRY[name]
-    return cls(**config)
+    hydrated_config = dict(config or {})
+    settings = get_settings()
+
+    if name == "web_search" and not hydrated_config.get("api_key"):
+        hydrated_config["api_key"] = settings.tavily_api_key or ""
+
+    return cls(**hydrated_config)

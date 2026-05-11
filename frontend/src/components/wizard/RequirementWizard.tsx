@@ -271,6 +271,13 @@ function StepTools({ state, update }: StepProps) {
         <div className="space-y-2">
           {AVAILABLE_TOOLS.map(tool => {
             const selected = state.tools.some(t => t.name === tool.name)
+            const frameworkState = tool.frameworks.langchain
+            const frameworkTone =
+              frameworkState === 'ready'
+                ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                : frameworkState === 'limited'
+                ? 'text-amber-700 bg-amber-50 border-amber-200'
+                : 'text-rose-700 bg-rose-50 border-rose-200'
             return (
               <button
                 key={tool.name}
@@ -285,12 +292,21 @@ function StepTools({ state, update }: StepProps) {
                   {selected && <span className="text-white text-xs">✓</span>}
                 </div>
                 <div className="text-left flex-1">
-                  <div className="text-sm font-medium text-gray-800">{tool.name}</div>
-                  <div className="text-xs text-gray-500">{tool.description}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-medium text-gray-800">{tool.name}</div>
+                    <span className="text-[11px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                      {tool.category}
+                    </span>
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full border ${frameworkTone}`}>
+                      LangChain: {frameworkState === 'ready' ? 'lista' : frameworkState === 'limited' ? 'limitada' : 'no soportada'}
+                    </span>
+                    <span className="text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                      {tool.state_label}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">{tool.description}</div>
+                  {tool.setup_hint && <div className="text-[11px] text-amber-700 mt-1">{tool.setup_hint}</div>}
                 </div>
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                  {tool.category}
-                </span>
               </button>
             )
           })}
