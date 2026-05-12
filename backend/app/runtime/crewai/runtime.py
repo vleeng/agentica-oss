@@ -227,12 +227,12 @@ class CrewAIRuntime(AgentRuntime):
             if step.get("node_type") == "decision":
                 decision = step.get("decision") or {}
                 final_answer = str(decision.get("final_answer") or "").strip()
-                if decision.get("approved") is True and final_answer:
+                if decision.get("approved") is True and final_answer and not _is_low_signal_output(final_answer):
                     return final_answer
                 continue
 
             output = str(step.get("output") or "").strip()
-            if output:
+            if output and not _is_low_signal_output(output):
                 return output
 
         return last_result
@@ -286,6 +286,18 @@ def _compact_runtime_input(user_input: str, limit: int = 4500) -> str:
         + "\n\n[... contenido intermedio resumido para acelerar el crew ...]\n\n"
         + tail
     )
+
+
+def _is_low_signal_output(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return True
+    low_signal_markers = (
+        "no pude generar una respuesta util",
+        "no pude convertir la respuesta del modelo",
+        "respuesta bloqueada por politica de seguridad",
+    )
+    return any(marker in normalized for marker in low_signal_markers)
 
 
 def _parse_decision_output(raw_output: str) -> dict | None:
