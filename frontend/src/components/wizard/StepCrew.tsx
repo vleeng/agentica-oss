@@ -267,6 +267,7 @@ function RoleEditor({
           {AVAILABLE_TOOLS.map(tool => {
             const selected = agent.tools.some(t => t.name === tool.name)
             const frameworkState = tool.frameworks.crewai
+            const unsupported = frameworkState === 'unsupported'
             const frameworkTone =
               frameworkState === 'ready'
                 ? 'border-emerald-200 text-emerald-700 bg-emerald-50'
@@ -276,12 +277,14 @@ function RoleEditor({
             return (
               <div key={tool.name} className="space-y-1">
                 <button
+                  type="button"
                   onClick={() => toggleTool(tool.name)}
+                  disabled={unsupported}
                   className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
                     selected
                       ? 'border-violet-400 bg-violet-50 text-violet-700'
                       : 'border-gray-200 text-gray-600 hover:border-violet-200'
-                  }`}
+                  } ${unsupported ? 'opacity-50 cursor-not-allowed hover:border-gray-200' : ''}`}
                 >
                   {selected ? '✓ ' : ''}{tool.name}
                 </button>
@@ -293,6 +296,16 @@ function RoleEditor({
                     {tool.state_label}
                   </span>
                 </div>
+                {tool.setup_hint && (
+                  <div className="max-w-[14rem] text-[10px] leading-relaxed text-amber-700">
+                    {tool.setup_hint}
+                  </div>
+                )}
+                {unsupported && (
+                  <div className="max-w-[14rem] text-[10px] leading-relaxed text-rose-700">
+                    Esta tool no está disponible para roles CrewAI.
+                  </div>
+                )}
               </div>
             )
           })}

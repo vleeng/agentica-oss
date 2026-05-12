@@ -308,6 +308,7 @@ export interface GuardrailRule {
 
 export type ToolOperationalState = 'ready' | 'needs_config' | 'framework_limited' | 'disabled'
 export type ToolFrameworkState = 'ready' | 'limited' | 'unsupported'
+export type ToolFramework = 'langchain' | 'crewai'
 
 export interface AvailableToolDescriptor {
   name: string
@@ -320,6 +321,14 @@ export interface AvailableToolDescriptor {
     langchain: ToolFrameworkState
     crewai: ToolFrameworkState
   }
+}
+
+export function getToolFrameworkState(toolName: string, framework: ToolFramework): ToolFrameworkState {
+  return AVAILABLE_TOOLS.find(tool => tool.name === toolName)?.frameworks[framework] ?? 'unsupported'
+}
+
+export function isToolSupportedInFramework(toolName: string, framework: ToolFramework): boolean {
+  return getToolFrameworkState(toolName, framework) !== 'unsupported'
 }
 
 export const AVAILABLE_TOOLS: AvailableToolDescriptor[] = [

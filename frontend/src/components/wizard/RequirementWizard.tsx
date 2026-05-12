@@ -234,6 +234,9 @@ function StepIdentity({ state, update }: StepProps) {
 function StepTools({ state, update }: StepProps) {
   const [customTools, setCustomTools] = useState<Array<{ id: string; name: string; description: string; is_active: boolean }>>([])
   const [loadError, setLoadError] = useState('')
+  const selectedBuiltinTools = AVAILABLE_TOOLS.filter(tool => state.tools.some(t => t.name === tool.name))
+  const selectedNeedsSetup = selectedBuiltinTools.filter(tool => tool.state === 'needs_config')
+  const selectedLimited = selectedBuiltinTools.filter(tool => tool.frameworks.langchain === 'limited')
 
   useEffect(() => {
     import('../../lib/api').then(({ customToolsApi }) =>
@@ -272,6 +275,7 @@ function StepTools({ state, update }: StepProps) {
           {AVAILABLE_TOOLS.map(tool => {
             const selected = state.tools.some(t => t.name === tool.name)
             const frameworkState = tool.frameworks.langchain
+            const unsupported = frameworkState === 'unsupported'
             const frameworkTone =
               frameworkState === 'ready'
                 ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
@@ -281,10 +285,12 @@ function StepTools({ state, update }: StepProps) {
             return (
               <button
                 key={tool.name}
+                type="button"
                 onClick={() => toggleTool(tool.name, 'library')}
+                disabled={unsupported}
                 className={`w-full flex items-center gap-3 p-4 rounded-lg border transition-all ${
                   selected ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:border-violet-200'
-                }`}
+                } ${unsupported ? 'opacity-50 cursor-not-allowed hover:border-gray-200' : ''}`}
               >
                 <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
                   selected ? 'border-violet-500 bg-violet-500' : 'border-gray-300'
@@ -306,12 +312,32 @@ function StepTools({ state, update }: StepProps) {
                   </div>
                   <div className="text-xs text-gray-500 mt-1">{tool.description}</div>
                   {tool.setup_hint && <div className="text-[11px] text-amber-700 mt-1">{tool.setup_hint}</div>}
+                  {unsupported && (
+                    <div className="text-[11px] text-rose-700 mt-1">
+                      Esta tool no está disponible para agentes simples con LangChain.
+                    </div>
+                  )}
                 </div>
               </button>
             )
           })}
         </div>
       </div>
+
+      {(selectedNeedsSetup.length > 0 || selectedLimited.length > 0) && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800 space-y-1">
+          {selectedNeedsSetup.length > 0 && (
+            <div>
+              Tools con configuraciÃ³n pendiente: <strong>{selectedNeedsSetup.map(tool => tool.name).join(', ')}</strong>.
+            </div>
+          )}
+          {selectedLimited.length > 0 && (
+            <div>
+              Algunas tools tienen compatibilidad parcial en este framework: <strong>{selectedLimited.map(tool => tool.name).join(', ')}</strong>.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Custom tools del tenant */}
       {customTools.length > 0 && (
