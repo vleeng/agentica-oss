@@ -8,6 +8,7 @@ from app.components.memory.adapters import (
     RedisAdapter,
 )
 from app.components.tools.builtin import get_tool
+from app.components.tools.observability import instrument_tool
 from app.runtime.crewai.runtime import CrewAIRuntime
 from app.runtime.llm import (
     LLMConfig,
@@ -129,15 +130,36 @@ class CrewAIAgentBuilder:
         tools = []
         for t in role_spec.tools:
             if t.source == "library":
-                tools.append(get_tool(t.name, t.config, framework="crewai"))
+                tools.append(
+                    instrument_tool(
+                        get_tool(t.name, t.config, framework="crewai"),
+                        framework="crewai",
+                        source="library",
+                    )
+                )
             else:
                 from app.builders.langchain.builder import _load_custom_tool
-                tools.append(await _load_custom_tool(t.name, t.config, tenant_id))
+                tools.append(
+                    instrument_tool(
+                        await _load_custom_tool(t.name, t.config, tenant_id),
+                        framework="crewai",
+                        source="custom",
+                    )
+                )
 
         if rag_enabled:
-            tools.append(CrewAIRAGTool(agent_id=agent_id, top_k=rag_top_k))
+            tools.append(
+                instrument_tool(
+                    CrewAIRAGTool(agent_id=agent_id, top_k=rag_top_k),
+                    framework="crewai",
+                    source="rag",
+                )
+            )
         if extra_tools:
-            tools.extend(extra_tools)
+            tools.extend(
+                instrument_tool(tool, framework="crewai", source="mcp")
+                for tool in extra_tools
+            )
 
         llm = default_llm
         if role_spec.model_params:
@@ -157,7 +179,15 @@ class CrewAIAgentBuilder:
     def _build_agent(self, role_spec: AgentRoleSpec, default_llm, api_key: str = ""):
         from crewai import Agent
 
-        tools = [get_tool(t.name, t.config, framework="crewai") for t in role_spec.tools if t.source == "library"]
+        tools = [
+            instrument_tool(
+                get_tool(t.name, t.config, framework="crewai"),
+                framework="crewai",
+                source="library",
+            )
+            for t in role_spec.tools
+            if t.source == "library"
+        ]
 
         llm = default_llm
         if role_spec.model_params:

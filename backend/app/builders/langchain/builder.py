@@ -12,6 +12,7 @@ from app.components.memory.adapters import (
     RedisAdapter,
 )
 from app.components.tools.builtin import get_tool
+from app.components.tools.observability import instrument_tool
 from app.runtime.langchain.runtime import LangChainRuntime
 from app.runtime.llm import LLMConfig, create_chat_llm
 from app.schemas.agent import AgentDesign, MemoryType
@@ -40,19 +41,36 @@ class LangChainAgentBuilder:
         tools: list[BaseTool] = []
         for tool_ref in spec.tools:
             if tool_ref.source == "library":
-                tool = get_tool(tool_ref.name, tool_ref.config)
+                tool = instrument_tool(
+                    get_tool(tool_ref.name, tool_ref.config),
+                    framework="langchain",
+                    source="library",
+                )
             else:
-                tool = await _load_custom_tool(tool_ref.name, tool_ref.config, design.tenant_id)
+                tool = instrument_tool(
+                    await _load_custom_tool(tool_ref.name, tool_ref.config, design.tenant_id),
+                    framework="langchain",
+                    source="custom",
+                )
             tools.append(tool)
 
         # RAG tool — inyectada automáticamente si rag.enabled
         if spec.rag.enabled:
             from app.components.rag.rag_tool import RAGTool
-            tools.append(RAGTool(agent_id=str(design.agent_id), top_k=spec.rag.top_k))
+            tools.append(
+                instrument_tool(
+                    RAGTool(agent_id=str(design.agent_id), top_k=spec.rag.top_k),
+                    framework="langchain",
+                    source="rag",
+                )
+            )
 
         extra_tools = getattr(design, "_extra_lc_tools", [])
         if extra_tools:
-            tools.extend(extra_tools)
+            tools.extend(
+                instrument_tool(tool, framework="langchain", source="mcp")
+                for tool in extra_tools
+            )
 
         # 3. Prompt + 4. Runtime según presencia de tools
         # Re-evaluar siempre el agent_type según capacidades del modelo actual,
