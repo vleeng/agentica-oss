@@ -130,9 +130,14 @@ class CrewAIRuntime(AgentRuntime):
         last_steps: list[dict] = []
 
         for attempt in range(self._max_review_loops + 1):
+            compact_input = _compact_runtime_input(attempt_input)
             result = await asyncio.to_thread(
                 self._crew.kickoff,
-                inputs={"input": attempt_input, "session_id": session_id},
+                inputs={
+                    "input": attempt_input,
+                    "input_compact": compact_input,
+                    "session_id": session_id,
+                },
             )
             last_result = str(result) if not isinstance(result, str) else result
             last_steps = self._collect_steps()
@@ -267,6 +272,19 @@ def _inject_history(user_input: str, chat_history: list[dict]) -> str:
         + "\n".join(history_lines)
         + "\n\nMensaje actual del usuario:\n"
         + user_input
+    )
+
+
+def _compact_runtime_input(user_input: str, limit: int = 4500) -> str:
+    text = str(user_input or "").strip()
+    if len(text) <= limit:
+        return text
+    head = text[:3000].rstrip()
+    tail = text[-1200:].lstrip()
+    return (
+        head
+        + "\n\n[... contenido intermedio resumido para acelerar el crew ...]\n\n"
+        + tail
     )
 
 

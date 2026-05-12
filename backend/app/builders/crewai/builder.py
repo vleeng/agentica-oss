@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import re
 
 from app.components.memory.adapters import (
     InMemoryAdapter,
@@ -173,7 +174,7 @@ class CrewAIAgentBuilder:
             llm=llm,
             allow_delegation=role_spec.allow_delegation,
             verbose=True,
-            max_iter=10,
+            max_iter=4,
         )
 
     def _build_agent(self, role_spec: AgentRoleSpec, default_llm, api_key: str = ""):
@@ -201,7 +202,7 @@ class CrewAIAgentBuilder:
             llm=llm,
             allow_delegation=role_spec.allow_delegation,
             verbose=True,
-            max_iter=10,
+            max_iter=4,
         )
 
     def _build_memory(self, design: AgentDesign):
@@ -366,7 +367,11 @@ class CrewAIAgentBuilder:
         if crew_agents:
             first_name, first_agent = next(iter(crew_agents.items()))
             tasks.append(Task(
-                description=f"{design.spec.goal}\n\nInput: {{input}}",
+                description=(
+                    f"{design.spec.goal}\n\n"
+                    "Trabaja primero con la informacion que ya entrego el usuario antes de usar herramientas externas.\n\n"
+                    "Input del usuario (resumido para el crew): {input_compact}"
+                ),
                 expected_output="Respuesta completa al objetivo",
                 agent=first_agent,
             ))
@@ -564,13 +569,17 @@ class CrewAIAgentBuilder:
         nodes_by_id: dict[str, dict],
     ) -> str:
         parts = [
-            node.get("description", node.get("label", "")),
+            self._compact_task_instruction(node),
             f"Objetivo general: {design.spec.goal}",
         ]
         if upstream_node_ids:
             upstream_labels = [plan_by_node[node_id]["label"] for node_id in upstream_node_ids if node_id in plan_by_node]
             if upstream_labels:
-                parts.append("TomÃ¡ como contexto operativo los resultados previos de: " + ", ".join(upstream_labels))
+                parts.append("Tom? como contexto operativo los resultados previos de: " + ", ".join(upstream_labels))
+            parts.append("Prioriz? esos resultados previos y evit? repetir o reanalizar todo el input original si no hace falta.")
+        else:
+            parts.append("Trabaj? primero con la informacion que ya entrego el usuario antes de usar herramientas externas.")
+            parts.append("Input del usuario (resumido para el crew): {input_compact}")
         if tool_hints:
             parts.append("Si agrega valor al flujo, apoyate en estas herramientas o pasos asociados: " + ", ".join(tool_hints))
 
@@ -580,10 +589,20 @@ class CrewAIAgentBuilder:
             if edge.get("condition") and nodes_by_id.get(edge.get("to", ""), {}).get("type") != "end"
         ]
         if downstream_conditions:
-            parts.append("PreparÃ¡ la salida para habilitar estas decisiones posteriores: " + "; ".join(str(item) for item in downstream_conditions))
+            parts.append("Prepar? la salida para habilitar estas decisiones posteriores: " + "; ".join(str(item) for item in downstream_conditions))
 
-        parts.append("Input del usuario: {input}")
         return "\n\n".join(part for part in parts if part)
+
+    @staticmethod
+    def _compact_task_instruction(node: dict) -> str:
+        raw = str(node.get("description") or node.get("label") or "").strip()
+        if not raw:
+            return "Completa este paso del flujo."
+        first_paragraph = re.split(r"\n\s*\n", raw, maxsplit=1)[0].strip()
+        compact = re.sub(r"\s+", " ", first_paragraph or raw).strip()
+        if len(compact) > 320:
+            compact = compact[:317].rstrip() + "..."
+        return compact
 
     @staticmethod
     def _build_expected_output(node: dict, retry_targets: list[dict]) -> str:
