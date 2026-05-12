@@ -1,5 +1,5 @@
-import { AlertTriangle, GitBranch, Plus, Save, Shuffle, Trash2, Workflow } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, CheckCircle2, GitBranch, Grip, Plus, Save, Shuffle, Trash2, Workflow } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { agentsApi } from '../../lib/api'
 import type {
@@ -30,6 +30,11 @@ const NODE_TYPES: Array<{ value: FlowNodeType; label: string }> = [
   { value: 'tool', label: 'Tool' },
   { value: 'end', label: 'End' },
 ]
+
+const NODE_WIDTH = 240
+const NODE_HEIGHT = 128
+const HANDLE_SIZE = 12
+const CANVAS_PADDING = 64
 
 function cloneGraph(graph: GraphBlueprint): GraphBlueprint {
   const cloned = JSON.parse(JSON.stringify(graph ?? {}))
@@ -83,25 +88,138 @@ function defaultNode(type: FlowNodeType, index: number, design: AgentDesign): Fl
   return {
     id: `${type}_${index}`,
     type,
-    label: type === 'agent' ? `Paso ${index}` : type === 'decision' ? `Revision ${index}` : type === 'tool' ? `Tool ${index}` : type === 'start' ? 'Inicio' : 'Fin',
+    label:
+      type === 'agent'
+        ? `Paso ${index}`
+        : type === 'decision'
+          ? `Revision ${index}`
+          : type === 'tool'
+            ? `Tool ${index}`
+            : type === 'start'
+              ? 'Inicio'
+              : 'Fin',
     description: '',
-    position: { x: 120 + ((index - 1) % 3) * 240, y: 120 + Math.floor((index - 1) / 3) * 140 },
+    position: { x: 120 + ((index - 1) % 3) * 280, y: 120 + Math.floor((index - 1) / 3) * 180 },
     data: {
-      assigned_agent: type === 'agent' && design.spec.mode === 'crew' && roleOptions.length ? roleOptions[0].name : undefined,
+      assigned_agent:
+        type === 'agent' && design.spec.mode === 'crew' && roleOptions.length
+          ? roleOptions[0].name
+          : undefined,
       tool_name: type === 'tool' && toolOptions.length ? toolOptions[0].name : undefined,
       allowed_tools: [],
     },
   }
 }
 
-function defaultEdge(index: number, graph: GraphBlueprint): FlowEdge {
-  const from = graph.nodes[0]?.id ?? ''
-  const to = graph.nodes[1]?.id ?? graph.nodes[0]?.id ?? ''
-  return { id: `edge_${index}`, from, to, condition: null }
-}
-
 function issuesForId(issues: GraphValidationIssue[], kind: 'node' | 'edge', id: string) {
   return issues.filter((issue) => (kind === 'node' ? issue.node_id === id : issue.edge_id === id))
+}
+
+function getNodeTone(type: FlowNodeType) {
+  switch (type) {
+    case 'start':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    case 'agent':
+      return 'border-violet-200 bg-violet-50 text-violet-700'
+    case 'decision':
+      return 'border-amber-200 bg-amber-50 text-amber-700'
+    case 'tool':
+      return 'border-sky-200 bg-sky-50 text-sky-700'
+    case 'end':
+      return 'border-slate-300 bg-slate-100 text-slate-700'
+  }
+}
+
+function getNodePoint(node: FlowNode, side: 'left' | 'right') {
+  const position = node.position ?? { x: 0, y: 0 }
+  return {
+    x: position.x + (side === 'left' ? 0 : NODE_WIDTH),
+    y: position.y + NODE_HEIGHT / 2,
+  }
+}
+
+function buildEdgePath(source: FlowNode, target: FlowNode) {
+  const start = getNodePoint(source, 'right')
+  const end = getNodePoint(target, 'left')
+  const delta = Math.max(72, Math.abs(end.x - start.x) * 0.5)
+  return `M ${start.x} ${start.y} C ${start.x + delta} ${start.y}, ${end.x - delta} ${end.y}, ${end.x} ${end.y}`
+}
+
+function autoLayoutGraph(graph: GraphBlueprint): GraphBlueprint {
+  if (!graph.nodes.length) return graph
+
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]))
+  const outgoing = new Map<string, string[]>()
+  const indegree = new Map<string, number>()
+
+  for (const node of graph.nodes) {
+    outgoing.set(node.id, [])
+    indegree.set(node.id, 0)
+  }
+  for (const edge of graph.edges) {
+    outgoing.get(edge.from)?.push(edge.to)
+    indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1)
+  }
+
+  const starts = graph.nodes.filter((node) => node.type === 'start')
+  const queue = starts.length ? starts.map((node) => node.id) : [graph.nodes[0].id]
+  const visited = new Set<string>()
+  const levels = new Map<string, number>()
+  queue.forEach((id) => levels.set(id, 0))
+
+  while (queue.length) {
+    const current = queue.shift()!
+    if (visited.has(current)) continue
+    visited.add(current)
+    const currentLevel = levels.get(current) ?? 0
+    for (const next of outgoing.get(current) ?? []) {
+      const nextLevel = Math.max(levels.get(next) ?? 0, currentLevel + 1)
+      levels.set(next, nextLevel)
+      queue.push(next)
+    }
+  }
+
+  const unplaced = graph.nodes.filter((node) => !levels.has(node.id))
+  for (const node of unplaced) {
+    const parentLevel = Math.max(0, ...Array.from(indegree.entries()).filter(([id]) => id === node.id).map(() => 0))
+    levels.set(node.id, parentLevel)
+  }
+
+  const lanes = new Map<number, FlowNode[]>()
+  for (const node of graph.nodes) {
+    const level = levels.get(node.id) ?? 0
+    const lane = lanes.get(level) ?? []
+    lane.push(node)
+    lanes.set(level, lane)
+  }
+
+  const nextNodes = graph.nodes.map((node) => {
+    const level = levels.get(node.id) ?? 0
+    const column = lanes.get(level) ?? []
+    const row = column.findIndex((item) => item.id === node.id)
+    return nodesById.get(node.id)!.id === node.id
+      ? {
+          ...node,
+          position: {
+            x: CANVAS_PADDING + level * 320,
+            y: CANVAS_PADDING + row * 180,
+          },
+        }
+      : node
+  })
+
+  return {
+    ...graph,
+    nodes: nextNodes,
+    meta: { ...(graph.meta ?? { version: 1, layout: 'manual' }), layout: 'auto' },
+  }
+}
+
+function sortIssues(issues: GraphValidationIssue[]) {
+  return [...issues].sort((left, right) => {
+    if (left.level !== right.level) return left.level === 'error' ? -1 : 1
+    return left.code.localeCompare(right.code)
+  })
 }
 
 export function FlowEditor({ design, onSaved }: Props) {
@@ -111,12 +229,62 @@ export function FlowEditor({ design, onSaved }: Props) {
   const [saving, setSaving] = useState(false)
   const [validating, setValidating] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+  const [pendingConnectionFrom, setPendingConnectionFrom] = useState<string | null>(null)
+  const canvasRef = useRef<HTMLDivElement | null>(null)
+  const dragRef = useRef<{
+    nodeId: string
+    offsetX: number
+    offsetY: number
+  } | null>(null)
 
   useEffect(() => {
-    setDraft(cloneGraph(design.graph_blueprint))
+    const nextDraft = cloneGraph(design.graph_blueprint)
+    setDraft(nextDraft)
     setValidation(null)
     setErrorMsg('')
+    setSelectedNodeId(nextDraft.nodes[0]?.id ?? null)
+    setSelectedEdgeId(null)
+    setPendingConnectionFrom(null)
   }, [design])
+
+  useEffect(() => {
+    const handleMove = (event: MouseEvent) => {
+      if (!dragRef.current || !canvasRef.current) return
+      const rect = canvasRef.current.getBoundingClientRect()
+      const scrollLeft = canvasRef.current.scrollLeft
+      const scrollTop = canvasRef.current.scrollTop
+      const nextX = Math.max(
+        CANVAS_PADDING / 2,
+        Math.round(event.clientX - rect.left + scrollLeft - dragRef.current.offsetX),
+      )
+      const nextY = Math.max(
+        CANVAS_PADDING / 2,
+        Math.round(event.clientY - rect.top + scrollTop - dragRef.current.offsetY),
+      )
+      setDraft((prev) => ({
+        ...prev,
+        meta: { ...(prev.meta ?? { version: 1, layout: 'manual' }), layout: 'manual' },
+        nodes: prev.nodes.map((node) =>
+          node.id === dragRef.current?.nodeId
+            ? { ...node, position: { x: nextX, y: nextY } }
+            : node,
+        ),
+      }))
+    }
+
+    const handleUp = () => {
+      dragRef.current = null
+    }
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [])
 
   const isDirty = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(design.graph_blueprint),
@@ -125,6 +293,29 @@ export function FlowEditor({ design, onSaved }: Props) {
 
   const roleOptions = design.spec.agents ?? []
   const toolOptions = design.spec.tools ?? []
+  const nodesById = useMemo(() => new Map(draft.nodes.map((node) => [node.id, node])), [draft.nodes])
+
+  const allIssues = useMemo(
+    () => (validation ? sortIssues([...validation.errors, ...validation.warnings]) : []),
+    [validation],
+  )
+
+  const canvasBounds = useMemo(() => {
+    if (!draft.nodes.length) {
+      return { width: 960, height: 540 }
+    }
+    const maxX = Math.max(...draft.nodes.map((node) => (node.position?.x ?? 0) + NODE_WIDTH))
+    const maxY = Math.max(...draft.nodes.map((node) => (node.position?.y ?? 0) + NODE_HEIGHT))
+    return {
+      width: Math.max(960, maxX + CANVAS_PADDING),
+      height: Math.max(540, maxY + CANVAS_PADDING),
+    }
+  }, [draft.nodes])
+
+  const selectedNode = selectedNodeId ? nodesById.get(selectedNodeId) ?? null : null
+  const selectedEdge = selectedEdgeId ? draft.edges.find((edge) => edge.id === selectedEdgeId) ?? null : null
+  const selectedNodeIssues = selectedNode ? issuesForId(allIssues, 'node', selectedNode.id) : []
+  const selectedEdgeIssues = selectedEdge ? issuesForId(allIssues, 'edge', selectedEdge.id) : []
 
   const updateNode = (nodeId: string, updater: (node: FlowNode) => FlowNode) => {
     setDraft((prev) => ({
@@ -141,10 +332,13 @@ export function FlowEditor({ design, onSaved }: Props) {
   }
 
   const handleAddNode = (type: FlowNodeType) => {
+    const nextNode = defaultNode(type, draft.nodes.length + 1, design)
     setDraft((prev) => ({
       ...prev,
-      nodes: [...prev.nodes, defaultNode(type, prev.nodes.length + 1, design)],
+      nodes: [...prev.nodes, nextNode],
     }))
+    setSelectedNodeId(nextNode.id)
+    setSelectedEdgeId(null)
   }
 
   const handleDeleteNode = (nodeId: string) => {
@@ -153,13 +347,9 @@ export function FlowEditor({ design, onSaved }: Props) {
       nodes: prev.nodes.filter((node) => node.id !== nodeId),
       edges: prev.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId),
     }))
-  }
-
-  const handleAddEdge = () => {
-    setDraft((prev) => ({
-      ...prev,
-      edges: [...prev.edges, defaultEdge(prev.edges.length + 1, prev)],
-    }))
+    if (selectedNodeId === nodeId) setSelectedNodeId(null)
+    if (pendingConnectionFrom === nodeId) setPendingConnectionFrom(null)
+    setSelectedEdgeId(null)
   }
 
   const handleDeleteEdge = (edgeId: string) => {
@@ -167,6 +357,40 @@ export function FlowEditor({ design, onSaved }: Props) {
       ...prev,
       edges: prev.edges.filter((edge) => edge.id !== edgeId),
     }))
+    if (selectedEdgeId === edgeId) setSelectedEdgeId(null)
+  }
+
+  const handleBeginConnection = (nodeId: string) => {
+    setPendingConnectionFrom((current) => (current === nodeId ? null : nodeId))
+    setSelectedNodeId(nodeId)
+    setSelectedEdgeId(null)
+  }
+
+  const handleCompleteConnection = (targetId: string) => {
+    if (!pendingConnectionFrom || pendingConnectionFrom === targetId) return
+    const edgeId = `edge_${draft.edges.length + 1}`
+    const nextEdge: FlowEdge = {
+      id: edgeId,
+      from: pendingConnectionFrom,
+      to: targetId,
+      condition: null,
+    }
+    setDraft((prev) => ({
+      ...prev,
+      edges: [...prev.edges, nextEdge],
+    }))
+    setPendingConnectionFrom(null)
+    setSelectedEdgeId(edgeId)
+    setSelectedNodeId(null)
+  }
+
+  const handleAutoLayout = () => {
+    setDraft((prev) => autoLayoutGraph(prev))
+    push({
+      tone: 'info',
+      title: 'Flujo reordenado',
+      description: 'Se aplico un layout automatico para acomodar el esquema.',
+    })
   }
 
   const handleValidate = async () => {
@@ -181,9 +405,9 @@ export function FlowEditor({ design, onSaved }: Props) {
       setValidation(report)
       push({
         tone: report.ok ? 'success' : 'info',
-        title: report.ok ? 'Flujo válido' : 'Hay observaciones en el flujo',
+        title: report.ok ? 'Flujo valido' : 'Hay observaciones en el flujo',
         description: report.ok
-          ? 'La estructura del proceso quedó lista para guardar.'
+          ? 'La estructura del proceso quedo lista para guardar.'
           : `${report.errors.length} errores y ${report.warnings.length} warnings para revisar.`,
       })
     } catch (e: any) {
@@ -211,7 +435,7 @@ export function FlowEditor({ design, onSaved }: Props) {
       push({
         tone: 'success',
         title: 'Flujo guardado',
-        description: 'El blueprint quedó persistido y el Mermaid se regeneró.',
+        description: 'El blueprint quedo persistido y Mermaid se regenero.',
       })
       onSaved(nextDesign)
     } catch (e: any) {
@@ -219,7 +443,7 @@ export function FlowEditor({ design, onSaved }: Props) {
       const report = normalizeValidationReport(detail)
       if (report) {
         setValidation(report)
-        setErrorMsg('El flujo tiene errores de validación. Revisalos antes de guardar.')
+        setErrorMsg('El flujo tiene errores de validacion. Revisalos antes de guardar.')
       } else {
         setErrorMsg(asErrorMessage(detail, 'No se pudo guardar el flujo.'))
       }
@@ -228,28 +452,32 @@ export function FlowEditor({ design, onSaved }: Props) {
     }
   }
 
-  const allIssues = validation ? [...validation.errors, ...validation.warnings] : []
-
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Editor de flujo</CardTitle>
+          <CardTitle>Editor visual de flujo</CardTitle>
           <CardDescription>
-            Esta etapa usa un editor estructurado de nodos y conexiones sobre el <code>graph_blueprint</code>. Mermaid queda como vista derivada.
+            Arrastra nodos sobre el canvas, conectalos desde los handles laterales y edita el
+            <code> graph_blueprint </code>
+            real del agente.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
             {NODE_TYPES.map((nodeType) => (
-              <Button key={nodeType.value} variant="secondary" onClick={() => handleAddNode(nodeType.value)}>
+              <Button
+                key={nodeType.value}
+                variant="secondary"
+                onClick={() => handleAddNode(nodeType.value)}
+              >
                 <Plus className="h-4 w-4" />
                 {nodeType.label}
               </Button>
             ))}
-            <Button variant="secondary" onClick={handleAddEdge} disabled={draft.nodes.length < 2}>
-              <GitBranch className="h-4 w-4" />
-              Agregar conexión
+            <Button variant="secondary" onClick={handleAutoLayout} disabled={!draft.nodes.length}>
+              <Workflow className="h-4 w-4" />
+              Autoordenar
             </Button>
             <Button variant="secondary" onClick={handleValidate} disabled={validating}>
               <Shuffle className="h-4 w-4" />
@@ -266,115 +494,315 @@ export function FlowEditor({ design, onSaved }: Props) {
               {design.spec.mode === 'crew' ? 'CrewAI' : 'LangChain'}
             </Badge>
             <Badge tone={validation?.ok ? 'green' : validation ? 'amber' : 'slate'}>
-              {validation ? (validation.ok ? 'Válido' : 'Con observaciones') : 'Sin validar'}
+              {validation ? (validation.ok ? 'Valido' : 'Con observaciones') : 'Sin validar'}
             </Badge>
             {isDirty && <span>Cambios sin guardar</span>}
+            {pendingConnectionFrom && (
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-sky-700">
+                Conectando desde {pendingConnectionFrom}. Hace click en la entrada del nodo destino.
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="grid gap-6 2xl:grid-cols-[1.2fr_0.8fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Nodos</CardTitle>
-            <CardDescription>Definen los pasos reales del flujo.</CardDescription>
+            <CardTitle>Canvas del flujo</CardTitle>
+            <CardDescription>
+              Click en un nodo para inspeccionarlo. Arrastra desde el grip para moverlo.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {draft.nodes.map((node, index) => {
-              const nodeIssues = issuesForId(allIssues, 'node', node.id)
-              return (
-                <div key={node.id} className="rounded-xl border border-slate-200 p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Workflow className="h-4 w-4 text-violet-600" />
-                      <span className="font-medium text-slate-950">{node.label || `Nodo ${index + 1}`}</span>
-                      <Badge tone="slate">{node.type}</Badge>
+          <CardContent>
+            <div
+              ref={canvasRef}
+              className="overflow-auto rounded-2xl border border-slate-200 bg-[radial-gradient(circle_at_1px_1px,#e2e8f0_1px,transparent_0)] [background-size:24px_24px]"
+            >
+              <div
+                className="relative"
+                style={{ width: canvasBounds.width, height: canvasBounds.height }}
+                onClick={() => {
+                  setSelectedNodeId(null)
+                  setSelectedEdgeId(null)
+                }}
+              >
+                <svg className="absolute inset-0 h-full w-full overflow-visible">
+                  {draft.edges.map((edge) => {
+                    const source = nodesById.get(edge.from)
+                    const target = nodesById.get(edge.to)
+                    if (!source || !target) return null
+                    const path = buildEdgePath(source, target)
+                    const selected = selectedEdgeId === edge.id
+                    const edgeIssues = issuesForId(allIssues, 'edge', edge.id)
+                    return (
+                      <g key={edge.id}>
+                        <path
+                          d={path}
+                          fill="none"
+                          stroke={selected ? '#7c3aed' : edgeIssues.some((issue) => issue.level === 'error') ? '#e11d48' : '#94a3b8'}
+                          strokeWidth={selected ? 3 : 2}
+                          strokeDasharray={edge.condition ? '7 5' : undefined}
+                        />
+                        <path
+                          d={path}
+                          fill="none"
+                          stroke="transparent"
+                          strokeWidth={18}
+                          className="cursor-pointer"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setSelectedEdgeId(edge.id)
+                            setSelectedNodeId(null)
+                          }}
+                        />
+                        {edge.condition && (
+                          <text
+                            x={(getNodePoint(source, 'right').x + getNodePoint(target, 'left').x) / 2}
+                            y={(getNodePoint(source, 'right').y + getNodePoint(target, 'left').y) / 2 - 8}
+                            textAnchor="middle"
+                            className="fill-slate-500 text-[11px]"
+                          >
+                            {edge.condition}
+                          </text>
+                        )}
+                      </g>
+                    )
+                  })}
+                </svg>
+
+                {draft.nodes.map((node) => {
+                  const position = node.position ?? { x: 0, y: 0 }
+                  const selected = selectedNodeId === node.id
+                  const nodeIssues = issuesForId(allIssues, 'node', node.id)
+                  const errorCount = nodeIssues.filter((issue) => issue.level === 'error').length
+                  const warningCount = nodeIssues.filter((issue) => issue.level === 'warning').length
+
+                  return (
+                    <div
+                      key={node.id}
+                      className={`absolute rounded-xl border bg-white shadow-sm transition ${
+                        selected ? 'border-violet-400 ring-2 ring-violet-200' : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                      style={{
+                        width: NODE_WIDTH,
+                        height: NODE_HEIGHT,
+                        left: position.x,
+                        top: position.y,
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setSelectedNodeId(node.id)
+                        setSelectedEdgeId(null)
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="absolute left-[-6px] top-[calc(50%-6px)] h-3 w-3 rounded-full border-2 border-white bg-slate-400 shadow"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleCompleteConnection(node.id)
+                        }}
+                        title={pendingConnectionFrom ? 'Conectar aqui' : 'Entrada'}
+                      />
+                      <button
+                        type="button"
+                        className={`absolute right-[-6px] top-[calc(50%-6px)] h-3 w-3 rounded-full border-2 border-white shadow ${
+                          pendingConnectionFrom === node.id ? 'bg-violet-600' : 'bg-sky-500'
+                        }`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleBeginConnection(node.id)
+                        }}
+                        title="Crear conexion desde este nodo"
+                      />
+
+                      <div className="flex h-full flex-col">
+                        <div
+                          className="flex cursor-move items-center justify-between gap-3 rounded-t-xl border-b border-slate-100 px-3 py-2"
+                          onMouseDown={(event) => {
+                            if (!canvasRef.current) return
+                            const rect = canvasRef.current.getBoundingClientRect()
+                            const scrollLeft = canvasRef.current.scrollLeft
+                            const scrollTop = canvasRef.current.scrollTop
+                            dragRef.current = {
+                              nodeId: node.id,
+                              offsetX: event.clientX - rect.left + scrollLeft - position.x,
+                              offsetY: event.clientY - rect.top + scrollTop - position.y,
+                            }
+                          }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Grip className="h-4 w-4 text-slate-400" />
+                            <Badge className={getNodeTone(node.type)}>{node.type}</Badge>
+                          </div>
+                          {(errorCount > 0 || warningCount > 0) && (
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                              {errorCount > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-rose-700">{errorCount} err</span>}
+                              {warningCount > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">{warningCount} warn</span>}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-1 flex-col justify-between px-3 py-3">
+                          <div>
+                            <div className="line-clamp-1 text-sm font-semibold text-slate-950">{node.label}</div>
+                            <div className="mt-1 line-clamp-3 text-xs leading-5 text-slate-500">
+                              {node.description || node.data?.description || 'Sin descripcion operativa.'}
+                            </div>
+                          </div>
+                          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                            <span>{node.id}</span>
+                            {node.type === 'agent' && design.spec.mode === 'crew' && (
+                              <span>{node.data?.assigned_agent || 'Sin agente'}</span>
+                            )}
+                            {node.type === 'tool' && design.spec.mode === 'single' && (
+                              <span>{node.data?.tool_name || 'Sin tool'}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <Button variant="ghost" onClick={() => handleDeleteNode(node.id)}>
+                  )
+                })}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Inspector</CardTitle>
+              <CardDescription>
+                Edita el nodo o la conexion seleccionada. Todo impacta sobre el esquema real.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!selectedNode && !selectedEdge && (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+                  Selecciona un nodo o una conexion para editar propiedades. Si quieres empezar
+                  rapido, agrega un nodo y arrastralo al canvas.
+                </div>
+              )}
+
+              {selectedNode && (
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-950">{selectedNode.label || selectedNode.id}</div>
+                      <div className="text-xs text-slate-500">{selectedNode.id}</div>
+                    </div>
+                    <Button variant="ghost" onClick={() => handleDeleteNode(selectedNode.id)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="ID">
-                      <Input value={node.id} onChange={(e) => updateNode(node.id, (current) => ({ ...current, id: e.target.value }))} />
-                    </Field>
-                    <Field label="Tipo">
+                  <Field label="ID">
+                    <Input
+                      value={selectedNode.id}
+                      onChange={(event) =>
+                        updateNode(selectedNode.id, (current) => ({ ...current, id: event.target.value }))
+                      }
+                    />
+                  </Field>
+
+                  <Field label="Tipo">
+                    <select
+                      value={selectedNode.type}
+                      onChange={(event) =>
+                        updateNode(selectedNode.id, (current) => ({
+                          ...current,
+                          type: event.target.value as FlowNodeType,
+                        }))
+                      }
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    >
+                      {NODE_TYPES.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Label">
+                    <Input
+                      value={selectedNode.label}
+                      onChange={(event) =>
+                        updateNode(selectedNode.id, (current) => ({ ...current, label: event.target.value }))
+                      }
+                    />
+                  </Field>
+
+                  <Field label="Descripcion">
+                    <textarea
+                      value={selectedNode.description}
+                      onChange={(event) =>
+                        updateNode(selectedNode.id, (current) => ({
+                          ...current,
+                          description: event.target.value,
+                          data: { ...current.data, description: event.target.value || undefined },
+                        }))
+                      }
+                      rows={5}
+                      className="w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                  </Field>
+
+                  {design.spec.mode === 'crew' && selectedNode.type === 'agent' && (
+                    <Field label="Agente asignado">
                       <select
-                        value={node.type}
-                        onChange={(e) => updateNode(node.id, (current) => ({ ...current, type: e.target.value as FlowNodeType }))}
+                        value={selectedNode.data?.assigned_agent ?? ''}
+                        onChange={(event) =>
+                          updateNode(selectedNode.id, (current) => ({
+                            ...current,
+                            data: { ...current.data, assigned_agent: event.target.value || undefined },
+                          }))
+                        }
                         className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
                       >
-                        {NODE_TYPES.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
+                        <option value="">- selecciona un agente -</option>
+                        {roleOptions.map((role) => (
+                          <option key={role.name} value={role.name}>
+                            {role.role}
                           </option>
                         ))}
                       </select>
                     </Field>
-                    <Field label="Label">
-                      <Input value={node.label} onChange={(e) => updateNode(node.id, (current) => ({ ...current, label: e.target.value }))} />
+                  )}
+
+                  {design.spec.mode === 'single' && selectedNode.type === 'tool' && (
+                    <Field label="Tool asociada">
+                      <select
+                        value={selectedNode.data?.tool_name ?? ''}
+                        onChange={(event) =>
+                          updateNode(selectedNode.id, (current) => ({
+                            ...current,
+                            data: { ...current.data, tool_name: event.target.value || undefined },
+                          }))
+                        }
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                      >
+                        <option value="">- selecciona una tool -</option>
+                        {toolOptions.map((tool) => (
+                          <option key={tool.name} value={tool.name}>
+                            {tool.name}
+                          </option>
+                        ))}
+                      </select>
                     </Field>
-                    <Field label="Descripción">
-                      <textarea
-                        value={node.description}
-                        onChange={(e) => updateNode(node.id, (current) => ({ ...current, description: e.target.value }))}
-                        rows={3}
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500 resize-y"
-                      />
-                    </Field>
+                  )}
 
-                    {design.spec.mode === 'crew' && node.type === 'agent' && (
-                      <Field label="Agente asignado" className="md:col-span-2">
-                        <select
-                          value={node.data?.assigned_agent ?? ''}
-                          onChange={(e) =>
-                            updateNode(node.id, (current) => ({
-                              ...current,
-                              data: { ...current.data, assigned_agent: e.target.value || undefined },
-                            }))
-                          }
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                        >
-                          <option value="">— seleccioná un agente —</option>
-                          {roleOptions.map((role) => (
-                            <option key={role.name} value={role.name}>
-                              {role.role}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                    )}
-
-                    {design.spec.mode === 'single' && node.type === 'tool' && (
-                      <Field label="Tool asociada" className="md:col-span-2">
-                        <select
-                          value={node.data?.tool_name ?? ''}
-                          onChange={(e) =>
-                            updateNode(node.id, (current) => ({
-                              ...current,
-                              data: { ...current.data, tool_name: e.target.value || undefined },
-                            }))
-                          }
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                        >
-                          <option value="">— seleccioná una tool —</option>
-                          {toolOptions.map((tool) => (
-                            <option key={tool.name} value={tool.name}>
-                              {tool.name}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                    )}
-                  </div>
-
-                  {nodeIssues.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      {nodeIssues.map((issue, issueIndex) => (
+                  {selectedNodeIssues.length > 0 && (
+                    <div className="space-y-2">
+                      {selectedNodeIssues.map((issue, index) => (
                         <div
-                          key={`${node.id}_${issueIndex}`}
-                          className={`rounded-lg px-3 py-2 text-xs ${issue.level === 'error' ? 'border border-rose-200 bg-rose-50 text-rose-700' : 'border border-amber-200 bg-amber-50 text-amber-700'}`}
+                          key={`${issue.code}_${index}`}
+                          className={`rounded-lg px-3 py-2 text-xs ${
+                            issue.level === 'error'
+                              ? 'border border-rose-200 bg-rose-50 text-rose-700'
+                              : 'border border-amber-200 bg-amber-50 text-amber-700'
+                          }`}
                         >
                           {issue.message}
                         </div>
@@ -382,93 +810,101 @@ export function FlowEditor({ design, onSaved }: Props) {
                     </div>
                   )}
                 </div>
-              )
-            })}
-          </CardContent>
-        </Card>
+              )}
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Conexiones</CardTitle>
-              <CardDescription>Definen cómo avanza o vuelve el proceso.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {draft.edges.map((edge, index) => {
-                const edgeIssues = issuesForId(allIssues, 'edge', edge.id)
-                return (
-                  <div key={edge.id} className="rounded-xl border border-slate-200 p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <GitBranch className="h-4 w-4 text-sky-600" />
-                        <span className="font-medium text-slate-950">Conexión {index + 1}</span>
+              {selectedEdge && (
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-950">Conexion {selectedEdge.id}</div>
+                      <div className="text-xs text-slate-500">
+                        {selectedEdge.from}{' -> '}{selectedEdge.to}
                       </div>
-                      <Button variant="ghost" onClick={() => handleDeleteEdge(edge.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
                     </div>
-
-                    <div className="grid gap-4">
-                      <Field label="ID">
-                        <Input value={edge.id} onChange={(e) => updateEdge(edge.id, (current) => ({ ...current, id: e.target.value }))} />
-                      </Field>
-                      <Field label="Desde">
-                        <select
-                          value={edge.from}
-                          onChange={(e) => updateEdge(edge.id, (current) => ({ ...current, from: e.target.value }))}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                        >
-                          {draft.nodes.map((node) => (
-                            <option key={node.id} value={node.id}>
-                              {node.label} ({node.id})
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Hacia">
-                        <select
-                          value={edge.to}
-                          onChange={(e) => updateEdge(edge.id, (current) => ({ ...current, to: e.target.value }))}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                        >
-                          {draft.nodes.map((node) => (
-                            <option key={node.id} value={node.id}>
-                              {node.label} ({node.id})
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Condición">
-                        <Input
-                          value={edge.condition ?? ''}
-                          onChange={(e) => updateEdge(edge.id, (current) => ({ ...current, condition: e.target.value || null }))}
-                          placeholder="Ej: Resultado aprobado"
-                        />
-                      </Field>
-                    </div>
-
-                    {edgeIssues.length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        {edgeIssues.map((issue, issueIndex) => (
-                          <div
-                            key={`${edge.id}_${issueIndex}`}
-                            className={`rounded-lg px-3 py-2 text-xs ${issue.level === 'error' ? 'border border-rose-200 bg-rose-50 text-rose-700' : 'border border-amber-200 bg-amber-50 text-amber-700'}`}
-                          >
-                            {issue.message}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <Button variant="ghost" onClick={() => handleDeleteEdge(selectedEdge.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                )
-              })}
+
+                  <Field label="ID">
+                    <Input
+                      value={selectedEdge.id}
+                      onChange={(event) =>
+                        updateEdge(selectedEdge.id, (current) => ({ ...current, id: event.target.value }))
+                      }
+                    />
+                  </Field>
+
+                  <Field label="Desde">
+                    <select
+                      value={selectedEdge.from}
+                      onChange={(event) =>
+                        updateEdge(selectedEdge.id, (current) => ({ ...current, from: event.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    >
+                      {draft.nodes.map((node) => (
+                        <option key={node.id} value={node.id}>
+                          {node.label} ({node.id})
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Hacia">
+                    <select
+                      value={selectedEdge.to}
+                      onChange={(event) =>
+                        updateEdge(selectedEdge.id, (current) => ({ ...current, to: event.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    >
+                      {draft.nodes.map((node) => (
+                        <option key={node.id} value={node.id}>
+                          {node.label} ({node.id})
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Condicion">
+                    <Input
+                      value={selectedEdge.condition ?? ''}
+                      onChange={(event) =>
+                        updateEdge(selectedEdge.id, (current) => ({
+                          ...current,
+                          condition: event.target.value || null,
+                        }))
+                      }
+                      placeholder="Ej: Resultado aprobado"
+                    />
+                  </Field>
+
+                  {selectedEdgeIssues.length > 0 && (
+                    <div className="space-y-2">
+                      {selectedEdgeIssues.map((issue, index) => (
+                        <div
+                          key={`${issue.code}_${index}`}
+                          className={`rounded-lg px-3 py-2 text-xs ${
+                            issue.level === 'error'
+                              ? 'border border-rose-200 bg-rose-50 text-rose-700'
+                              : 'border border-amber-200 bg-amber-50 text-amber-700'
+                          }`}
+                        >
+                          {issue.message}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Validación</CardTitle>
-              <CardDescription>Feedback estructural del blueprint.</CardDescription>
+              <CardTitle>Validacion</CardTitle>
+              <CardDescription>Feedback estructural del blueprint actual.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {errorMsg && (
@@ -479,30 +915,52 @@ export function FlowEditor({ design, onSaved }: Props) {
 
               {!validation && !errorMsg && (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                  Todavía no validaste este flujo. Podés editar, validar y recién después guardarlo.
+                  Todavia no validaste este flujo. Puedes mover nodos, conectar pasos y validar
+                  antes de guardar.
                 </div>
               )}
 
               {validation && (
                 <>
                   <div className="flex items-center gap-2 text-sm">
-                    <Badge tone={validation.ok ? 'green' : 'amber'}>{validation.ok ? 'Listo' : 'Revisar'}</Badge>
+                    {validation.ok ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    )}
+                    <Badge tone={validation.ok ? 'green' : 'amber'}>
+                      {validation.ok ? 'Listo' : 'Revisar'}
+                    </Badge>
                     <span className="text-slate-600">
                       {validation.errors.length} errores · {validation.warnings.length} warnings
                     </span>
                   </div>
 
-                  {[...validation.errors, ...validation.warnings].map((issue, index) => (
-                    <div
+                  {allIssues.map((issue, index) => (
+                    <button
                       key={`${issue.code}_${index}`}
-                      className={`flex items-start gap-3 rounded-xl px-4 py-3 text-sm ${issue.level === 'error' ? 'border border-rose-200 bg-rose-50 text-rose-700' : 'border border-amber-200 bg-amber-50 text-amber-700'}`}
+                      type="button"
+                      onClick={() => {
+                        if (issue.node_id) {
+                          setSelectedNodeId(issue.node_id)
+                          setSelectedEdgeId(null)
+                        } else if (issue.edge_id) {
+                          setSelectedEdgeId(issue.edge_id)
+                          setSelectedNodeId(null)
+                        }
+                      }}
+                      className={`flex w-full items-start gap-3 rounded-xl px-4 py-3 text-left text-sm ${
+                        issue.level === 'error'
+                          ? 'border border-rose-200 bg-rose-50 text-rose-700'
+                          : 'border border-amber-200 bg-amber-50 text-amber-700'
+                      }`}
                     >
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                       <div>
                         <div className="font-medium">{issue.code}</div>
                         <div>{issue.message}</div>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </>
               )}
