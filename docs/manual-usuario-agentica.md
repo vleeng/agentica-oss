@@ -399,6 +399,40 @@ Las custom tools son ideales para:
 - una tool desactivada no debería usarse en producción
 - eliminar una tool que un agente usa puede romper el comportamiento del agente
 
+## 11.4 Estado operativo de las tools de librería
+
+La app muestra badges y ayudas breves para que no tengas que adivinar si una tool está lista o qué preparación necesita.
+
+Estados visibles más comunes:
+
+- `Lista`
+- `Requiere credencial`
+- `Requiere datasource`
+- `Requiere política`
+- `Requiere SMTP global`
+
+Lectura recomendada:
+
+- `Lista`: puede usarse sin preparar secretos o conexiones extra
+- `Requiere credencial`: necesita una clave externa, por ejemplo Tavily
+- `Requiere datasource`: necesita una conexión o DSN seguro
+- `Requiere política`: conviene definir dominios, métodos o headers antes de habilitarla
+- `Requiere SMTP global`: depende de la configuración de correo de la plataforma, no de una clave por tool
+
+Matriz rápida:
+
+| Capacidad | LangChain | CrewAI | Requisito principal |
+|---|---|---|---|
+| `calculator` | lista | lista | sin preparación adicional |
+| `web_search` | lista | lista | clave Tavily en backend o config global |
+| `sql_query` | operativa con setup | operativa con setup | DSN seguro y tablas permitidas |
+| `rest_api_call` | operativa con setup | operativa con setup | dominios, métodos y headers permitidos |
+| `send_email` | operativa con setup | operativa con setup | SMTP global válido |
+| RAG | lista con conocimiento cargado | lista con conocimiento cargado | knowledge base o fuentes indexadas |
+| MCP | lista con servidor activo | lista con servidor activo | servidor MCP registrado y testeado |
+
+Si necesitás el detalle técnico y operativo más fino, revisá la [matriz de operatividad de tools](./matriz-operatividad-tools.md).
+
 ## 12. Skills
 
 La librería `Skills` sirve para guardar capacidades reutilizables.
@@ -434,6 +468,12 @@ La sección `MCPs` administra servidores MCP.
 ## 13.2 Integración con agentes
 
 Los MCPs pueden asignarse a un agente desde el monitor, en la pestaña de configuración.
+
+Buenas prácticas:
+
+- registrá y testeá el servidor MCP antes de asignarlo a agentes
+- verificá cuántas tools descubrió realmente el servidor
+- si un agente usa MCP en producción, dejá trazado quién lo administra y qué endpoint expone
 
 ## 14. Conocimiento
 
@@ -862,6 +902,7 @@ Si no, podés ver invocaciones pero costo en cero.
 ## 24.3 Cuando agregás tools
 
 - definí una descripción muy clara
+- revisá el badge de estado antes de asumir que está lista
 - evitá tools con efectos ambiguos
 - testealas aisladas antes de esperar que el agente las use bien
 
@@ -918,6 +959,19 @@ El diagrama se genera desde el blueprint. Si hay problemas:
 Probá esta secuencia:
 
 1. revisar system prompt
+2. revisar tools asignadas y su estado operativo
+3. revisar conocimiento, skills o MCP conectados
+4. rebuildar si cambiaste flujo o configuración
+
+## 25.6 Una tool aparece, pero no funciona como esperabas
+
+Revisá:
+
+- si el badge indica que requiere credencial, datasource, política o SMTP global
+- si el framework del agente soporta esa capacidad en el estado actual
+- si el builder ya fue recompilado con `Rebuild`
+- si el backend registró errores de tool en logs de observabilidad
+- si la dependencia externa existe de verdad, por ejemplo un servidor MCP activo o una knowledge base lista
 2. revisar tools asignadas
 3. revisar policy y guardrails
 4. evaluar

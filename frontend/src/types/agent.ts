@@ -338,8 +338,8 @@ export const AVAILABLE_TOOLS: AvailableToolDescriptor[] = [
     category: 'información',
     state: 'needs_config',
     state_label: 'Requiere credencial',
-    setup_hint: 'Necesita una clave Tavily configurada en el backend. En CrewAI sigue en ajuste fino de compatibilidad.',
-    frameworks: { langchain: 'ready', crewai: 'limited' },
+    setup_hint: 'Necesita una clave Tavily configurada en el backend o resuelta desde configuración global.',
+    frameworks: { langchain: 'ready', crewai: 'ready' },
   },
   {
     name: 'sql_query',
@@ -356,7 +356,7 @@ export const AVAILABLE_TOOLS: AvailableToolDescriptor[] = [
     category: 'integración',
     state: 'needs_config',
     state_label: 'Requiere política',
-    setup_hint: 'Conviene definir dominios permitidos y headers por defecto antes de usarla en producción.',
+    setup_hint: 'Conviene definir dominios permitidos, métodos y headers por defecto antes de usarla en producción.',
     frameworks: { langchain: 'ready', crewai: 'ready' },
   },
   {
@@ -373,8 +373,8 @@ export const AVAILABLE_TOOLS: AvailableToolDescriptor[] = [
     description: 'Enviar emails via SMTP',
     category: 'comunicación',
     state: 'needs_config',
-    state_label: 'Requiere SMTP',
-    setup_hint: 'Depende de una configuración SMTP válida. Su integración operativa todavía necesita cerrarse mejor.',
+    state_label: 'Requiere SMTP global',
+    setup_hint: 'Depende de una configuración SMTP global válida en la plataforma; no requiere credenciales separadas por tool.',
     frameworks: { langchain: 'ready', crewai: 'ready' },
   },
 ]
