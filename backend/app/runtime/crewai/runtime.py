@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from typing import TYPE_CHECKING, AsyncIterator
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from app.components.memory.adapters import MemoryAdapter
 
 GUARDRAIL_BLOCKED_MSG = "[Respuesta bloqueada por politica de seguridad]"
+logger = logging.getLogger(__name__)
 
 
 class CrewAIRuntime(AgentRuntime):
@@ -46,6 +48,7 @@ class CrewAIRuntime(AgentRuntime):
         self._decision_plan = decision_plan or []
         self._review_llm = review_llm
         self._max_review_loops = 1
+        self._crew_kickoff_timeout_seconds = 75.0
 
     async def _load_guardrail_rules(self) -> list[dict]:
         if not self._agent_id or not self._session_factory:
@@ -131,14 +134,38 @@ class CrewAIRuntime(AgentRuntime):
 
         for attempt in range(self._max_review_loops + 1):
             compact_input = _compact_runtime_input(attempt_input)
-            result = await asyncio.to_thread(
-                self._crew.kickoff,
-                inputs={
-                    "input": attempt_input,
-                    "input_compact": compact_input,
-                    "session_id": session_id,
-                },
-            )
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._crew.kickoff,
+                        inputs={
+                            "input": attempt_input,
+                            "input_compact": compact_input,
+                            "session_id": session_id,
+                        },
+                    ),
+                    timeout=self._crew_kickoff_timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[CrewAI] kickoff timed out after %ss for agent %s; using direct fallback",
+                    int(self._crew_kickoff_timeout_seconds),
+                    self._agent_id or "unknown",
+                )
+                fallback_output = await self._direct_fallback_response(
+                    user_input=contextual_input,
+                    compact_input=compact_input,
+                )
+                return fallback_output, [
+                    {
+                        "node_id": "direct_fallback",
+                        "node_type": "fallback",
+                        "label": "Respuesta directa",
+                        "agent_name": None,
+                        "output": fallback_output,
+                        "retry_targets": [],
+                    }
+                ]
             last_result = str(result) if not isinstance(result, str) else result
             last_steps = self._collect_steps()
             last_steps = await self._evaluate_decisions(last_steps, attempt_input)
@@ -237,6 +264,30 @@ class CrewAIRuntime(AgentRuntime):
 
         return last_result
 
+    async def _direct_fallback_response(self, user_input: str, compact_input: str) -> str:
+        if self._review_llm is None:
+            return (
+                "No pude completar el flujo multi-agente a tiempo. "
+                "Probá con una consulta más corta o con un modelo más rápido."
+            )
+
+        prompt = _build_direct_fallback_prompt(self.spec.goal, user_input, compact_input)
+        try:
+            raw_output = await asyncio.to_thread(self._review_llm.call, prompt)
+        except Exception as exc:
+            logger.exception("[CrewAI] direct fallback failed for agent %s: %s", self._agent_id or "unknown", exc)
+            return (
+                "No pude completar el flujo multi-agente a tiempo y tampoco pude generar una respuesta directa útil."
+            )
+
+        cleaned = str(raw_output or "").strip()
+        if _is_low_signal_output(cleaned):
+            return (
+                "No pude completar el flujo multi-agente a tiempo. "
+                "Probá con una consulta más corta o con un modelo más rápido."
+            )
+        return cleaned
+
 
 def _split_into_sentences(text: str) -> list[str]:
     """
@@ -298,6 +349,28 @@ def _is_low_signal_output(text: str) -> bool:
         "respuesta bloqueada por politica de seguridad",
     )
     return any(marker in normalized for marker in low_signal_markers)
+
+
+def _build_direct_fallback_prompt(goal: str, user_input: str, compact_input: str) -> str:
+    return "\n\n".join(
+        [
+            "Actua como un analista senior y responde directamente al usuario.",
+            f"Objetivo general del agente: {goal}",
+            "El flujo multi-agente no terminó a tiempo. No menciones ese problema salvo que sea imprescindible.",
+            "No uses herramientas externas. Trabaja con el material provisto por el usuario.",
+            "Entrega una respuesta útil, clara y accionable.",
+            "Si el usuario compartió un CV o documento largo, prioriza:",
+            "- resumen ejecutivo del perfil",
+            "- fortalezas principales",
+            "- riesgos o vacíos",
+            "- recomendación concreta",
+            "- preguntas sugeridas para entrevista o validación",
+            "Input del usuario (resumido):",
+            compact_input,
+            "Input completo del usuario:",
+            user_input,
+        ]
+    )
 
 
 def _parse_decision_output(raw_output: str) -> dict | None:
