@@ -11,6 +11,7 @@ import type {
   KnowledgeBase,
   MCPServer,
   Skill,
+  ToolReadinessStatus,
   WizardState,
 } from '../types/agent'
 import { clearStoredToken, getAuthToken } from '../stores/auth'
@@ -582,6 +583,7 @@ export const systemApi = {
   getBuilderConfig: () => api.get('/system/builder').then(r => r.data),
   setBuilderConfig: (body: { provider: string; model: string; llm_key_id?: string }) =>
     api.put('/system/builder', body).then(r => r.data),
+  getToolReadiness: (): Promise<ToolReadinessStatus[]> => api.get('/system/tool-readiness').then(r => r.data),
   listPlans: (): Promise<PlanDefinition[]> => api.get('/system/plans').then(r => r.data),
   updatePlan: (planId: string, body: PlanDefinition): Promise<PlanDefinition> =>
     api.put(`/system/plans/${planId}`, body).then(r => r.data),

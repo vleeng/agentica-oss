@@ -310,6 +310,14 @@ export type ToolOperationalState = 'ready' | 'needs_config' | 'framework_limited
 export type ToolFrameworkState = 'ready' | 'limited' | 'unsupported'
 export type ToolFramework = 'langchain' | 'crewai'
 
+export interface ToolReadinessStatus {
+  name: string
+  configured: boolean
+  state: ToolOperationalState
+  state_label: string
+  setup_hint?: string
+}
+
 export interface AvailableToolDescriptor {
   name: string
   description: string
@@ -329,6 +337,20 @@ export function getToolFrameworkState(toolName: string, framework: ToolFramework
 
 export function isToolSupportedInFramework(toolName: string, framework: ToolFramework): boolean {
   return getToolFrameworkState(toolName, framework) !== 'unsupported'
+}
+
+export function applyToolReadiness(
+  tool: AvailableToolDescriptor,
+  readinessMap?: Record<string, ToolReadinessStatus>
+): AvailableToolDescriptor {
+  const readiness = readinessMap?.[tool.name]
+  if (!readiness) return tool
+  return {
+    ...tool,
+    state: readiness.state,
+    state_label: readiness.state_label,
+    setup_hint: readiness.setup_hint,
+  }
 }
 
 export const AVAILABLE_TOOLS: AvailableToolDescriptor[] = [

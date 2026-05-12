@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import type { AgentRoleSpec, ToolRef, WizardState } from '../../types/agent'
-import { AVAILABLE_MODELS, AVAILABLE_TOOLS } from '../../types/agent'
+import type { AgentRoleSpec, AvailableToolDescriptor, ToolRef, WizardState } from '../../types/agent'
+import { AVAILABLE_MODELS } from '../../types/agent'
 
 interface Props {
   state: WizardState
   update: (patch: Partial<WizardState>) => void
+  toolsCatalog: AvailableToolDescriptor[]
 }
 
 const ROLE_PRESETS = [
@@ -31,7 +32,7 @@ const PROCESS_OPTIONS = [
   { value: 'parallel',      label: 'Paralelo',      desc: 'Todos los agentes trabajan simultáneamente' },
 ]
 
-export function StepCrew({ state, update }: Props) {
+export function StepCrew({ state, update, toolsCatalog }: Props) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
 
   const addRole = (preset?: typeof ROLE_PRESETS[0]) => {
@@ -132,7 +133,7 @@ export function StepCrew({ state, update }: Props) {
               {/* Editor inline del rol */}
               {editingIndex === i && (
                 <div className="mt-1 p-4 border border-violet-200 rounded-lg bg-white space-y-3">
-                  <RoleEditor agent={agent} onChange={patch => updateRole(i, patch)} />
+                  <RoleEditor agent={agent} onChange={patch => updateRole(i, patch)} toolsCatalog={toolsCatalog} />
                 </div>
               )}
             </div>
@@ -202,9 +203,11 @@ export function StepCrew({ state, update }: Props) {
 function RoleEditor({
   agent,
   onChange,
+  toolsCatalog,
 }: {
   agent: AgentRoleSpec
   onChange: (patch: Partial<AgentRoleSpec>) => void
+  toolsCatalog: AvailableToolDescriptor[]
 }) {
   const inputCls = "w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
 
@@ -264,7 +267,7 @@ function RoleEditor({
       <div>
         <label className="text-xs text-gray-500 mb-2 block">Herramientas</label>
         <div className="flex flex-wrap gap-2">
-          {AVAILABLE_TOOLS.map(tool => {
+          {toolsCatalog.map(tool => {
             const selected = agent.tools.some(t => t.name === tool.name)
             const frameworkState = tool.frameworks.crewai
             const unsupported = frameworkState === 'unsupported'

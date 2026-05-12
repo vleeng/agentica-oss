@@ -8,7 +8,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from app.core.config import get_settings
 from app.core.mailer import send_email
+from app.core.mailer import is_mailer_configured
 from app.core.plan_limits import get_tenant_plan, get_tenant_usage, list_plans
 from app.core.security import CurrentContext
 from app.db.session import PublicSessionFactory, engine, provision_tenant
@@ -97,6 +99,14 @@ class TenantOverviewOut(BaseModel):
     invocations_used: int
     invocations_limit: int
     users: list[TenantOverviewUserOut]
+
+
+class ToolReadinessOut(BaseModel):
+    name: str
+    configured: bool
+    state: str
+    state_label: str
+    setup_hint: str | None = None
 
 
 async def _require_system_admin(ctx: CurrentContext) -> None:
@@ -193,6 +203,60 @@ async def get_builder_config(ctx: CurrentContext) -> BuilderConfigOut:
         llm_key_id=rows.get("builder_llm_key_id"),
         configured=bool(rows),
     )
+
+
+@router.get("/system/tool-readiness", response_model=list[ToolReadinessOut])
+async def get_tool_readiness(ctx: CurrentContext) -> list[ToolReadinessOut]:
+    ctx.require_human_user()
+    settings = get_settings()
+    tavily_ready = bool(settings.tavily_api_key)
+    smtp_ready = is_mailer_configured()
+
+    return [
+        ToolReadinessOut(
+            name="web_search",
+            configured=tavily_ready,
+            state="ready" if tavily_ready else "needs_config",
+            state_label="Configurada globalmente" if tavily_ready else "Falta Tavily global",
+            setup_hint=(
+                "La clave Tavily ya esta cargada en esta instalacion."
+                if tavily_ready
+                else "Necesita una clave Tavily configurada en el backend o resuelta desde configuracion global."
+            ),
+        ),
+        ToolReadinessOut(
+            name="sql_query",
+            configured=False,
+            state="needs_config",
+            state_label="Pendiente datasource",
+            setup_hint="Necesita un DSN o conexion segura y todavia no tiene una UX completa de configuracion.",
+        ),
+        ToolReadinessOut(
+            name="rest_api_call",
+            configured=False,
+            state="needs_config",
+            state_label="Pendiente politica",
+            setup_hint="Conviene definir dominios permitidos, metodos y headers por defecto antes de usarla en produccion.",
+        ),
+        ToolReadinessOut(
+            name="calculator",
+            configured=True,
+            state="ready",
+            state_label="Lista",
+            setup_hint="No requiere credenciales ni configuracion adicional.",
+        ),
+        ToolReadinessOut(
+            name="send_email",
+            configured=smtp_ready,
+            state="ready" if smtp_ready else "needs_config",
+            state_label="Configurada globalmente" if smtp_ready else "Falta SMTP global",
+            setup_hint=(
+                "La plataforma ya tiene un mailer SMTP valido para esta tool."
+                if smtp_ready
+                else "Depende de una configuracion SMTP global valida en la plataforma; no requiere credenciales separadas por tool."
+            ),
+        ),
+    ]
 
 @router.put("/system/builder", response_model=BuilderConfigOut)
 async def set_builder_config(body: BuilderConfig, ctx: CurrentContext) -> BuilderConfigOut:

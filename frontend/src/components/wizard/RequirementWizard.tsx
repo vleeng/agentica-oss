@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   AgentMode, WizardState, WIZARD_DEFAULTS,
-  AVAILABLE_TOOLS, AVAILABLE_MODELS, ChannelType, ToolRef
+  applyToolReadiness, AVAILABLE_TOOLS, AVAILABLE_MODELS, ChannelType, ToolReadinessStatus, ToolRef
 } from '../../types/agent'
 import { StepCrew } from './StepCrew'
 
@@ -32,8 +32,10 @@ interface Props {
 export function RequirementWizard({ onComplete }: Props) {
   const [state, setState] = useState<WizardState>(WIZARD_DEFAULTS)
   const [generating, setGenerating] = useState(false)
+  const [toolReadiness, setToolReadiness] = useState<Record<string, ToolReadinessStatus>>({})
 
   const STEPS = state.mode === 'crew' ? STEPS_CREW : STEPS_SINGLE
+  const toolsCatalog = AVAILABLE_TOOLS.map(tool => applyToolReadiness(tool, toolReadiness))
 
   const update = (patch: Partial<WizardState>) =>
     setState(prev => ({ ...prev, ...patch }))
@@ -45,6 +47,21 @@ export function RequirementWizard({ onComplete }: Props) {
     setGenerating(true)
     onComplete(state)
   }
+
+  useEffect(() => {
+    import('../../lib/api').then(({ systemApi }) =>
+      systemApi.getToolReadiness()
+        .then((rows) => {
+          const readinessMap = Object.fromEntries(
+            (Array.isArray(rows) ? rows : []).map((row) => [row.name, row] as const)
+          )
+          setToolReadiness(readinessMap)
+        })
+        .catch(() => {
+          setToolReadiness({})
+        })
+    )
+  }, [])
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
@@ -88,8 +105,8 @@ export function RequirementWizard({ onComplete }: Props) {
         >
           {state.step === 0 && <StepMode state={state} update={update} />}
           {state.step === 1 && <StepIdentity state={state} update={update} />}
-          {state.step === 2 && state.mode === 'single' && <StepTools state={state} update={update} />}
-          {state.step === 2 && state.mode === 'crew'   && <StepCrew  state={state} update={update} />}
+          {state.step === 2 && state.mode === 'single' && <StepTools state={state} update={update} toolsCatalog={toolsCatalog} />}
+          {state.step === 2 && state.mode === 'crew'   && <StepCrew  state={state} update={update} toolsCatalog={toolsCatalog} />}
           {state.step === 3 && <StepMemoryChannels state={state} update={update} />}
           {state.step === 4 && <StepModel state={state} update={update} />}
           {state.step === 5 && <StepReview state={state} />}
@@ -231,10 +248,10 @@ function StepIdentity({ state, update }: StepProps) {
 
 // ── Paso 2: Herramientas ──────────────────────────────────────────────────────
 
-function StepTools({ state, update }: StepProps) {
+function StepTools({ state, update, toolsCatalog }: StepProps & { toolsCatalog: typeof AVAILABLE_TOOLS }) {
   const [customTools, setCustomTools] = useState<Array<{ id: string; name: string; description: string; is_active: boolean }>>([])
   const [loadError, setLoadError] = useState('')
-  const selectedBuiltinTools = AVAILABLE_TOOLS.filter(tool => state.tools.some(t => t.name === tool.name))
+  const selectedBuiltinTools = toolsCatalog.filter(tool => state.tools.some(t => t.name === tool.name))
   const selectedNeedsSetup = selectedBuiltinTools.filter(tool => tool.state === 'needs_config')
   const selectedLimited = selectedBuiltinTools.filter(tool => tool.frameworks.langchain === 'limited')
 
@@ -272,7 +289,7 @@ function StepTools({ state, update }: StepProps) {
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Librería built-in</p>
         <div className="space-y-2">
-          {AVAILABLE_TOOLS.map(tool => {
+          {toolsCatalog.map(tool => {
             const selected = state.tools.some(t => t.name === tool.name)
             const frameworkState = tool.frameworks.langchain
             const unsupported = frameworkState === 'unsupported'
