@@ -2,7 +2,7 @@ import { ExternalLink, Gauge, Play, RefreshCcw, Rocket, Sparkles, Wand2 } from '
 import { useEffect, useRef, useState } from 'react'
 
 import type { AgentDesign } from '../../types/agent'
-import { agentsApi, authApi, createAgentWebSocket, type AuthMe } from '../../lib/api'
+import { agentsApi, authApi, createAgentWebSocket, normalizeAgentChatError, type AuthMe } from '../../lib/api'
 import { KnowledgePanel } from './KnowledgePanel'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { AgentEditPanel } from './AgentEditPanel'
@@ -132,9 +132,10 @@ export function AgentMonitor({ design, onOptimized }: Props) {
       setSending(false)
     }
     onErrorRef.current = (msg) => {
+      const friendlyMessage = normalizeAgentChatError(msg)
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === assistantId ? { ...m, content: `Error: ${msg}`, streaming: false } : m
+          m.id === assistantId ? { ...m, content: `Error: ${friendlyMessage}`, streaming: false } : m
         )
       )
       setSending(false)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { agentsApi, authApi, createAgentWebSocket, type AuthMe } from '../../lib/api'
+import { agentsApi, authApi, createAgentWebSocket, normalizeAgentChatError, type AuthMe } from '../../lib/api'
 import type { AgentDesign } from '../../types/agent'
 import { getAuthToken } from '../../stores/auth'
 import { RichText } from '../visual/RichText'
@@ -130,8 +130,9 @@ export function StandaloneChat({ agentId }: Props) {
       setSending(false)
     }
     onErrorRef.current = (err) => {
+      const friendlyMessage = normalizeAgentChatError(err)
       setMessages(prev => prev.map(m =>
-        m.id === assistantId ? { ...m, content: `Error: ${err}`, streaming: false } : m
+        m.id === assistantId ? { ...m, content: `Error: ${friendlyMessage}`, streaming: false } : m
       ))
       setSending(false)
     }

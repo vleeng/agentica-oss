@@ -327,6 +327,21 @@ export type WSMessage =
   | { type: 'status'; framework?: string; phase?: string; message: string; elapsed_seconds?: number; attempt?: number; retry_from?: string | null }
   | { type: 'trace'; framework?: string; phase?: string; actor?: string | null; kind?: string; message: string }
 
+export function normalizeAgentChatError(message: string): string {
+  const text = (message || '').trim()
+  const lower = text.toLowerCase()
+
+  if (lower.includes('limite de invocaciones del mes alcanzado') || lower.includes('límite de invocaciones del mes alcanzado')) {
+    return 'Este workspace agotó las invocaciones incluidas en su plan mensual. Podés esperar al próximo mes o cambiar de plan para seguir usando el chat.'
+  }
+
+  if (lower.includes('rate limit superado')) {
+    return 'Se alcanzó un límite temporal de uso. Esperá un momento y volvé a intentar.'
+  }
+
+  return text
+}
+
 export function createAgentWebSocket(
   agentId: string,
   onToken: (token: string) => void,
