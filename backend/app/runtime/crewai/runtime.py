@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import redirect_stdout
+import inspect
 import json
 import logging
 import re
+import sys
 import time
-from typing import TYPE_CHECKING, AsyncIterator
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable
 
 from fastapi import HTTPException
 
@@ -49,6 +52,10 @@ class CrewAIRuntime(AgentRuntime):
         self._review_llm = review_llm
         self._max_review_loops = 1
         self._crew_kickoff_timeout_seconds = 75.0
+        self._progress_callback: Callable[[dict[str, Any]], Any] | None = None
+
+    def set_progress_callback(self, callback: Callable[[dict[str, Any]], Any] | None) -> None:
+        self._progress_callback = callback
 
     async def _load_guardrail_rules(self) -> list[dict]:
         if not self._agent_id or not self._session_factory:
@@ -63,6 +70,7 @@ class CrewAIRuntime(AgentRuntime):
 
     async def invoke(self, input: str, session_id: str) -> AgentResponse:
         start = time.monotonic()
+        await self._emit_progress("preparing", "Preparando contexto del equipo")
 
         rules = await self._load_guardrail_rules()
         gr_in = await check_input(input, rules)
@@ -134,11 +142,19 @@ class CrewAIRuntime(AgentRuntime):
 
         for attempt in range(self._max_review_loops + 1):
             compact_input = _compact_runtime_input(attempt_input)
+            await self._emit_progress(
+                "running",
+                f"Ejecutando flujo CrewAI (intento {attempt + 1})",
+                attempt=attempt + 1,
+            )
+            heartbeat_task = asyncio.create_task(self._heartbeat_progress())
+            loop = asyncio.get_running_loop()
             try:
                 result = await asyncio.wait_for(
                     asyncio.to_thread(
-                        self._crew.kickoff,
-                        inputs={
+                        self._kickoff_with_trace,
+                        loop,
+                        {
                             "input": attempt_input,
                             "input_compact": compact_input,
                             "session_id": session_id,
@@ -147,10 +163,16 @@ class CrewAIRuntime(AgentRuntime):
                     timeout=self._crew_kickoff_timeout_seconds,
                 )
             except asyncio.TimeoutError:
+                heartbeat_task.cancel()
+                await _await_cancellation(heartbeat_task)
                 logger.warning(
                     "[CrewAI] kickoff timed out after %ss for agent %s; using direct fallback",
                     int(self._crew_kickoff_timeout_seconds),
                     self._agent_id or "unknown",
+                )
+                await self._emit_progress(
+                    "fallback",
+                    "El equipo tardó demasiado; generando una respuesta directa",
                 )
                 fallback_output = await self._direct_fallback_response(
                     user_input=contextual_input,
@@ -166,23 +188,35 @@ class CrewAIRuntime(AgentRuntime):
                         "retry_targets": [],
                     }
                 ]
+            heartbeat_task.cancel()
+            await _await_cancellation(heartbeat_task)
+            await self._emit_progress("running", "El equipo completó el ciclo principal")
             last_result = str(result) if not isinstance(result, str) else result
             last_steps = self._collect_steps()
+            await self._emit_progress("review", "Revisando resultados del flujo")
             last_steps = await self._evaluate_decisions(last_steps, attempt_input)
 
             decision = self._find_rejection_decision(last_steps)
             if not decision:
+                await self._emit_progress("completed", "Respuesta lista para entregar")
                 return self._resolve_visible_output(last_result, last_steps), last_steps
 
             if attempt >= self._max_review_loops:
+                await self._emit_progress("completed", "Respuesta lista para entregar")
                 return self._resolve_visible_output(last_result, last_steps), last_steps
 
+            await self._emit_progress(
+                "retry",
+                "La revisión pidió una nueva iteración del flujo",
+                retry_from=decision.get("retry_from"),
+            )
             attempt_input = _augment_input_with_review_feedback(
                 original_input=contextual_input,
                 reason=decision.get("reason") or "La revision pidio mas trabajo.",
                 retry_from=decision.get("retry_from"),
             )
 
+        await self._emit_progress("completed", "Respuesta lista para entregar")
         return self._resolve_visible_output(last_result, last_steps), last_steps
 
     def _collect_steps(self) -> list[dict]:
@@ -288,6 +322,50 @@ class CrewAIRuntime(AgentRuntime):
             )
         return cleaned
 
+    def _kickoff_with_trace(self, loop: asyncio.AbstractEventLoop, inputs: dict[str, Any]):
+        tracer = _CrewVerboseTracer(self, loop, target=sys.stdout)
+        with redirect_stdout(tracer):
+            return self._crew.kickoff(inputs=inputs)
+
+    async def _heartbeat_progress(self) -> None:
+        started_at = time.monotonic()
+        while True:
+            await asyncio.sleep(10)
+            elapsed_seconds = int(time.monotonic() - started_at)
+            await self._emit_progress(
+                "running",
+                f"El equipo sigue trabajando ({elapsed_seconds}s)",
+                elapsed_seconds=elapsed_seconds,
+            )
+
+    async def _emit_progress(self, phase: str, message: str, **extra: Any) -> None:
+        logger.info(
+            "[CrewAI][Progress] agent_id=%s phase=%s message=%s extra=%s",
+            self._agent_id or "unknown",
+            phase,
+            message,
+            extra or {},
+        )
+        callback = self._progress_callback
+        if callback is None:
+            return
+        payload = {"framework": "crewai", "phase": phase, "message": message, **extra}
+        try:
+            result = callback(payload)
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            logger.debug("[CrewAI][Progress] callback failed: %s", exc)
+
+    def _emit_progress_from_thread(self, loop: asyncio.AbstractEventLoop, phase: str, message: str, **extra: Any) -> None:
+        try:
+            loop.call_soon_threadsafe(
+                asyncio.create_task,
+                self._emit_progress(phase, message, **extra),
+            )
+        except Exception as exc:
+            logger.debug("[CrewAI][Progress] thread callback failed: %s", exc)
+
 
 def _split_into_sentences(text: str) -> list[str]:
     """
@@ -371,6 +449,113 @@ def _build_direct_fallback_prompt(goal: str, user_input: str, compact_input: str
             user_input,
         ]
     )
+
+
+async def _await_cancellation(task: asyncio.Task | None) -> None:
+    if task is None:
+        return
+    try:
+        await task
+    except asyncio.CancelledError:
+        return
+
+
+class _CrewVerboseTracer:
+    def __init__(self, runtime: CrewAIRuntime, loop: asyncio.AbstractEventLoop, target=None):
+        self._runtime = runtime
+        self._loop = loop
+        self._target = target
+        self._line_buffer = ""
+        self._current_agent: str | None = None
+        self._collecting_answer = False
+        self._answer_lines: list[str] = []
+
+    def write(self, text: str) -> int:
+        if self._target is not None:
+            try:
+                self._target.write(text)
+            except Exception:
+                pass
+
+        self._line_buffer += text
+        while "\n" in self._line_buffer:
+            line, self._line_buffer = self._line_buffer.split("\n", 1)
+            self._consume_line(line.rstrip("\r"))
+        return len(text)
+
+    def flush(self) -> None:
+        if self._target is not None:
+            try:
+                self._target.flush()
+            except Exception:
+                pass
+
+    def _consume_line(self, line: str) -> None:
+        stripped = line.strip()
+        if self._collecting_answer:
+            if stripped.startswith("# Agent:") or stripped.startswith("## "):
+                self._emit_answer_trace()
+                self._collecting_answer = False
+            elif not stripped:
+                self._emit_answer_trace()
+                self._collecting_answer = False
+                return
+            else:
+                self._answer_lines.append(line)
+                return
+
+        if not stripped:
+            return
+        if stripped.startswith("# Agent:"):
+            self._current_agent = stripped.split(":", 1)[1].strip() or None
+            self._runtime._emit_progress_from_thread(
+                self._loop,
+                "trace",
+                f"{self._current_agent} tomó el siguiente paso",
+                actor=self._current_agent,
+                kind="agent",
+            )
+            return
+        if stripped.startswith("## Task:"):
+            message = stripped.split(":", 1)[1].strip()
+            self._runtime._emit_progress_from_thread(
+                self._loop,
+                "trace",
+                message,
+                actor=self._current_agent,
+                kind="task",
+            )
+            return
+        if stripped.startswith("## Using tool:"):
+            message = stripped.split(":", 1)[1].strip()
+            self._runtime._emit_progress_from_thread(
+                self._loop,
+                "trace",
+                f"Usando tool: {message}",
+                actor=self._current_agent,
+                kind="tool",
+            )
+            return
+        if stripped.startswith("## Final Answer:"):
+            self._collecting_answer = True
+            self._answer_lines = []
+            return
+
+    def _emit_answer_trace(self) -> None:
+        if not self._answer_lines:
+            return
+        answer = "\n".join(line for line in self._answer_lines if line.strip()).strip()
+        if not answer:
+            return
+        if len(answer) > 1800:
+            answer = answer[:1797].rstrip() + "..."
+        self._runtime._emit_progress_from_thread(
+            self._loop,
+            "trace",
+            answer,
+            actor=self._current_agent,
+            kind="answer",
+        )
 
 
 def _parse_decision_output(raw_output: str) -> dict | None:

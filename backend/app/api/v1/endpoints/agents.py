@@ -185,19 +185,23 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
 
             try:
                 async def _do_stream() -> tuple[str, int, int]:
+                    runtime.set_progress_callback(_make_ws_progress_sender(websocket))
                     collected: list[str] = []
-                    async for token in runtime.stream(user_input, session_id):
-                        await websocket.send_json({"type": "token", "content": token})
-                        collected.append(token)
+                    try:
+                        async for token in runtime.stream(user_input, session_id):
+                            await websocket.send_json({"type": "token", "content": token})
+                            collected.append(token)
 
-                    if collected:
-                        return "".join(collected).strip(), 0, 0
+                        if collected:
+                            return "".join(collected).strip(), 0, 0
 
-                    logger.warning("[WS] stream yielded no tokens for agent %s - falling back to invoke", agent_id)
-                    response = await asyncio.wait_for(runtime.invoke(user_input, session_id), timeout=WS_INVOKE_TIMEOUT_SECONDS)
-                    if response.output:
-                        await websocket.send_json({"type": "token", "content": response.output})
-                    return response.output, response.tokens_in, response.tokens_out
+                        logger.warning("[WS] stream yielded no tokens for agent %s - falling back to invoke", agent_id)
+                        response = await asyncio.wait_for(runtime.invoke(user_input, session_id), timeout=WS_INVOKE_TIMEOUT_SECONDS)
+                        if response.output:
+                            await websocket.send_json({"type": "token", "content": response.output})
+                        return response.output, response.tokens_in, response.tokens_out
+                    finally:
+                        runtime.set_progress_callback(None)
 
                 output, reported_tokens_in, reported_tokens_out = await asyncio.wait_for(_do_stream(), timeout=WS_INVOKE_TIMEOUT_SECONDS)
                 await _persist_usage_event(
@@ -731,3 +735,12 @@ def _format_runtime_error(exc: Exception) -> str:
         return "La credencial del proveedor LLM no es valida para este modelo."
 
     return message
+
+
+def _make_ws_progress_sender(websocket: WebSocket):
+    async def _send(payload: dict) -> None:
+        phase = str(payload.get("phase") or "").strip().lower()
+        message_type = "trace" if phase == "trace" else "status"
+        await websocket.send_json({"type": message_type, **payload})
+
+    return _send

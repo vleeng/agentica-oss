@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from typing import AsyncIterator
+from typing import Any, AsyncIterator, Callable
 
 from app.schemas.agent import AgentResponse, AgentSpec
 
@@ -41,3 +41,7 @@ class AgentRuntime(ABC):
 
     def get_spec(self) -> AgentSpec:
         return self.spec
+
+    def set_progress_callback(self, callback: Callable[[dict[str, Any]], Any] | None) -> None:
+        """Hook opcional para notificar progreso al caller."""
+        return None

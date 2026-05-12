@@ -323,12 +323,16 @@ export type WSMessage =
   | { type: 'token'; content: string }
   | { type: 'done'; session_id: string }
   | { type: 'error'; message: string }
+  | { type: 'status'; framework?: string; phase?: string; message: string; elapsed_seconds?: number; attempt?: number; retry_from?: string | null }
+  | { type: 'trace'; framework?: string; phase?: string; actor?: string | null; kind?: string; message: string }
 
 export function createAgentWebSocket(
   agentId: string,
   onToken: (token: string) => void,
   onDone: (sessionId: string) => void,
   onError: (msg: string) => void,
+  onStatus: (payload: Extract<WSMessage, { type: 'status' }>) => void = () => {},
+  onTrace: (payload: Extract<WSMessage, { type: 'trace' }>) => void = () => {},
   options: { apiKey?: string } = {}
 ): {
   send: (input: string, sessionId: string) => void
@@ -363,6 +367,8 @@ export function createAgentWebSocket(
         if (msg.type === 'token') onToken(msg.content)
         else if (msg.type === 'done') onDone(msg.session_id)
         else if (msg.type === 'error') onError(msg.message)
+        else if (msg.type === 'status') onStatus(msg)
+        else if (msg.type === 'trace') onTrace(msg)
       } catch {
         // ignore malformed messages
       }

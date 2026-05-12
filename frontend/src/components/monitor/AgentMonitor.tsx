@@ -24,9 +24,11 @@ type TabId = 'sandbox' | 'eval' | 'design' | 'knowledge' | 'config' | 'edit'
 
 interface ChatMessage {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'trace'
   content: string
   streaming?: boolean
+  actor?: string
+  kind?: string
 }
 
 function stripMermaidFromPrompt(prompt: string) {
@@ -64,6 +66,8 @@ export function AgentMonitor({ design, onOptimized }: Props) {
   const onTokenRef = useRef<(token: string) => void>(() => {})
   const onDoneRef  = useRef<(sid: string) => void>(() => {})
   const onErrorRef = useRef<(msg: string) => void>(() => {})
+  const onStatusRef = useRef<(payload: { message: string }) => void>(() => {})
+  const onTraceRef = useRef<(payload: { actor?: string | null; kind?: string; message: string }) => void>(() => {})
 
   useEffect(() => {
     handleBuild()
@@ -135,13 +139,38 @@ export function AgentMonitor({ design, onOptimized }: Props) {
       )
       setSending(false)
     }
+    onStatusRef.current = (payload) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `status_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+          role: 'trace',
+          content: payload.message,
+          kind: 'status',
+        },
+      ])
+    }
+    onTraceRef.current = (payload) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `trace_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+          role: 'trace',
+          content: payload.message,
+          actor: payload.actor || undefined,
+          kind: payload.kind,
+        },
+      ])
+    }
 
     if (!wsRef.current) {
       wsRef.current = createAgentWebSocket(
         design.agent_id,
         (token) => onTokenRef.current(token),
         (sid)   => onDoneRef.current(sid),
-        (msg)   => onErrorRef.current(msg)
+        (msg)   => onErrorRef.current(msg),
+        (payload) => onStatusRef.current(payload),
+        (payload) => onTraceRef.current(payload),
       )
     }
 
@@ -348,11 +377,18 @@ export function AgentMonitor({ design, onOptimized }: Props) {
                       className={`max-w-2xl rounded-2xl px-4 py-3 shadow-sm ${
                         message.role === 'user'
                           ? 'bg-violet-600 text-white'
+                          : message.role === 'trace'
+                          ? 'border border-dashed border-slate-200 bg-slate-50 text-slate-500 italic'
                           : 'border border-slate-200 bg-white text-slate-800'
                       }`}
                     >
                       {message.role === 'user' ? (
                         <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
+                      ) : message.role === 'trace' ? (
+                        <div className="space-y-1">
+                          {message.actor && <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 not-italic">{message.actor}</div>}
+                          <p className="whitespace-pre-wrap text-xs leading-5">{message.content}</p>
+                        </div>
                       ) : (
                         <>
                           {message.content ? <RichText content={message.content} /> : message.streaming && <span className="animate-pulse">●</span>}
