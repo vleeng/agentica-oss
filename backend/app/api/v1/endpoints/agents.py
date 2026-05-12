@@ -178,6 +178,16 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
                 continue
 
             try:
+                from app.core.rate_limiter import get_rate_limiter
+                from app.core.plan_limits import plan_checker
+
+                await get_rate_limiter().check(ctx.tenant_id, scope="invoke")
+                await plan_checker.check_can_invoke(ctx.tenant_id)
+            except HTTPException as exc:
+                await websocket.send_json({"type": "error", "message": str(exc.detail)})
+                continue
+
+            try:
                 runtime, _design = await _get_runtime(agent_id, ctx)
             except HTTPException as exc:
                 await websocket.send_json({"type": "error", "message": exc.detail})
