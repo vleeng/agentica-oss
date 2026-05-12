@@ -390,19 +390,6 @@ function StepTools({ state, update, toolsCatalog }: StepProps & { toolsCatalog: 
         </div>
       )}
 
-      {state.mode === 'single' && (
-        <Field label="Nivel de autonomía" hint="Qué tanto decide el agente sin pedir confirmación">
-          <select
-            value={state.autonomy_level}
-            onChange={e => update({ autonomy_level: e.target.value as typeof state.autonomy_level })}
-            className={inputCls}
-          >
-            <option value="reactive">Reactivo — solo responde cuando lo invocan</option>
-            <option value="semi">Semi-autónomo — puede hacer follow-up, pide confirmación en acciones importantes</option>
-            <option value="autonomous">Autónomo — ejecuta sin pedir confirmación</option>
-          </select>
-        </Field>
-      )}
     </div>
   )
 }

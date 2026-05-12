@@ -511,7 +511,7 @@ export function wizardStateToSpec(state: WizardState, tenantId: string): AgentSp
     memory: state.memory,
     rag: state.rag,
     tools: state.tools,
-    autonomy_level: state.autonomy_level,
+    autonomy_level: 'reactive',
     agents: state.agents,
     process: state.process,
   }
