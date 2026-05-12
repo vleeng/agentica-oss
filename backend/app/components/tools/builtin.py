@@ -1,46 +1,49 @@
 from __future__ import annotations
 
 """
-Component Library — Tools built-in v1.
-Cada tool es una LangChain BaseTool lista para ser inyectada en cualquier AgentExecutor.
-También son compatibles con CrewAI a través del adaptador en builders/crewai/.
+Component Library - Built-in tools.
+
+Las tools se instancian como BaseTool de LangChain y, cuando hace falta,
+exponen adaptadores mas simples para CrewAI.
 """
 
 import asyncio
+import ipaddress
 import json
+import re
 from typing import Any, Optional, Type
+from urllib.parse import urlparse
 
 import httpx
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.core.mailer import MailerNotConfiguredError, is_mailer_configured, send_email
 
-
-# ── 1. Web Search (Tavily) ────────────────────────────────────────────────────
 
 class WebSearchInput(BaseModel):
-    query: str = Field(description="Consulta de búsqueda en lenguaje natural")
+    query: str = Field(description="Consulta de busqueda en lenguaje natural")
     max_results: int = Field(default=5, ge=1, le=10)
 
 
 class WebSearchTool(BaseTool):
     name: str = "web_search"
     description: str = (
-        "Busca información actualizada en internet. "
-        "Úsala cuando necesites datos recientes o verificar hechos."
+        "Busca informacion actualizada en internet. "
+        "Usala cuando necesites datos recientes o verificar hechos."
     )
     args_schema: Type[BaseModel] = WebSearchInput
     api_key: str = ""
 
     def _run(self, query: str, max_results: int = 5) -> str:
-        raise NotImplementedError("Usar arun() para operaciones async")
+        return asyncio.run(self._arun(query=query, max_results=max_results))
 
     async def _arun(self, query: str, max_results: int = 5) -> str:
         if not self.api_key:
             return (
                 "[web_search no disponible: no hay clave Tavily configurada. "
-                "Respondé con tu conocimiento existente sin usar esta herramienta.]"
+                "Responde con tu conocimiento existente sin usar esta herramienta.]"
             )
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -56,16 +59,14 @@ class WebSearchTool(BaseTool):
                     for r in results
                 ) or "Sin resultados."
         except Exception as e:
-            return f"[web_search error: {e}. Respondé con tu conocimiento existente.]"
+            return f"[web_search error: {e}. Responde con tu conocimiento existente.]"
 
-
-# ── 2. SQL Query ──────────────────────────────────────────────────────────────
 
 class CrewAIWebSearchInput(BaseModel):
     query: str = Field(
         description=(
-            "Consulta de bÃºsqueda en lenguaje natural. "
-            "TambiÃ©n acepta JSON serializado con una clave 'query'."
+            "Consulta de busqueda en lenguaje natural. "
+            "Tambien acepta JSON serializado con una clave 'query'."
         )
     )
 
@@ -106,17 +107,14 @@ def _extract_search_payload(raw_query: str) -> tuple[str, int]:
 
 class CrewAIWebSearchTool(BaseTool):
     """
-    Adaptador para CrewAI.
-
-    CrewAI tiende a funcionar mejor con tools de un solo argumento y
-    ejecuciÃ³n sincrÃ³nica. AdemÃ¡s toleramos inputs serializados para que
-    un Action Input ligeramente malformado no haga caer toda la ejecuciÃ³n.
+    CrewAI trabaja con mas estabilidad con tools de un solo argumento y
+    ejecucion sincronica.
     """
 
     name: str = "web_search"
     description: str = (
-        "Busca informaciÃ³n actualizada en internet. "
-        "Recibe una consulta simple en lenguaje natural y devuelve hallazgos resumidos."
+        "Busca informacion actualizada en internet. "
+        "Recibe una consulta simple y devuelve hallazgos resumidos."
     )
     args_schema: Type[BaseModel] = CrewAIWebSearchInput
     api_key: str = ""
@@ -124,7 +122,7 @@ class CrewAIWebSearchTool(BaseTool):
     def _run(self, query: str) -> str:
         normalized_query, max_results = _extract_search_payload(query)
         if not normalized_query:
-            return "[web_search error: consulta vacia. PedÃ­ una bÃºsqueda concreta.]"
+            return "[web_search error: consulta vacia. Pedi una busqueda concreta.]"
         return asyncio.run(self._arun(normalized_query, max_results=max_results))
 
     async def _arun(self, query: str, max_results: int = 5) -> str:
@@ -133,34 +131,63 @@ class CrewAIWebSearchTool(BaseTool):
 
 
 class SQLQueryInput(BaseModel):
-    query: str = Field(description="Query SQL SELECT (solo lectura)")
+    query: str = Field(description="Query SQL SELECT de solo lectura")
+
+
+def _extract_table_names(query: str) -> set[str]:
+    matches = re.findall(r"\b(?:FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_\.]*)", query, flags=re.IGNORECASE)
+    normalized: set[str] = set()
+    for match in matches:
+        table = match.split(".")[-1].strip().strip('"').strip("'")
+        if table:
+            normalized.add(table.lower())
+    return normalized
+
+
+def _query_uses_allowed_tables(query: str, allowed_tables: list[str]) -> bool:
+    if not allowed_tables:
+        return True
+    referenced = _extract_table_names(query)
+    allowed = {table.lower() for table in allowed_tables}
+    return referenced.issubset(allowed)
 
 
 class SQLQueryTool(BaseTool):
     name: str = "sql_query"
     description: str = (
         "Ejecuta consultas SQL de solo lectura sobre la base de datos configurada. "
-        "Úsala para obtener datos estructurados. Solo permite SELECT."
+        "Usala para obtener datos estructurados. Solo permite SELECT."
     )
     args_schema: Type[BaseModel] = SQLQueryInput
     dsn: str = ""
     allowed_tables: list[str] = Field(default_factory=list)
 
     def _run(self, query: str) -> str:
-        raise NotImplementedError("Usar arun()")
+        return asyncio.run(self._arun(query))
 
     async def _arun(self, query: str) -> str:
+        if not self.dsn:
+            return (
+                "[sql_query no disponible: no hay datasource configurado. "
+                "Defini un DSN seguro antes de usar esta herramienta.]"
+            )
+
         q_upper = query.strip().upper()
         if not q_upper.startswith("SELECT"):
             return "Error: solo se permiten consultas SELECT."
 
+        if not _query_uses_allowed_tables(query, self.allowed_tables):
+            allowed = ", ".join(self.allowed_tables) or "ninguna"
+            return f"Error: la consulta referencia tablas fuera de la allowlist. Tablas permitidas: {allowed}."
+
         import asyncpg
+
         try:
             conn = await asyncpg.connect(self.dsn)
             rows = await conn.fetch(query)
             await conn.close()
             if not rows:
-                return "La consulta no devolvió resultados."
+                return "La consulta no devolvio resultados."
             cols = list(rows[0].keys())
             lines = [" | ".join(cols)]
             lines += [" | ".join(str(r[c]) for c in cols) for r in rows[:50]]
@@ -168,30 +195,43 @@ class SQLQueryTool(BaseTool):
                 lines.append(f"... ({len(rows) - 50} filas adicionales omitidas)")
             return "\n".join(lines)
         except Exception as e:
-            return f"Error en SQL: {str(e)}"
+            return f"Error en SQL: {e}"
 
-
-# ── 3. REST API Call ──────────────────────────────────────────────────────────
 
 class RESTAPIInput(BaseModel):
     url: str = Field(description="URL completa del endpoint")
     method: str = Field(default="GET", description="HTTP method: GET, POST, PUT, DELETE")
-    body: Optional[dict] = Field(default=None, description="Body JSON para POST/PUT")
+    body: Optional[dict] = Field(default=None, description="Body JSON para POST o PUT")
     headers: Optional[dict] = Field(default=None, description="Headers adicionales")
+
+
+def _is_private_host(hostname: str) -> bool:
+    if not hostname:
+        return True
+    lowered = hostname.lower()
+    if lowered in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    try:
+        ip = ipaddress.ip_address(lowered)
+    except ValueError:
+        return False
+    return ip.is_private or ip.is_loopback or ip.is_link_local
 
 
 class RESTAPITool(BaseTool):
     name: str = "rest_api_call"
     description: str = (
         "Realiza llamadas HTTP a APIs externas. "
-        "Úsala para integrar con servicios web o APIs REST."
+        "Usala para integrar con servicios web o APIs REST."
     )
     args_schema: Type[BaseModel] = RESTAPIInput
-    allowed_domains: list[str] = Field(default_factory=list)  # vacío = sin restricción
+    allowed_domains: list[str] = Field(default_factory=list)
     default_headers: dict = Field(default_factory=dict)
+    allowed_methods: list[str] = Field(default_factory=lambda: ["GET", "POST", "PUT", "DELETE"])
+    allow_unrestricted: bool = False
 
     def _run(self, **kwargs: Any) -> str:
-        raise NotImplementedError("Usar arun()")
+        return asyncio.run(self._arun(**kwargs))
 
     async def _arun(
         self,
@@ -200,37 +240,51 @@ class RESTAPITool(BaseTool):
         body: Optional[dict] = None,
         headers: Optional[dict] = None,
     ) -> str:
-        if self.allowed_domains:
-            from urllib.parse import urlparse
-            domain = urlparse(url).netloc
-            if not any(domain.endswith(d) for d in self.allowed_domains):
-                return f"Error: dominio {domain} no permitido."
+        normalized_method = (method or "GET").upper()
+        if normalized_method not in {m.upper() for m in self.allowed_methods}:
+            allowed = ", ".join(self.allowed_methods)
+            return f"Error: metodo HTTP no permitido. Metodos habilitados: {allowed}."
+
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return "Error: la URL debe ser http(s) valida."
+
+        hostname = parsed.hostname or ""
+        if not self.allow_unrestricted:
+            if not self.allowed_domains:
+                return (
+                    "[rest_api_call no disponible: faltan dominios permitidos. "
+                    "Defini allowed_domains o habilita explicitamente un modo unrestricted.]"
+                )
+            if not any(hostname == d or hostname.endswith(f".{d}") for d in self.allowed_domains):
+                return f"Error: dominio {hostname} no permitido."
+            if _is_private_host(hostname):
+                return f"Error: no se permiten destinos privados o locales ({hostname})."
 
         merged_headers = {**self.default_headers, **(headers or {})}
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.request(method, url, json=body, headers=merged_headers)
+            resp = await client.request(normalized_method, url, json=body, headers=merged_headers)
             try:
                 return json.dumps(resp.json(), ensure_ascii=False, indent=2)
             except Exception:
                 return resp.text[:2000]
 
 
-# ── 4. Calculator ─────────────────────────────────────────────────────────────
-
 class CalculatorInput(BaseModel):
-    expression: str = Field(description="Expresión matemática a evaluar, ej: 2 + 2 * 10")
+    expression: str = Field(description="Expresion matematica a evaluar, ej: 2 + 2 * 10")
 
 
 class CalculatorTool(BaseTool):
     name: str = "calculator"
     description: str = (
-        "Evalúa expresiones matemáticas con precisión. "
+        "Evalua expresiones matematicas con precision. "
         "Soporta +, -, *, /, **, sqrt(), log(), round(), etc."
     )
     args_schema: Type[BaseModel] = CalculatorInput
 
     def _run(self, expression: str) -> str:
         import math
+
         safe_globals = {
             "__builtins__": {},
             "sqrt": math.sqrt,
@@ -255,77 +309,62 @@ class CalculatorTool(BaseTool):
         return self._run(expression)
 
 
-# ── 5. Send Email ─────────────────────────────────────────────────────────────
-
 class SendEmailInput(BaseModel):
-    to: str = Field(description="Dirección de email del destinatario")
+    to: str = Field(description="Direccion de email del destinatario")
     subject: str = Field(description="Asunto del email")
     body: str = Field(description="Cuerpo del email en texto plano o HTML")
-    html: bool = Field(default=False, description="Si True, el body se envía como HTML")
+    html: bool = Field(default=False, description="Si True, el body se envia como HTML")
 
 
 class SendEmailTool(BaseTool):
     name: str = "send_email"
     description: str = (
-        "Envía un email al destinatario especificado. "
-        "Úsala para notificaciones, reportes o comunicaciones automatizadas."
+        "Envia un email al destinatario especificado. "
+        "Usala para notificaciones, reportes o comunicaciones automatizadas."
     )
     args_schema: Type[BaseModel] = SendEmailInput
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    from_address: str = ""
 
     def _run(self, to: str, subject: str, body: str, html: bool = False) -> str:
-        raise NotImplementedError("Usar arun()")
+        return asyncio.run(self._arun(to=to, subject=subject, body=body, html=html))
 
     async def _arun(self, to: str, subject: str, body: str, html: bool = False) -> str:
-        if not self.smtp_user or not self.smtp_password:
+        if not is_mailer_configured():
             return (
-                "[send_email no disponible: credenciales SMTP no configuradas. "
-                "Indicale al usuario que esta funcionalidad requiere configuración adicional "
-                "y ofrecé alternativas manuales si corresponde.]"
+                "[send_email no disponible: el mailer global no esta configurado. "
+                "Pedile a un administrador que complete SMTP en la configuracion del servidor.]"
             )
-        import aiosmtplib
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-
-        msg = MIMEMultipart("alternative")
-        msg["From"]    = self.from_address or self.smtp_user
-        msg["To"]      = to
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body, "html" if html else "plain", "utf-8"))
 
         try:
-            await aiosmtplib.send(
-                msg,
-                hostname=self.smtp_host,
-                port=self.smtp_port,
-                username=self.smtp_user,
-                password=self.smtp_password,
-                start_tls=True,
+            await send_email(
+                to_email=to,
+                subject=subject,
+                text_body=body,
+                html_body=body if html else None,
             )
             return f"Email enviado exitosamente a {to}."
+        except MailerNotConfiguredError:
+            return (
+                "[send_email no disponible: el mailer global no esta configurado. "
+                "Pedile a un administrador que complete SMTP en la configuracion del servidor.]"
+            )
         except Exception as e:
-            return f"[Error al enviar email: {e}. Informá al usuario y sugerí alternativas.]"
+            return f"[Error al enviar email: {e}. Informa al usuario y sugeri alternativas.]"
 
-
-# ── Registry — mapeo nombre → clase ──────────────────────────────────────────
 
 TOOL_REGISTRY: dict[str, type[BaseTool]] = {
-    "web_search":    WebSearchTool,
-    "sql_query":     SQLQueryTool,
+    "web_search": WebSearchTool,
+    "sql_query": SQLQueryTool,
     "rest_api_call": RESTAPITool,
-    "calculator":    CalculatorTool,
-    "send_email":    SendEmailTool,
+    "calculator": CalculatorTool,
+    "send_email": SendEmailTool,
 }
 
 
 def get_tool(name: str, config: dict, framework: str = "langchain") -> BaseTool:
-    """Instancia una tool por nombre con su configuración."""
+    """Instancia una tool por nombre con su configuracion."""
     if name not in TOOL_REGISTRY:
         raise ValueError(f"Tool '{name}' no encontrada en la Component Library.")
+
     hydrated_config = dict(config or {})
     settings = get_settings()
 
