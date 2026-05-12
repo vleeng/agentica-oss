@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import os
 from types import MethodType
 from typing import Any
+import json
 
 from app.schemas.agent import ModelParams
 
@@ -87,10 +88,78 @@ def bind_crewai_call_adapter(llm: Any, provider: str):
             params["max_tokens"] = getattr(self, "max_tokens", None)
 
         response = litellm.completion(**{k: v for k, v in params.items() if v is not None})
-        return response["choices"][0]["message"]["content"]
+        return _coerce_crewai_response_text(response)
 
     llm.call = MethodType(_call, llm)
     return llm
+
+
+def _get_field(obj: Any, key: str, default: Any = None) -> Any:
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _stringify_content(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            item_type = _get_field(item, "type")
+            if item_type in {"text", "output_text"}:
+                text_value = _get_field(item, "text") or _get_field(item, "content")
+                if text_value:
+                    parts.append(str(text_value))
+        return "\n".join(part for part in parts if part).strip()
+    return str(content)
+
+
+def _format_tool_call_for_crewai(tool_call: Any) -> str:
+    function_block = _get_field(tool_call, "function", tool_call)
+    tool_name = _get_field(function_block, "name") or _get_field(tool_call, "name") or "tool"
+    raw_arguments = _get_field(function_block, "arguments") or _get_field(tool_call, "arguments") or "{}"
+    if isinstance(raw_arguments, str):
+        action_input = raw_arguments.strip() or "{}"
+    else:
+        try:
+            action_input = json.dumps(raw_arguments, ensure_ascii=False)
+        except Exception:
+            action_input = "{}"
+    return (
+        "Thought: I should use a tool to continue.\n"
+        f"Action: {tool_name}\n"
+        f"Action Input: {action_input}"
+    )
+
+
+def _coerce_crewai_response_text(response: Any) -> str:
+    choices = _get_field(response, "choices", []) or []
+    first_choice = choices[0] if choices else None
+    message = _get_field(first_choice, "message", {})
+    content = _stringify_content(_get_field(message, "content"))
+    if content.strip():
+        return content
+
+    tool_calls = _get_field(message, "tool_calls", []) or []
+    if tool_calls:
+        return _format_tool_call_for_crewai(tool_calls[0])
+
+    finish_reason = _get_field(first_choice, "finish_reason")
+    if finish_reason == "tool_calls":
+        return (
+            "Thought: I now can give a great answer\n"
+            "Final Answer: No pude convertir la respuesta del modelo a un formato util para CrewAI."
+        )
+
+    return "Thought: I now can give a great answer\nFinal Answer: No pude generar una respuesta util."
 
 
 def infer_provider(params: ModelParams) -> str:
