@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import inspect
+import json
 import logging
 import re
-import warnings
 import time
-from typing import TYPE_CHECKING, AsyncIterator
+import warnings
+from collections import defaultdict
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable
 
 from fastapi import HTTPException
+from langchain.tools import BaseTool
+
+from app.components.guardrails.guardrail_engine import check_input, check_output
 from app.runtime.base import AgentRuntime
 from app.schemas.agent import AgentResponse, AgentSpec
-from app.components.guardrails.guardrail_engine import check_input, check_output
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +22,7 @@ if TYPE_CHECKING:
     from langchain.agents import AgentExecutor
     from app.components.memory.base import MemoryAdapter
 
-GUARDRAIL_BLOCKED_MSG = "[Respuesta bloqueada por política de seguridad]"
+GUARDRAIL_BLOCKED_MSG = "[Respuesta bloqueada por politica de seguridad]"
 
 # Patrones XML que algunos modelos emiten como texto en lugar de function calls
 _XML_TOOL_PATTERNS = re.compile(
@@ -31,25 +36,52 @@ _XML_TOOL_PATTERNS = re.compile(
 def _strip_xml_tool_calls(text: str) -> str:
     """Elimina bloques XML de tool calls que algunos modelos emiten como texto plano."""
     cleaned = _XML_TOOL_PATTERNS.sub('', text)
-    # Comprimir espacios y saltos de línea múltiples
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
     return cleaned.strip()
 
 
+def _coerce_message_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    content = getattr(value, "content", value)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            item_type = getattr(item, "type", None) if not isinstance(item, dict) else item.get("type")
+            if item_type in {"text", "output_text"}:
+                text = getattr(item, "text", None) if not isinstance(item, dict) else item.get("text")
+                if text:
+                    parts.append(str(text))
+        return "\n".join(part for part in parts if part).strip()
+    return str(content)
+
+
 class LangChainRuntime(AgentRuntime):
     """
-    Wrappea un LangChain AgentExecutor O un chain simple (prompt | llm | parser).
+    Wrappea un LangChain AgentExecutor, una chain simple o un runtime de grafo.
     Usado para AgentSpec.mode == 'single'.
     """
 
     def __init__(
         self,
-        executor,                 # AgentExecutor | Runnable chain
+        executor,                 # AgentExecutor | Runnable chain | None
         memory_adapter: "MemoryAdapter",
         spec: AgentSpec,
         agent_id: str = "",
         session_factory=None,
         is_simple_chain: bool = False,
+        graph_blueprint: dict[str, Any] | None = None,
+        llm=None,
+        system_prompt: str = "",
+        tools_by_name: dict[str, BaseTool] | None = None,
+        graph_enabled: bool = False,
     ):
         self._executor = executor
         self._memory = memory_adapter
@@ -57,6 +89,16 @@ class LangChainRuntime(AgentRuntime):
         self._agent_id = agent_id
         self._session_factory = session_factory
         self._is_simple_chain = is_simple_chain
+        self._graph_blueprint = graph_blueprint or {}
+        self._llm = llm
+        self._system_prompt = system_prompt
+        self._tools_by_name = tools_by_name or {}
+        self._graph_enabled = graph_enabled
+        self._last_steps: list[dict[str, Any]] = []
+        self._progress_callback: Callable[[dict[str, Any]], Any] | None = None
+
+    def set_progress_callback(self, callback: Callable[[dict[str, Any]], Any] | None) -> None:
+        self._progress_callback = callback
 
     async def _load_guardrail_rules(self) -> list[dict]:
         if not self._agent_id or not self._session_factory:
@@ -71,43 +113,29 @@ class LangChainRuntime(AgentRuntime):
     async def invoke(self, input: str, session_id: str) -> AgentResponse:
         start = time.monotonic()
 
-        # Pre-invoke: guardrails de entrada
         rules = await self._load_guardrail_rules()
         gr_in = await check_input(input, rules)
         if gr_in.action == "block":
             raise HTTPException(status_code=400, detail=f"Input bloqueado: {gr_in.reason}")
 
-        # Carga el historial de la sesión
         chat_history = await self._memory.load(session_id)
 
-        if self._is_simple_chain:
-            # Chain simple: retorna string directamente
-            output = await self._executor.ainvoke({
-                "input": input,
-                "chat_history": chat_history,
-            })
-            if not isinstance(output, str):
-                output = str(output)
-            steps: list = []
+        if self._graph_enabled:
+            await self._emit_progress("preparing", "Preparando flujo LangChain")
+            output, steps = await self._invoke_graph(input=input, chat_history=chat_history)
         else:
-            result = await self._executor.ainvoke({
-                "input": input,
-                "chat_history": chat_history,
-            })
-            output = result.get("output", "")
-            steps = result.get("intermediate_steps", [])
+            output, steps = await self._invoke_standard(input=input, chat_history=chat_history)
 
-        # Post-invoke: guardrails de salida
         gr_out = await check_output(output, rules)
         if gr_out.action == "block":
             output = GUARDRAIL_BLOCKED_MSG
 
-        # Persiste el turno en memoria
         await self._memory.save(session_id, input, output)
+        self._last_steps = steps
 
         return AgentResponse(
             output=output,
-            steps=[{"tool": str(s[0]), "result": str(s[1])} for s in steps],
+            steps=steps,
             tokens_in=0,
             tokens_out=0,
             latency_ms=(time.monotonic() - start) * 1000,
@@ -115,11 +143,16 @@ class LangChainRuntime(AgentRuntime):
         )
 
     async def stream(self, input: str, session_id: str) -> AsyncIterator[str]:
-        # Pre-stream: guardrails de entrada
         rules = await self._load_guardrail_rules()
         gr_in = await check_input(input, rules)
         if gr_in.action == "block":
             yield f"[Bloqueado: {gr_in.reason}]"
+            return
+
+        if self._graph_enabled:
+            response = await self.invoke(input, session_id)
+            for sentence in _split_into_sentences(response.output):
+                yield sentence
             return
 
         chat_history = await self._memory.load(session_id)
@@ -127,7 +160,6 @@ class LangChainRuntime(AgentRuntime):
 
         try:
             if self._is_simple_chain:
-                # Chain simple: LCEL propaga el streaming token a token desde el LLM
                 async for chunk in self._executor.astream(
                     {"input": input, "chat_history": chat_history}
                 ):
@@ -136,16 +168,10 @@ class LangChainRuntime(AgentRuntime):
                         collected_output.append(token)
                         yield token
             else:
-                # AgentExecutor: usamos astream_events() para streaming token a token.
-                # Capturamos on_chat_model_stream (tokens reales) y
-                # on_chain_end de AgentExecutor (output final si el agente se detiene
-                # por iteration limit o si todos los tokens eran tool-calls sin content).
                 is_react = not hasattr(self._executor.agent, "functions")
                 react_buffer = ""
                 react_final_found = False
                 chain_final_output: str = ""
-                # Para agentes con function-calling: buffear tokens pre-tool
-                # y solo emitir la respuesta final (después de que tools ejecutaron)
                 pre_tool_buffer: list[str] = []
                 tool_was_used = False
                 in_final_response = False
@@ -162,16 +188,15 @@ class LangChainRuntime(AgentRuntime):
 
                     if kind == "on_tool_start":
                         tool_was_used = True
-                        pre_tool_buffer.clear()   # descartar razonamiento previo
+                        pre_tool_buffer.clear()
 
                     elif kind == "on_tool_end":
-                        in_final_response = True  # próximos tokens = respuesta final
+                        in_final_response = True
 
-                    # ── Tokens del LLM ───────────────────────────────────────
                     elif kind == "on_chat_model_stream":
                         chunk = event["data"]["chunk"]
                         if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
-                            continue  # selección de herramienta, no respuesta final
+                            continue
                         token = getattr(chunk, "content", "") or ""
                         if not token:
                             continue
@@ -186,20 +211,14 @@ class LangChainRuntime(AgentRuntime):
                                     yield after
                         elif not is_react:
                             if in_final_response:
-                                # Post-tool: esta es la respuesta final
                                 collected_output.append(token)
                                 yield token
                             else:
-                                # Pre-tool: buffear (puede ser razonamiento interno)
                                 pre_tool_buffer.append(token)
                         else:
-                            # ReAct con Final Answer ya encontrado
                             collected_output.append(token)
                             yield token
 
-                    # ── Output final del AgentExecutor ───────────────────────
-                    # Captura la respuesta cuando el agente paró por max_iterations
-                    # o cuando ningún token de contenido fue emitido
                     elif kind == "on_chain_end" and event.get("name") == "AgentExecutor":
                         raw = event.get("data", {}).get("output", {})
                         if isinstance(raw, dict):
@@ -207,7 +226,6 @@ class LangChainRuntime(AgentRuntime):
                         elif isinstance(raw, str):
                             chain_final_output = raw
 
-                # Si no usó tools y la respuesta está en el pre_tool_buffer (respuesta directa)
                 if not collected_output and not tool_was_used and pre_tool_buffer:
                     content = "".join(pre_tool_buffer)
                     content = _strip_xml_tool_calls(content)
@@ -215,22 +233,17 @@ class LangChainRuntime(AgentRuntime):
                         collected_output.append(content)
                         yield content
 
-                # Si el stream no emitió nada pero el agente sí produjo output,
-                # lo emitimos ahora (caso: iteration limit, sin "Final Answer:" en react, etc.)
                 if not collected_output and chain_final_output:
-                    # Filtrar el mensaje genérico de LangChain por iteration limit
                     if "iteration limit" in chain_final_output.lower() or "time limit" in chain_final_output.lower():
-                        # Intentar recuperar el último Thought del react_buffer como respuesta
                         if react_buffer:
                             last_thought = react_buffer.rsplit("Thought:", 1)[-1].strip()
-                            # Quitar líneas de Action/Observation que quedaron
                             last_thought = last_thought.split("\nAction:")[0].split("\nObservation:")[0].strip()
                             if last_thought:
                                 chain_final_output = last_thought
                             else:
-                                chain_final_output = "Lo siento, no pude completar la respuesta. Por favor intentá reformular la pregunta."
+                                chain_final_output = "Lo siento, no pude completar la respuesta. Por favor intenta reformular la pregunta."
                         else:
-                            chain_final_output = "Lo siento, no pude completar la respuesta. Por favor intentá reformular la pregunta."
+                            chain_final_output = "Lo siento, no pude completar la respuesta. Por favor intenta reformular la pregunta."
                     collected_output.append(chain_final_output)
                     yield chain_final_output
         except Exception as e:
@@ -239,7 +252,6 @@ class LangChainRuntime(AgentRuntime):
 
         full_output = "".join(collected_output)
 
-        # Post-stream: guardrails de salida
         gr_out = await check_output(full_output, rules)
         if gr_out.action == "block":
             full_output = GUARDRAIL_BLOCKED_MSG
@@ -252,7 +264,421 @@ class LangChainRuntime(AgentRuntime):
             "memory_type": self.spec.memory.type.value,
             "agent_mode": self.spec.mode.value,
             "framework": "langchain",
+            "graph_enabled": self._graph_enabled,
+            "graph_node_count": len(self._graph_blueprint.get("nodes", [])) if isinstance(self._graph_blueprint, dict) else 0,
+            "last_step_count": len(self._last_steps),
         }
 
     def reset(self, session_id: str) -> None:
         self._memory.clear(session_id)
+
+    async def _invoke_standard(self, input: str, chat_history: list[dict]) -> tuple[str, list[dict]]:
+        if self._is_simple_chain:
+            output = await self._executor.ainvoke({
+                "input": input,
+                "chat_history": chat_history,
+            })
+            if not isinstance(output, str):
+                output = str(output)
+            steps: list[dict] = []
+        else:
+            result = await self._executor.ainvoke({
+                "input": input,
+                "chat_history": chat_history,
+            })
+            output = result.get("output", "")
+            steps = [{"tool": str(s[0]), "result": str(s[1])} for s in result.get("intermediate_steps", [])]
+        return output, steps
+
+    async def _invoke_graph(self, *, input: str, chat_history: list[dict]) -> tuple[str, list[dict]]:
+        blueprint = self._graph_blueprint if isinstance(self._graph_blueprint, dict) else {}
+        nodes = blueprint.get("nodes", []) or []
+        edges = blueprint.get("edges", []) or []
+        if not nodes:
+            return await self._invoke_standard(input, chat_history)
+
+        nodes_by_id = {str(node.get("id")): node for node in nodes if node.get("id")}
+        outgoing: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for edge in edges:
+            src = str(edge.get("from") or "").strip()
+            dst = str(edge.get("to") or "").strip()
+            if src and dst and src in nodes_by_id and dst in nodes_by_id:
+                outgoing[src].append(edge)
+
+        start_node = next((node for node in nodes if node.get("type") == "start"), nodes[0])
+        current_id = str(start_node.get("id"))
+        steps: list[dict[str, Any]] = []
+        current_output = ""
+        state: dict[str, Any] = {
+            "user_input": input,
+            "chat_history": chat_history,
+            "step_outputs": [],
+            "selected_tools": [],
+        }
+        max_iterations = max(8, len(nodes) * 3)
+        iterations = 0
+
+        while current_id and iterations < max_iterations:
+            iterations += 1
+            node = nodes_by_id.get(current_id)
+            if not node:
+                break
+
+            node_type = str(node.get("type") or "agent")
+            label = str(node.get("label") or current_id)
+            await self._emit_progress("trace", label, actor="LangChain Flow", kind=node_type)
+
+            if node_type == "start":
+                await self._emit_progress("status", "Entrando al flujo LangChain")
+                current_id = self._first_outgoing(current_id, outgoing)
+                continue
+
+            if node_type == "end":
+                await self._emit_progress("completed", "Flujo LangChain completado")
+                break
+
+            if node_type == "agent":
+                await self._emit_progress("status", f"Ejecutando paso: {label}")
+                current_output = await self._run_agent_node(node=node, state=state)
+            elif node_type == "tool":
+                await self._emit_progress("status", f"Ejecutando herramienta: {label}")
+                current_output = await self._run_tool_node(node=node, state=state)
+            elif node_type == "decision":
+                await self._emit_progress("status", f"Resolviendo decision: {label}")
+                decision = await self._run_decision_node(
+                    node=node,
+                    state=state,
+                    outgoing_edges=outgoing.get(current_id, []),
+                    nodes_by_id=nodes_by_id,
+                )
+                current_output = str(decision.get("reason") or "").strip()
+                steps.append(
+                    {
+                        "node_id": current_id,
+                        "node_type": "decision",
+                        "label": label,
+                        "output": current_output,
+                        "decision": decision,
+                    }
+                )
+                state["step_outputs"].append(
+                    {
+                        "node_id": current_id,
+                        "label": label,
+                        "type": node_type,
+                        "output": current_output,
+                    }
+                )
+                if decision.get("final_answer"):
+                    current_output = str(decision["final_answer"]).strip()
+                current_id = decision.get("next_node_id") or self._first_outgoing(current_id, outgoing)
+                continue
+            else:
+                current_output = ""
+
+            step = {
+                "node_id": current_id,
+                "node_type": node_type,
+                "label": label,
+                "output": current_output,
+            }
+            if node_type == "tool":
+                step["tool_name"] = self._resolve_tool_name(node)
+            steps.append(step)
+            state["step_outputs"].append(
+                {
+                    "node_id": current_id,
+                    "label": label,
+                    "type": node_type,
+                    "output": current_output,
+                }
+            )
+
+            next_edges = outgoing.get(current_id, [])
+            if len(next_edges) <= 1:
+                current_id = next_edges[0].get("to") if next_edges else None
+            else:
+                selected = await self._select_branch(node=node, state=state, outgoing_edges=next_edges, nodes_by_id=nodes_by_id)
+                current_id = selected or next_edges[0].get("to")
+
+        if iterations >= max_iterations:
+            await self._emit_progress("fallback", "El flujo alcanzo su limite de iteraciones; entregando el ultimo resultado util")
+
+        final_output = self._resolve_graph_output(current_output, state)
+        return final_output, steps
+
+    async def _run_agent_node(self, *, node: dict[str, Any], state: dict[str, Any]) -> str:
+        prompt = "\n\n".join(
+            [
+                self._system_prompt.strip(),
+                f"Paso actual del flujo: {node.get('label', node.get('id', 'paso'))}",
+                f"Descripcion del paso: {str(node.get('description') or '').strip() or 'Sin descripcion adicional.'}",
+                "Trabaja sobre este paso del flujo. Si es intermedio, no hace falta responder al usuario final todavia.",
+                "Apoyate en el contexto acumulado del flujo y produce una salida clara para este paso.",
+                _render_graph_context(state),
+            ]
+        ).strip()
+        result = await self._llm.ainvoke(prompt)
+        output = _strip_xml_tool_calls(_coerce_message_text(result)).strip()
+        await self._emit_progress(
+            "trace",
+            _trim_trace(output),
+            actor=str(node.get("label") or "Paso"),
+            kind="answer",
+        )
+        return output
+
+    async def _run_tool_node(self, *, node: dict[str, Any], state: dict[str, Any]) -> str:
+        tool_name = self._resolve_tool_name(node)
+        tool = self._tools_by_name.get(tool_name)
+        if not tool:
+            return f"[tool no disponible: {tool_name or 'sin tool_name'}]"
+
+        payload = await self._build_tool_payload(tool=tool, node=node, state=state)
+        await self._emit_progress(
+            "trace",
+            f"Usando {tool_name} con input preparado",
+            actor=str(node.get("label") or tool_name),
+            kind="tool",
+        )
+        try:
+            if hasattr(tool, "ainvoke"):
+                result = await tool.ainvoke(payload)
+            else:
+                result = tool.invoke(payload)
+        except Exception as exc:
+            logger.exception("[LangChainGraph] tool %s failed: %s", tool_name, exc)
+            return f"[error de tool {tool_name}: {exc}]"
+
+        output = str(result or "").strip()
+        await self._emit_progress(
+            "trace",
+            _trim_trace(output),
+            actor=str(node.get("label") or tool_name),
+            kind="answer",
+        )
+        return output
+
+    async def _run_decision_node(
+        self,
+        *,
+        node: dict[str, Any],
+        state: dict[str, Any],
+        outgoing_edges: list[dict[str, Any]],
+        nodes_by_id: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        if len(outgoing_edges) == 1:
+            edge = outgoing_edges[0]
+            return {
+                "next_node_id": edge.get("to"),
+                "reason": str(edge.get("condition") or "Ruta unica"),
+                "final_answer": "",
+            }
+
+        branches = [
+            {
+                "next_node_id": edge.get("to"),
+                "label": str(nodes_by_id.get(str(edge.get("to")), {}).get("label") or edge.get("to")),
+                "condition": edge.get("condition"),
+            }
+            for edge in outgoing_edges
+        ]
+        prompt = "\n\n".join(
+            [
+                self._system_prompt.strip(),
+                f"Nodo de decision: {node.get('label', node.get('id', 'decision'))}",
+                f"Descripcion: {str(node.get('description') or '').strip() or 'Elegir el siguiente paso.'}",
+                "Elige el siguiente nodo segun el contexto del flujo.",
+                "Responde solo con JSON valido usando este formato:",
+                '{"next_node_id":"...", "reason":"...", "final_answer":""}',
+                "Ramas disponibles:",
+                json.dumps(branches, ensure_ascii=False, indent=2),
+                _render_graph_context(state),
+            ]
+        ).strip()
+        raw = await self._llm.ainvoke(prompt)
+        parsed = self._parse_branch_response(_coerce_message_text(raw), branches)
+        await self._emit_progress(
+            "trace",
+            f"Decision: {parsed.get('reason') or parsed.get('next_node_id')}",
+            actor=str(node.get("label") or "Decision"),
+            kind="decision",
+        )
+        return parsed
+
+    async def _select_branch(
+        self,
+        *,
+        node: dict[str, Any],
+        state: dict[str, Any],
+        outgoing_edges: list[dict[str, Any]],
+        nodes_by_id: dict[str, dict[str, Any]],
+    ) -> str | None:
+        decision = await self._run_decision_node(
+            node=node,
+            state=state,
+            outgoing_edges=outgoing_edges,
+            nodes_by_id=nodes_by_id,
+        )
+        return decision.get("next_node_id")
+
+    async def _build_tool_payload(self, *, tool: BaseTool, node: dict[str, Any], state: dict[str, Any]) -> Any:
+        args_schema = getattr(tool, "args_schema", None)
+        context_text = _render_graph_context(state)
+        fallback_query = _default_tool_input(state)
+
+        if not args_schema:
+            return fallback_query
+
+        try:
+            schema = args_schema.model_json_schema()
+        except Exception:
+            schema = {}
+
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        field_names = list(properties.keys())
+        if len(field_names) == 1:
+            return {field_names[0]: fallback_query}
+        if "query" in properties:
+            payload = {"query": fallback_query}
+            if "max_results" in properties:
+                payload["max_results"] = 5
+            return payload
+        if "expression" in properties:
+            return {"expression": fallback_query}
+
+        prompt = "\n\n".join(
+            [
+                "Prepara exclusivamente el JSON de argumentos para ejecutar una herramienta.",
+                f"Herramienta: {tool.name}",
+                f"Descripcion: {getattr(tool, 'description', '')}",
+                f"Paso del flujo: {node.get('label', node.get('id', 'tool'))}",
+                f"Descripcion del paso: {str(node.get('description') or '').strip() or 'Sin descripcion.'}",
+                "Esquema esperado (JSON Schema simplificado):",
+                json.dumps(schema, ensure_ascii=False, indent=2),
+                "Contexto disponible:",
+                context_text,
+                "Responde solo con JSON valido, sin markdown.",
+            ]
+        ).strip()
+        raw = await self._llm.ainvoke(prompt)
+        text = _coerce_message_text(raw).strip()
+        try:
+            parsed = json.loads(_extract_json_block(text))
+        except Exception:
+            parsed = None
+        if isinstance(parsed, dict):
+            return parsed
+        return fallback_query
+
+    def _resolve_tool_name(self, node: dict[str, Any]) -> str:
+        data = node.get("data") or {}
+        tool_name = str(data.get("tool_name") or "").strip()
+        if tool_name:
+            return tool_name
+        label = str(node.get("label") or "").strip()
+        return label
+
+    def _parse_branch_response(self, raw_text: str, branches: list[dict[str, Any]]) -> dict[str, Any]:
+        try:
+            parsed = json.loads(_extract_json_block(raw_text))
+        except Exception:
+            parsed = {}
+
+        next_node_id = str(parsed.get("next_node_id") or "").strip()
+        valid_ids = {str(branch.get("next_node_id")) for branch in branches}
+        if next_node_id not in valid_ids:
+            next_node_id = str(branches[0].get("next_node_id"))
+        return {
+            "next_node_id": next_node_id,
+            "reason": str(parsed.get("reason") or "").strip() or "Ruta seleccionada por el flujo.",
+            "final_answer": str(parsed.get("final_answer") or "").strip(),
+        }
+
+    def _resolve_graph_output(self, current_output: str, state: dict[str, Any]) -> str:
+        outputs = list(state.get("step_outputs") or [])
+        for step in reversed(outputs):
+            output = str(step.get("output") or "").strip()
+            if output:
+                return output
+        return current_output or "No se genero una salida visible para este flujo."
+
+    def _first_outgoing(self, node_id: str, outgoing: dict[str, list[dict[str, Any]]]) -> str | None:
+        edge = next(iter(outgoing.get(node_id, [])), None)
+        return str(edge.get("to")) if edge else None
+
+    async def _emit_progress(self, phase: str, message: str, **extra: Any) -> None:
+        callback = self._progress_callback
+        if callback is None:
+            return
+        payload = {"framework": "langchain", "phase": phase, "message": message, **extra}
+        try:
+            result = callback(payload)
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            logger.debug("[LangChain][Progress] callback failed: %s", exc)
+
+
+def _render_graph_context(state: dict[str, Any]) -> str:
+    history = state.get("chat_history") or []
+    recent_history = history[-8:]
+    history_lines: list[str] = []
+    for item in recent_history:
+        role = "Usuario" if item.get("role") == "user" else "Asistente"
+        content = str(item.get("content") or "").strip()
+        if content:
+            history_lines.append(f"{role}: {content}")
+
+    outputs = state.get("step_outputs") or []
+    output_lines: list[str] = []
+    for step in outputs[-6:]:
+        label = str(step.get("label") or step.get("node_id") or "paso")
+        output = str(step.get("output") or "").strip()
+        if output:
+            output_lines.append(f"[{label}]\n{output}")
+
+    parts = [
+        "Mensaje actual del usuario:",
+        str(state.get("user_input") or "").strip(),
+    ]
+    if history_lines:
+        parts.extend(["", "Historial reciente:", "\n".join(history_lines)])
+    if output_lines:
+        parts.extend(["", "Salidas previas del flujo:", "\n\n".join(output_lines)])
+    return "\n".join(part for part in parts if part is not None).strip()
+
+
+def _default_tool_input(state: dict[str, Any]) -> str:
+    outputs = state.get("step_outputs") or []
+    for step in reversed(outputs):
+        output = str(step.get("output") or "").strip()
+        if output:
+            return output
+    return str(state.get("user_input") or "").strip()
+
+
+def _extract_json_block(text: str) -> str:
+    candidate = str(text or "").strip()
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate)
+        candidate = re.sub(r"\s*```$", "", candidate)
+    match = re.search(r"\{.*\}", candidate, re.DOTALL)
+    return match.group(0) if match else candidate
+
+
+def _trim_trace(text: str, limit: int = 900) -> str:
+    cleaned = re.sub(r"\s+", " ", str(text or "").strip())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 3].rstrip() + "..."
+
+
+def _split_into_sentences(text: str) -> list[str]:
+    parts = re.split(r"(?<=[.!?])\s+|(?<=\n)\n", text)
+    result = []
+    for part in parts:
+        stripped = part.strip()
+        if stripped:
+            result.append(stripped + " ")
+    return result if result else [text]

@@ -21,8 +21,7 @@ from app.schemas.agent import AgentDesign, MemoryType
 class LangChainAgentBuilder:
     """
     Toma un AgentDesign y produce un LangChainRuntime listo para ejecutar.
-    No genera archivos — construye el ejecutor en memoria.
-    (La generación de archivos para deploy ocurre en builders/langchain/codegen.py)
+    No genera archivos: construye el ejecutor en memoria.
     """
 
     def __init__(self, redis_client=None, session_factory=None):
@@ -30,14 +29,12 @@ class LangChainAgentBuilder:
         self._session_factory = session_factory
 
     async def build(self, design: AgentDesign, api_key: str = "", llm_config: LLMConfig | None = None) -> LangChainRuntime:
-        spec   = design.spec
-        fw     = design.framework
+        spec = design.spec
+        fw = design.framework
 
-        # 1. LLM
         llm_config = llm_config or LLMConfig(provider="anthropic", api_key=api_key)
         llm = create_chat_llm(spec.model_params, llm_config)
 
-        # 2. Tools (library + custom)
         tools: list[BaseTool] = []
         for tool_ref in spec.tools:
             if tool_ref.source == "library":
@@ -54,9 +51,9 @@ class LangChainAgentBuilder:
                 )
             tools.append(tool)
 
-        # RAG tool — inyectada automáticamente si rag.enabled
         if spec.rag.enabled:
             from app.components.rag.rag_tool import RAGTool
+
             tools.append(
                 instrument_tool(
                     RAGTool(agent_id=str(design.agent_id), top_k=spec.rag.top_k),
@@ -72,20 +69,32 @@ class LangChainAgentBuilder:
                 for tool in extra_tools
             )
 
-        # 3. Prompt + 4. Runtime según presencia de tools
-        # Re-evaluar siempre el agent_type según capacidades del modelo actual,
-        # ignorando el valor guardado en el design (puede ser stale de antes del fix).
+        tools_by_name = {tool.name: tool for tool in tools}
+
         from app.services.selector.framework_selector import _supports_function_calling
+
         agent_type = (
             "openai_functions"
             if _supports_function_calling(spec.model_params.model)
             else (fw.agent_type or "react")
         )
 
-        # Memory adapter
         memory = self._build_memory(design)
 
-        # ── Sin tools → chain simple (mucho más robusto y rápido) ────────────
+        if self._should_use_graph_runtime(design):
+            return LangChainRuntime(
+                executor=None,
+                memory_adapter=memory,
+                spec=spec,
+                agent_id=str(design.agent_id),
+                session_factory=self._session_factory,
+                graph_blueprint=design.graph_blueprint,
+                llm=llm,
+                system_prompt=design.system_prompt,
+                tools_by_name=tools_by_name,
+                graph_enabled=True,
+            )
+
         if not tools:
             prompt = ChatPromptTemplate.from_messages([
                 ("system", self._escape_prompt(design.system_prompt)),
@@ -102,13 +111,11 @@ class LangChainAgentBuilder:
                 is_simple_chain=True,
             )
 
-        # ── Con tools → AgentExecutor ────────────────────────────────────────
         if agent_type == "openai_functions":
             prompt = self._build_prompt(design.system_prompt, has_tools=True)
             try:
                 agent = create_tool_calling_agent(llm, tools, prompt)
             except Exception:
-                # Fallback a react si el modelo no soporta tool calling
                 prompt = self._build_react_prompt(design.system_prompt)
                 agent = create_react_agent(llm, tools, prompt)
         else:
@@ -119,8 +126,8 @@ class LangChainAgentBuilder:
             agent=agent,
             tools=tools,
             verbose=True,
-            max_iterations=4,        # límite bajo para evitar loops largos con tools que fallan
-            max_execution_time=60,   # 60s max por ejecución de agente
+            max_iterations=4,
+            max_execution_time=60,
             handle_parsing_errors=True,
             return_intermediate_steps=True,
         )
@@ -133,9 +140,33 @@ class LangChainAgentBuilder:
             session_factory=self._session_factory,
         )
 
+    def _should_use_graph_runtime(self, design: AgentDesign) -> bool:
+        blueprint = design.graph_blueprint or {}
+        nodes = blueprint.get("nodes", []) if isinstance(blueprint, dict) else []
+        edges = blueprint.get("edges", []) if isinstance(blueprint, dict) else []
+        if not nodes:
+            return False
+
+        agent_nodes = [node for node in nodes if node.get("type") == "agent"]
+        edge_count_by_source: dict[str, int] = {}
+        branching = False
+        for edge in edges:
+            source = edge.get("from")
+            if not source:
+                continue
+            edge_count_by_source[source] = edge_count_by_source.get(source, 0) + 1
+            if edge_count_by_source[source] > 1:
+                branching = True
+                break
+
+        return bool(
+            len(agent_nodes) > 1
+            or any(node.get("type") in {"tool", "decision"} for node in nodes)
+            or branching
+        )
+
     @staticmethod
     def _escape_prompt(system_prompt: str) -> str:
-        """Escapa llaves del system prompt para que LangChain no las interprete como variables."""
         return system_prompt.replace("{", "{{").replace("}", "}}")
 
     def _build_prompt(self, system_prompt: str, has_tools: bool) -> ChatPromptTemplate:
@@ -149,25 +180,21 @@ class LangChainAgentBuilder:
         return ChatPromptTemplate.from_messages(messages)
 
     def _build_react_prompt(self, system_prompt: str) -> ChatPromptTemplate:
-        """Prompt para create_react_agent — requiere {tools}, {tool_names}, {input} y {agent_scratchpad}.
-        Nota: agent_scratchpad es un string en react (no lista), por eso va en human message."""
         react_system = (
             f"{self._escape_prompt(system_prompt)}\n\n"
-            "Tenés acceso a las siguientes herramientas:\n\n"
+            "Tenes acceso a las siguientes herramientas:\n\n"
             "{tools}\n\n"
-            "REGLAS ESTRICTAS — seguí EXACTAMENTE este formato, sin excepciones:\n\n"
+            "REGLAS ESTRICTAS: segui EXACTAMENTE este formato, sin excepciones:\n\n"
             "Thought: [tu razonamiento]\n"
             "Action: [una de: {tool_names}]\n"
             "Action Input: [input para la herramienta]\n"
-            "Observation: [resultado — lo agrega el sistema automáticamente]\n"
+            "Observation: [resultado - lo agrega el sistema automaticamente]\n"
             "Thought: [razonamiento tras ver el resultado]\n"
             "Final Answer: [tu respuesta final completa]\n\n"
-            "CRÍTICO:\n"
-            "- Después de cada 'Thought:' SIEMPRE escribí 'Action:' O 'Final Answer:'. NUNCA otro texto.\n"
-            "- En cuanto tengas información suficiente de una herramienta, escribí 'Final Answer:' inmediatamente.\n"
-            "- NUNCA respondas directamente sin usar 'Final Answer:'.\n"
-            "- Si la herramienta devolvió contexto relevante, úsalo para armar la 'Final Answer:' de inmediato.\n"
-            "- NO repitas llamadas a herramientas si ya tenés la información necesaria."
+            "CRITICO:\n"
+            "- Despues de cada 'Thought:' SIEMPRE escribi 'Action:' O 'Final Answer:'.\n"
+            "- En cuanto tengas informacion suficiente de una herramienta, escribi 'Final Answer:' inmediatamente.\n"
+            "- No repitas llamadas a herramientas si ya tienes lo necesario.\n"
         )
         return ChatPromptTemplate.from_messages([
             ("system", react_system),
@@ -198,12 +225,10 @@ class LangChainAgentBuilder:
                 max_messages=max_msg,
             )
 
-        # Fallback seguro
         return InMemoryAdapter(max_messages=max_msg)
 
 
 async def _load_custom_tool(name: str, config: dict, tenant_id: str):
-    """Carga una custom tool desde la DB del tenant."""
     from app.db.session import get_tenant_session_factory
     from app.db.repository import AgentRepository
     from app.components.tools.custom_loader import build_tool_from_code
@@ -215,5 +240,5 @@ async def _load_custom_tool(name: str, config: dict, tenant_id: str):
     if not row:
         raise ValueError(f"Custom tool '{name}' no encontrada para el tenant")
     if not row["is_active"]:
-        raise ValueError(f"Custom tool '{name}' está desactivada")
+        raise ValueError(f"Custom tool '{name}' esta desactivada")
     return build_tool_from_code(row["source_code"], config)
