@@ -12,8 +12,10 @@ Propósito:
 Referencia técnica:
 
 - rama al relevar: `main`
-- commit local de referencia: `d65bd7c`
+- commit funcional base relevado: `d65bd7c`
+- commit documental recomendado para despliegue baseline: `2ab7941`
 - manual asociado: `docs/manual-usuario-agentica.md`
+- guía de implementación: `docs/implementar-version-2026-05-14.md`
 
 ## 1. Alcance funcional actual
 

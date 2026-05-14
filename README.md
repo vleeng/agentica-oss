@@ -12,6 +12,7 @@ Plataforma de construcción, prueba y despliegue automático de agentes IA.
 ## Documentacion
 
 - [Baseline funcional 2026-05-14](docs/version-agentica-2026-05-14.md)
+- [Implementar baseline 2026-05-14 en otro server](docs/implementar-version-2026-05-14.md)
 - [Manual de usuario](docs/manual-usuario-agentica.md)
 - [Matriz de operatividad de tools](docs/matriz-operatividad-tools.md)
 - [Plan de desarrollo de tools](docs/plan-desarrollo-tools.md)
