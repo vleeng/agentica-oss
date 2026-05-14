@@ -12,6 +12,8 @@ import type {
   MCPServer,
   Skill,
   ToolReadinessStatus,
+  WizardAdvisorRequest,
+  WizardAdvisorResponse,
   WizardState,
 } from '../types/agent'
 import { clearStoredToken, getAuthToken } from '../stores/auth'
@@ -318,6 +320,11 @@ export const agentsApi = {
 
   resetSession: (agentId: string, sessionId: string) =>
     api.delete(`/agents/${agentId}/session/${sessionId}`),
+}
+
+export const wizardAdvisorApi = {
+  analyze: (payload: WizardAdvisorRequest): Promise<WizardAdvisorResponse> =>
+    api.post('/wizard/advisor/analyze', payload).then((r) => r.data),
 }
 
 export type WSMessage =

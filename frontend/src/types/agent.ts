@@ -198,6 +198,33 @@ export interface WizardState {
   process: CrewProcess
 }
 
+export interface WizardAdvisorItem {
+  title: string
+  detail: string
+  severity: 'info' | 'warning' | 'critical'
+}
+
+export interface WizardAdvisorRequest {
+  step: number
+  step_key: string
+  final_review?: boolean
+  wizard_state: WizardState
+  available_tools?: AvailableToolDescriptor[]
+  tool_readiness?: ToolReadinessStatus[]
+  available_models?: Array<Record<string, unknown>>
+}
+
+export interface WizardAdvisorResponse {
+  score: number
+  status: 'ready' | 'requires_review' | 'high_risk'
+  summary: string
+  suggestions: WizardAdvisorItem[]
+  risks: WizardAdvisorItem[]
+  questions: WizardAdvisorItem[]
+  proposed_patch: Partial<WizardState>
+  source: 'ai' | 'rules'
+}
+
 export const WIZARD_DEFAULTS: WizardState = {
   step: 0,
   name: '',

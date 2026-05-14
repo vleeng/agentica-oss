@@ -19,7 +19,7 @@ from app.api.v1.endpoints import (
     auth, tenants, agents, builds, channels,
     knowledge, api_keys, usage, custom_tools,
     skills, mcp, knowledge_bases, policies, guardrails,
-    system_settings,
+    system_settings, wizard,
 )
 
 settings = get_settings()
@@ -230,6 +230,7 @@ app.include_router(knowledge_bases.router, prefix="/api/v1",             tags=["
 app.include_router(policies.router,      prefix="/api/v1",               tags=["policies"])
 app.include_router(guardrails.router,    prefix="/api/v1",               tags=["guardrails"])
 app.include_router(system_settings.router, prefix="/api/v1",             tags=["system"])
+app.include_router(wizard.router,         prefix="/api/v1",               tags=["wizard"])
 
 
 @app.get("/health")
