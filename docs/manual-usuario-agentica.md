@@ -1,26 +1,30 @@
 # Manual de Usuario Agentica
 
-Manual operativo para usuarios, builders, owners y equipos que administran agentes en Agentica.
+Manual operativo para usuarios, builders, developers y owners que administran agentes en Agentica.
 
 Estado del manual: mayo de 2026  
-Cobertura: funcionalidad actualmente visible en la aplicación y comportamiento operativo conocido.
+Cobertura: interfaz y comportamiento operativo visibles hoy en la aplicación.
 
 ## 1. Qué es Agentica
 
-Agentica es una consola para:
+Agentica es una consola para diseñar, probar, configurar y operar agentes de IA dentro de un workspace aislado.
 
-- crear agentes de IA desde un wizard funcional
-- elegir el framework de ejecución del agente
-- probarlo en un sandbox antes de exponerlo
-- conectarlo con conocimiento, tools, skills y servidores MCP
-- observar uso, invocaciones y costo
-- desplegar chats por enlace o por API key
+La plataforma hoy permite:
 
-En la práctica, la plataforma separa el trabajo en cuatro capas:
+- crear agentes desde un wizard guiado
+- elegir el modo del agente: simple o equipo de agentes
+- seleccionar modelo y llave desde la Bóveda IA
+- asignar tools, skills, conocimiento y servidores MCP
+- probar el runtime en sandbox antes de desplegar
+- evaluar y optimizar el agente
+- desplegar chats y generar API keys por agente
+- seguir uso, costo y límites del plan
+
+En la práctica, el flujo operativo se organiza en cuatro capas:
 
 1. diseño del agente
 2. build del runtime
-3. prueba y evaluación
+3. prueba y ajuste
 4. despliegue y operación
 
 ## 2. Conceptos base
@@ -31,36 +35,52 @@ Un tenant representa un workspace aislado. Cada tenant tiene:
 
 - sus propios usuarios
 - sus agentes
-- su bóveda de modelos y llaves
-- su conocimiento y configuraciones
-- su observabilidad y billing
+- su Bóveda IA
+- sus skills, tools, MCPs y conocimiento
+- su observabilidad, límites y consumo
 
 ### 2.2 Usuario
 
-La sesión siempre pertenece a un usuario real. En distintas pantallas se muestra:
+La sesión siempre pertenece a un usuario real. En la interfaz pueden verse:
 
-- nombre visible, si existe
+- nombre visible
 - email
-- user_id interno
+- rol
+- `user_id` interno
 
 ### 2.3 Roles
 
-Los permisos visibles en la interfaz se agrupan, de forma práctica, así:
+Los roles visibles hoy son:
 
-- `viewer`: puede entrar al workspace, revisar agentes y observabilidad, pero no ve las áreas de construcción avanzada
-- usuarios con permisos de edición: pueden crear agentes y usar librerías operativas
-- `owner`: además de lo anterior, puede acceder a Accesos y a configuraciones globales sensibles
+- `viewer`: acceso de lectura; puede ver dashboard, observabilidad y cuenta
+- `developer`: puede crear agentes y operar las pantallas de construcción
+- `owner`: además de lo anterior, accede a `Accesos`
+
+Importante:
+
+- la UI oculta varias pantallas de builder para `viewer`
+- la sección `Accesos` solo aparece para `owner`
+- dentro de `Accesos`, algunas capacidades globales adicionales dependen de permisos administrativos más altos del backend
 
 ### 2.4 Agente
 
 Un agente en Agentica combina:
 
 - una `spec` funcional
-- un `framework` seleccionado
-- un `system prompt`
+- un modo (`single` o `crew`)
+- un framework seleccionado por el sistema
+- un `system_prompt`
 - un `graph_blueprint`
 - casos de prueba
-- estado operativo (`draft`, `building`, `testing`, `deployed`, `archived`)
+- un estado operativo
+
+Estados visibles más comunes:
+
+- `draft`
+- `building`
+- `testing`
+- `deployed`
+- `archived`
 
 ### 2.5 Framework
 
@@ -69,63 +89,137 @@ Hoy Agentica trabaja principalmente con dos familias:
 - `LangChain`
 - `CrewAI`
 
-No significan solo una etiqueta técnica: cambian la forma en que se construye y ejecuta el runtime.
+No es solo una etiqueta técnica. El framework afecta:
+
+- cómo se construye el runtime
+- qué tools o flujos tienen soporte pleno
+- cómo se interpreta el diseño interno del agente
 
 ## 3. Navegación principal
 
-La barra lateral del workspace expone estas áreas:
+La barra lateral expone estas áreas principales:
 
 - `Agentes`
 - `Crear agente`
 - `Observabilidad`
 - `Cuenta`
 - `Accesos` para owners
-- `Bóveda IA`
+- `Boveda IA`
 - `Mis tools`
 - `API Keys`
+
+Además, la consola separa una sección `Libreria` con:
+
 - `Skills`
 - `MCPs`
 - `Conocimiento`
 
-Además, desde la barra lateral hay un enlace a `API Docs`.
+En el pie de la barra lateral también aparecen:
 
-## 4. Inicio de sesión y contexto de cuenta
+- `API Docs`
+- `Cerrar sesion`
 
-## 4.1 Login
+## 4. Inicio de sesión y cuenta
 
-El login autentica la sesión y redirige al workspace principal.
+### 4.1 Login
 
-## 4.2 Pantalla Cuenta
+El login autentica la sesión y redirige al workspace.
 
-La sección `Cuenta` sirve para ver el contexto actual de sesión. En lugar de mostrar solo IDs internos, ahora expone:
+Si olvidás la contraseña, el flujo de recuperación parte desde la pantalla de login.
 
-- nombre o email del usuario actual
-- tenant por nombre y slug cuando está disponible
-- `tenant_id` y `user_id` como datos internos de referencia
+### 4.2 Cuenta
 
-Uso recomendado:
+La pantalla `Cuenta` hoy sirve para dos cosas:
 
-- validar en qué tenant estás trabajando antes de modificar agentes o librerías
-- confirmar con qué identidad quedó abierta la sesión
+- validar qué identidad está activa
+- cambiar la contraseña del usuario actual
 
-## 5. Gestión de tenants, owners y usuarios
+La vista muestra:
 
-La sección `Accesos` es la consola administrativa del tenant y, para owners, también la puerta a capacidades más globales.
+- nombre o email del usuario autenticado
+- rol actual
+- tenant por nombre o slug
+- `tenant_id` interno
+- `user_id` interno
 
-### 5.1 Qué se ve
+La sección de seguridad permite:
 
-Según los permisos, podés encontrar:
+- ingresar contraseña actual
+- definir nueva contraseña
+- confirmar la nueva contraseña
 
-- tenant activo por nombre visible y slug
-- owner actual por nombre o email
-- IDs internos del tenant y del usuario como referencia secundaria
-- lista de usuarios del tenant
-- gestión de planes y límites para owners
+## 5. Accesos, tenants y usuarios
 
-### 5.2 Buen uso
+La sección `Accesos` es la consola administrativa visible para `owner`.
 
-- usá el nombre y email para gestión diaria
-- dejá los IDs para debugging, soporte o trazabilidad técnica
+Según permisos efectivos del backend, hoy puede incluir tres capas:
+
+1. gestión del equipo del tenant actual
+2. alta de tenants nuevos
+3. administración global de planes y solicitudes free
+
+### 5.1 Equipo del tenant actual
+
+La primera parte de `Accesos` muestra:
+
+- tenant actual
+- owner o usuario autenticado
+- rol actual
+- usuarios cargados en el tenant
+- conteo de developers y viewers
+
+También permite crear usuarios nuevos dentro del tenant con:
+
+- email
+- nombre visible
+- password inicial
+- rol `developer` o `viewer`
+
+### 5.2 Alta de tenant nuevo
+
+Cuando la cuenta tiene permisos administrativos más altos, `Accesos` también permite crear un tenant nuevo con:
+
+- nombre
+- slug
+- plan inicial
+- owner email
+- owner nombre
+- owner password
+
+Después del alta, la pantalla muestra:
+
+- `tenant_id`
+- `user_id` del owner inicial
+- rol asignado
+
+### 5.3 Solicitudes free
+
+La consola global también puede incluir una bandeja para:
+
+- listar solicitudes de cuenta free
+- aprobarlas
+- rechazarlas
+
+### 5.4 Mapa global de tenants
+
+Si está habilitado, el owner/admin puede ver un overview global con:
+
+- tenants existentes
+- plan activo
+- owner
+- agentes usados vs límite
+- invocaciones usadas vs límite
+- usuarios cargados por tenant
+
+### 5.5 Límites por plan
+
+La capa global de planes permite ajustar:
+
+- nombre visible del plan
+- máximo de agentes
+- máximo de invocaciones mensuales
+- precio en USD
+- feature flags como `rag` y `crew`
 
 ## 6. Dashboard de agentes
 
@@ -133,27 +227,37 @@ La pantalla `Agentes` funciona como control room del workspace.
 
 ### 6.1 Qué muestra
 
-- acceso a `Crear agente`
-- acceso rápido a agentes desplegados
-- listado de agentes del tenant
-- framework
-- modo operativo
+- hero principal con acceso a `Crear agente`
+- botón rápido para filtrar desplegados
+- panorama rápido del workspace
+- métricas de invocaciones, tokens y costo total
+- buscador por nombre, framework, estado o modo
+- listado de agentes
+
+### 6.2 Datos por agente
+
+Cada tarjeta de agente muestra:
+
+- nombre
 - estado
-- métricas resumidas del workspace, incluyendo costo agregado
+- framework
+- modo
+- fecha de alta
+- acceso a `Abrir monitor`
 
-### 6.2 Para qué sirve
+### 6.3 Acciones disponibles
 
-- ver qué agentes existen
-- filtrar o localizar los que están desplegados
-- entrar rápido al monitor de un agente específico
+Según permisos, desde el dashboard se puede:
+
+- crear agente
+- abrir su monitor
+- eliminarlo
 
 ## 7. Crear un agente con el Requirement Wizard
 
 La creación de agentes parte del `Requirement Wizard`.
 
 ## 7.1 Estructura del wizard
-
-El wizard cambia levemente según el modo elegido.
 
 ### Modo simple
 
@@ -179,15 +283,15 @@ Pasos:
 
 ## 7.2 Paso: Tipo de agente
 
-Opciones:
+Opciones visibles:
 
 - `Agente simple`
 - `Equipo de agentes`
 
-Guía práctica:
+Uso recomendado:
 
-- elegí `Agente simple` para asistentes, soporte, automatizaciones y tareas directas
-- elegí `Equipo de agentes` para investigación, análisis multi-paso o coordinación por roles
+- `Agente simple` para asistentes, soporte, automatizaciones y consultas
+- `Equipo de agentes` para investigación, análisis multi-paso o workflows largos
 
 ## 7.3 Paso: Identidad
 
@@ -198,15 +302,12 @@ Campos principales:
 - descripción
 - restricciones
 
-Consejo:
+Las restricciones se cargan una por línea.
 
-- el objetivo debe describir el problema que resuelve, no solo el nombre del área
-- las restricciones conviene escribirlas en forma concreta
+Ejemplos:
 
-Ejemplo:
-
-- "No revelar información confidencial"
-- "Responder solo en español"
+- `No revelar información confidencial`
+- `Responder solo en español`
 
 ## 7.4 Paso: Herramientas o equipo
 
@@ -214,35 +315,49 @@ Ejemplo:
 
 Podés seleccionar:
 
-- tools de librería
-- custom tools activas creadas en `Mis tools`
+- tools built-in de librería
+- tools custom activas creadas en `Mis tools`
+
+La UI hoy también muestra por cada tool:
+
+- categoría
+- readiness o estado operativo
+- nivel de soporte para LangChain
+- hint de configuración cuando necesita setup
+
+Estados de compatibilidad visibles más comunes:
+
+- lista
+- limitada
+- no soportada
+
+Estados de readiness visibles más comunes:
+
+- `Lista`
+- `Requiere credencial`
+- `Requiere datasource`
+- `Requiere politica`
+- `Requiere SMTP global`
 
 ### En modo crew
 
-Definís:
+El paso cambia a `Equipo de agentes` y permite definir roles con:
 
-- roles del equipo
 - nombre del rol
-- objetivo del rol
-- backstory o contexto
+- objetivo
+- contexto o backstory
 - tools por rol
-- permiso de delegación
+- delegación
 
 ## 7.5 Paso: Memoria y canales
 
-La configuración funcional incluye:
+La configuración funcional hoy permite definir:
 
+- canales de despliegue
 - tipo de memoria
-- canales disponibles
+- si el agente arranca con RAG habilitado
 
-Opciones de memoria visibles en el dominio:
-
-- `none`
-- `session`
-- `persistent`
-- `summary`
-
-Canales admitidos por la spec:
+Canales visibles:
 
 - `web_chat`
 - `whatsapp`
@@ -250,70 +365,77 @@ Canales admitidos por la spec:
 - `slack`
 - `rest_api`
 
-Nota práctica:
+Notas prácticas:
 
-La presencia del canal en la spec no reemplaza la configuración real del canal en infraestructura o integración externa.
+- `whatsapp` requiere Twilio
+- `telegram` requiere bot token
+- `slack` aparece marcado como `v2`
+- `rest_api` sirve para uso solo por API
+
+Opciones de memoria visibles:
+
+- `none`
+- `session`
+- `persistent`
+
+La UI además incluye un check de `Habilitar RAG`.
 
 ## 7.6 Paso: Modelo
 
-El wizard toma sus modelos desde la `Bóveda IA`.
+El wizard toma modelos desde la `Boveda IA`.
 
-Si no hay modelos cargados, el wizard no puede ofrecer opciones útiles de ejecución.
+La pantalla hoy permite definir:
+
+- modelo LLM
+- llave del proveedor
+- temperatura
+- máximo de tokens
+
+Comportamiento importante:
+
+- si no hay llaves cargadas, el wizard no puede ofrecer modelos
+- si una llave es default para ese proveedor, puede usarse automáticamente
 
 ## 7.7 Paso: Revisión
 
-La pantalla final resume la configuración antes de generar el diseño.
+La pantalla final resume:
+
+- nombre
+- modo
+- objetivo
+- herramientas
+- memoria
+- canales
+- RAG
+- modelo
+- temperatura
 
 Acción principal:
 
 - `Generar diseño`
 
-Resultado:
+Resultado esperado:
 
-- se crea el `AgentDesign`
-- se selecciona framework
-- se genera prompt, grafo y casos de prueba
-- se redirige al monitor del agente
+- se crea el diseño del agente
+- el sistema elige framework
+- se genera system prompt, flujo y casos de prueba
+- se redirige al monitor
 
-## 8. Modos de agente
+## 8. Boveda IA
 
-## 8.1 Agente simple
+La `Boveda IA` es la biblioteca cifrada de credenciales LLM del tenant.
 
-Se orienta a un solo agente con tools y runtime directo.
-
-Casos típicos:
-
-- soporte
-- consulta documental
-- automatizaciones puntuales
-- copilotos internos
-
-## 8.2 Equipo de agentes
-
-Se orienta a varios roles especializados.
-
-Casos típicos:
-
-- investigación
-- análisis con varias etapas
-- control de calidad por revisión
-- workflows con retrabajo
-
-## 9. Bóveda IA
-
-La `Bóveda IA` es la biblioteca cifrada de credenciales LLM del tenant.
-
-## 9.1 Qué permite hacer
+## 8.1 Qué permite hacer
 
 - guardar credenciales por proveedor
-- definir defaults por proveedor
-- cargar modelos por credencial
-- definir costo de cada modelo
-- exponer esos modelos al wizard y a la edición del agente
+- nombrarlas con alias operativos
+- marcar una credencial default por proveedor
+- agregar modelos por credencial
+- definir costo input/output por millón de tokens
 
-## 9.2 Proveedores admitidos en la UI
+## 8.2 Proveedores visibles en la UI
 
-Actualmente la interfaz contempla, entre otros:
+Actualmente la interfaz contempla:
 
 - OpenAI
 - Anthropic
@@ -324,125 +446,104 @@ Actualmente la interfaz contempla, entre otros:
 - Zhipu / GLM
 - OpenAI compatible custom
 
-## 9.3 Modelos por credencial
+## 8.3 Modelos por credencial
 
-Cada clave puede tener una lista de modelos. Para cada modelo hoy podés configurar:
+Cada credencial puede tener su propia lista de modelos.
+
+Para cada modelo hoy se configura:
 
 - `input_cost_per_million`
 - `output_cost_per_million`
 
-Esto define el costo por millón de tokens de entrada y salida.
+Esto impacta directamente en observabilidad y billing.
 
-## 9.4 Qué impacto tiene en observabilidad
+## 8.4 Defaults por proveedor
 
-Si un agente usa un modelo con costo configurado:
+Si un proveedor tiene una llave marcada como default:
 
-- las invocaciones pueden calcular costo estimado
-- observabilidad y billing muestran acumulado monetario
+- el wizard y el runtime pueden usarla sin que tengas que elegirla siempre a mano
 
-Si el costo del modelo está en `0`:
+## 8.5 Builder Config
 
-- las invocaciones igual pueden registrarse
-- el costo seguirá en cero
+Para cuentas con permisos suficientes aparece además `BuilderConfigPanel`, usado para defaults operativos del sistema.
 
-## 9.5 Builder Config
-
-Para owners existe además una configuración complementaria del builder, útil para defaults operativos del sistema.
-
-## 10. API Keys
+## 9. API Keys
 
 La sección `API Keys` genera llaves públicas asociadas a un agente específico.
 
-## 10.1 Para qué sirven
+## 9.1 Para qué sirven
 
 - widgets
 - integraciones externas
 - accesos controlados por agente
 
-## 10.2 Cómo funcionan
+## 9.2 Cómo funciona hoy
 
-Cada key:
+Para crear una key definís:
 
-- tiene nombre
-- queda atada a un agente
-- expone un prefijo visible
-- puede revocarse
+- agente
+- nombre de la key
+
+Cada key queda:
+
+- restringida al agente seleccionado
+- listada con prefijo visible
+- revocable
 
 Importante:
 
-- el valor completo de la key se muestra solo en el momento de creación
-- después no vuelve a exhibirse completo
+- el valor completo se muestra una sola vez al crearla
+- después solo queda visible el prefijo
 
-## 11. Mis tools
+## 10. Mis tools
 
 La sección `Mis tools` permite crear tools personalizadas en Python.
 
-## 11.1 Qué podés hacer
+## 10.1 Qué podés hacer
 
-- crear una tool
-- editarla
+- crear una tool nueva
+- editar una existente
 - validar el código
-- probarla con input de test
+- definir `config_schema` en JSON
+- probar la tool con input y config de test
 - activarla o desactivarla
 - eliminarla
 
-## 11.2 Uso esperado
+## 10.2 Restricciones operativas visibles
+
+La plantilla de la app deja claro que una custom tool debe definir:
+
+- `TOOL_NAME`
+- `TOOL_DESCRIPTION`
+- `async def run(input, config)`
+
+Además, la interfaz guía sobre imports permitidos y no permitidos.
+
+## 10.3 Buen uso
 
 Las custom tools son ideales para:
 
-- llamar APIs internas
-- encapsular lógica de negocio
-- consultar servicios propios
+- APIs internas
+- lógica de negocio propia
+- automatizaciones específicas del tenant
 
-## 11.3 Consideraciones operativas
+Importante:
 
-- una tool desactivada no debería usarse en producción
-- eliminar una tool que un agente usa puede romper el comportamiento del agente
+- una tool inactiva no debería asignarse operativamente
+- eliminar una tool usada por un agente puede romper su comportamiento
 
-## 11.4 Estado operativo de las tools de librería
-
-La app muestra badges y ayudas breves para que no tengas que adivinar si una tool está lista o qué preparación necesita.
-
-Estados visibles más comunes:
-
-- `Lista`
-- `Requiere credencial`
-- `Requiere datasource`
-- `Requiere política`
-- `Requiere SMTP global`
-
-Lectura recomendada:
-
-- `Lista`: puede usarse sin preparar secretos o conexiones extra
-- `Requiere credencial`: necesita una clave externa, por ejemplo Tavily
-- `Requiere datasource`: necesita una conexión o DSN seguro
-- `Requiere política`: conviene definir dominios, métodos o headers antes de habilitarla
-- `Requiere SMTP global`: depende de la configuración de correo de la plataforma, no de una clave por tool
-
-Matriz rápida:
-
-| Capacidad | LangChain | CrewAI | Requisito principal |
-|---|---|---|---|
-| `calculator` | lista | lista | sin preparación adicional |
-| `web_search` | lista | lista | clave Tavily en backend o config global |
-| `sql_query` | operativa con setup | operativa con setup | DSN seguro y tablas permitidas |
-| `rest_api_call` | operativa con setup | operativa con setup | dominios, métodos y headers permitidos |
-| `send_email` | operativa con setup | operativa con setup | SMTP global válido |
-| RAG | lista con conocimiento cargado | lista con conocimiento cargado | knowledge base o fuentes indexadas |
-| MCP | lista con servidor activo | lista con servidor activo | servidor MCP registrado y testeado |
-
-Si necesitás el detalle técnico y operativo más fino, revisá la [matriz de operatividad de tools](./matriz-operatividad-tools.md).
-
-## 12. Skills
+## 11. Skills
 
 La librería `Skills` sirve para guardar capacidades reutilizables.
 
-Una skill puede aportar:
+Cada skill hoy puede incluir:
 
+- nombre
+- descripción
 - objetivo
 - condiciones de uso
-- tools relacionadas
 - procedimiento
+- tools habilitadas
 - reglas de calidad
 - formato de salida
 - guardrails
@@ -451,74 +552,89 @@ Uso recomendado:
 
 - estandarizar comportamientos entre agentes
 - encapsular procedimientos repetibles
+- reutilizar reglas de respuesta y de calidad
 
-## 13. MCPs
+## 12. MCPs
 
 La sección `MCPs` administra servidores MCP.
 
-## 13.1 Qué permite
+## 12.1 Qué permite
 
 - registrar un servidor
-- definir endpoint
-- elegir transporte (`http` o `sse`)
+- editarlo
+- elegir transporte `sse` o `http`
 - definir autenticación
-- testear conexión
-- descubrir tools expuestas por el servidor
+- probar conexión
+- listar tools descubiertas
+- eliminar el servidor
 
-## 13.2 Integración con agentes
+## 12.2 Autenticación visible
 
-Los MCPs pueden asignarse a un agente desde el monitor, en la pestaña de configuración.
+Opciones disponibles:
+
+- `none`
+- `bearer`
+- `basic`
+
+## 12.3 Integración con agentes
+
+Los MCPs pueden asignarse desde la pestaña `Configurar` del monitor.
 
 Buenas prácticas:
 
-- registrá y testeá el servidor MCP antes de asignarlo a agentes
-- verificá cuántas tools descubrió realmente el servidor
-- si un agente usa MCP en producción, dejá trazado quién lo administra y qué endpoint expone
+- registrá primero el servidor
+- probá conexión
+- verificá cuántas tools descubrió realmente
 
-## 14. Conocimiento
+## 13. Conocimiento
 
-La plataforma tiene dos niveles de gestión de conocimiento.
+La plataforma hoy trabaja con dos niveles de conocimiento:
 
-## 14.1 Bases de conocimiento
+1. bases reutilizables del tenant
+2. conocimiento propio del agente
 
-La pantalla `Conocimiento` administra knowledge bases reutilizables.
+## 13.1 Bases de conocimiento compartidas
+
+La pantalla `Conocimiento` de librería administra KBs reutilizables.
 
 Permite:
 
 - crear KBs
 - editar nombre y descripción
-- agregar URLs
+- agregar fuentes por URL
 - subir archivos
 - eliminar fuentes
 - borrar KBs completas
 
 Estados visibles:
 
-- vacía
-- indexando
-- lista
-- error
+- `empty`
+- `indexing`
+- `ready`
+- `error`
 
-## 14.2 Conocimiento por agente
+Por defecto, al crear una KB la app genera una `rag_spec` base con embeddings y parámetros estándar.
 
-Dentro del monitor de un agente existe además una pestaña `Conocimiento`.
+## 13.2 Conocimiento por agente
 
-Ahí podés:
+Dentro del monitor existe además una pestaña `Conocimiento`.
 
-- ver cuántos vectores tiene indexados el agente
-- revisar estado de la colección
-- agregar fuentes por URL
+Ahí podés trabajar sobre el knowledge store específico del agente para:
+
+- ver fuentes indexadas
+- ver estado y métricas
+- agregar URLs
 - subir archivos
-- eliminar fuentes específicas
+- quitar fuentes puntuales
 
-Uso recomendado:
+## 13.3 Cuándo usar cada nivel
 
-- usar las KBs cuando querés un repositorio reutilizable
-- usar el panel de conocimiento del agente cuando el contexto pertenece a ese agente puntual
+- usá KBs compartidas cuando querés reutilizar fuentes entre varios agentes
+- usá conocimiento por agente cuando el contexto pertenece solo a un agente puntual
 
-## 15. Monitor del agente
+## 14. Monitor del agente
 
-El monitor es el centro operativo del agente una vez creado.
+El monitor es el centro operativo una vez creado el agente.
 
 Pestañas principales:
 
@@ -537,149 +653,152 @@ Acciones superiores:
 - `Deploy`
 - `Abrir chat` si ya está desplegado
 
-## 15.1 Estado visible
+## 14.1 Qué muestra arriba
 
-El monitor muestra:
+La cabecera del monitor hoy muestra:
 
 - estado del runtime
 - framework
 - versión del diseño
+- nombre del agente
+- objetivo
 - modelo base
-- modo del agente
-- cantidad de tools de la spec
+- modo
+- cantidad de tools
 
-## 16. Sandbox conversacional
+## 15. Sandbox conversacional
 
 La pestaña `Sandbox` sirve para probar el agente antes de desplegarlo.
 
-## 16.1 Qué muestra ahora
+## 15.1 Contexto visible
 
-Antes de la conversación aparece una cabecera de contexto con:
+Antes del chat aparece una cabecera con:
 
 - nombre del agente
-- id corto del agente
-- usuario que está usando el sandbox
-- tenant al que pertenece
+- `agent_id`
+- tenant
+- usuario autenticado
 - entorno
 - canal
 
-Esto ayuda a evitar pruebas "a ciegas", sobre todo cuando hay varios tenants o sesiones abiertas.
+Hoy el sandbox se presenta como:
 
-## 16.2 Cómo usarlo
+- entorno `Sandbox interno`
+- canal `Web chat`
 
-1. asegurate de que el runtime esté en `ready`
+## 15.2 Cómo usarlo
+
+1. esperá a que el runtime esté en `Runtime listo`
 2. escribí una instrucción o caso de prueba
-3. observá la respuesta renderizada
-4. repetí con escenarios críticos antes de desplegar
+3. revisá respuesta, trazas y mensajes de estado
+4. repetí escenarios críticos antes de desplegar
 
-## 16.3 Cuándo no usarlo como única validación
+## 15.3 Qué no reemplaza
 
-El sandbox es muy útil, pero no reemplaza:
+El sandbox no reemplaza por sí solo:
 
 - evaluación formal
-- prueba de canales reales
-- verificación de billing
+- validación de costo
+- pruebas de canal real
 
-## 17. Evaluación y optimización
+## 16. Evaluación y optimización
 
-La pestaña `Evaluación` está pensada para benchmarkear el agente.
+La pestaña `Evaluación` sirve para benchmarkear el agente.
 
-## 17.1 Métricas que puede mostrar
+## 16.1 Métricas visibles
 
-- completitud
-- precisión en uso de tools
-- latencia p95
-- costo estimado
-- score de hallucination
-- score general
+Hoy puede mostrar:
 
-## 17.2 Resultado
+- `Completitud`
+- `Tools`
+- `Latencia p95`
+- `Costo estimado`
+- `Hallucination`
+- `Score general`
 
-La evaluación informa si el agente:
+## 16.2 Resultado
 
-- está listo para producción
-- requiere optimización
+La evaluación clasifica el estado como:
 
-## 17.3 Optimización
+- `Listo para producción`
+- `Requiere optimización`
 
-Si el benchmark no pasa umbral, puede habilitarse `Optimizar`.
+## 16.3 Optimización
 
-La optimización puede tocar, según el caso:
+Si el benchmark no pasa umbral, se habilita `Optimizar`.
+
+La optimización puede tocar:
 
 - system prompt
 - temperatura
 - max tokens
 - tools agregadas
 
-Después de optimizar, el sistema registra la nueva versión.
+Al aplicarse, el monitor muestra la nueva versión y el patch resultante.
 
-## 18. Diseño del agente
+## 17. Diseño del agente
 
-La pestaña `Diseño` reúne tres capas:
+La pestaña `Diseño` reúne:
 
 - system prompt
-- decisión de framework
-- flujo del agente
+- justificación del framework
+- diagrama Mermaid
+- casos de prueba
+- editor de flujo
 
-También muestra los casos de prueba generados.
+## 17.1 System prompt
 
-## 18.1 System prompt
+La UI filtra el bloque Mermaid para mostrar el prompt operativo sin mezclarlo con el diagrama.
 
-Se muestra como base operativa del runtime. En la vista se filtra el bloque Mermaid para no mezclar prompt y diagrama.
+## 17.2 Decisión de framework
 
-## 18.2 Decisión de framework
+Se muestra una justificación textual de por qué el sistema eligió ese framework.
 
-Explica por qué el sistema eligió ese framework para el agente.
+## 17.3 Casos de prueba
 
-## 18.3 Casos de prueba
-
-Se generan casos iniciales con:
+Los casos iniciales incluyen:
 
 - descripción
 - input
 - criterio de aprobación
 
-## 19. Flujo del agente y editor de flujo
+## 18. Flujo del agente y editor de flujo
 
-## 19.1 Qué se ve al entrar
+## 18.1 Qué se ve al entrar
 
-En la pestaña `Diseño`, el editor ya no aparece abierto de entrada.
-
-Primero ves:
+En la pestaña `Diseño`, primero ves:
 
 - el diagrama del flujo
 - un botón `Editar flujo`
 
-Solo al pulsarlo se abre el editor en la parte inferior de la página.
+El editor no queda abierto por defecto.
 
-## 19.2 Fuente de verdad
+## 18.2 Fuente de verdad
 
 El flujo real se guarda en `graph_blueprint`.
 
-Mermaid no es la fuente de verdad. Mermaid es una vista derivada.
+Mermaid no es la fuente de verdad. Es una vista derivada.
 
-Esto significa:
+Esto implica:
 
-- editar Mermaid manualmente no es el camino operativo principal
-- el editor estructurado trabaja sobre nodos y edges
-- al guardar, Mermaid se regenera desde el blueprint
+- no conviene editar Mermaid como mecanismo principal
+- el editor trabaja sobre nodos y conexiones estructuradas
+- al guardar, Mermaid se regenera
 
-## 19.3 Qué permite la v1 del editor
+## 18.3 Qué permite la versión actual
 
-Actualmente podés:
+Hoy podés:
 
 - agregar nodos
 - agregar conexiones
-- editar ID, tipo, label y descripción de nodos
+- editar ID, tipo, label y descripción
 - editar origen, destino y condición de edges
 - asignar agente en nodos `agent` del modo crew
-- definir tool en nodos `tool`
-- validar el flujo
-- guardar el flujo
+- asignar tool en nodos `tool`
+- validar flujo
+- guardar flujo
 
-## 19.4 Tipos de nodo
-
-La v1 usa:
+## 18.4 Tipos de nodo visibles
 
 - `start`
 - `agent`
@@ -687,184 +806,192 @@ La v1 usa:
 - `tool`
 - `end`
 
-## 19.5 Validación
+## 18.5 Validación
 
-El botón `Validar flujo` revisa estructura y reporta:
+El botón `Validar flujo` revisa estructura y puede devolver:
 
 - errores
 - warnings
 
-La UI ya está endurecida para no caer si la validación llega con datos inesperados.
-
-Además, blueprints legacy sin `edge.id` ahora pueden validarse porque el backend normaliza esos IDs.
-
-## 19.6 Diferencia entre CrewAI y LangChain
-
-Este punto es importante.
+## 18.6 Diferencia entre CrewAI y LangChain
 
 ### En CrewAI
 
-El `graph_blueprint` participa de forma más directa en la construcción del flujo operativo:
-
-- tareas
-- dependencias
-- decisiones de revisión
-- retrabajos
+El `graph_blueprint` participa de forma más directa en la construcción del flujo operativo.
 
 ### En LangChain
 
-La edición de flujo ya existe como:
+El flujo hoy debe leerse como diseño persistido y validado, pero no como garantía automática de una orquestación gráfica compleja completa en todos los casos.
 
-- diseño persistido
-- validación estructural
-- base de visualización y evolución
+Lectura recomendada:
 
-Pero hoy no equivale necesariamente a un motor completo de ejecución por grafo del lado de LangChain. En otras palabras:
+- en CrewAI, tratá el flujo como parte más ejecutiva del diseño
+- en LangChain, tratá el flujo como base visual y estructural gobernada
 
-- el flujo se puede editar, validar y guardar
-- pero no debe asumirse todavía que cada grafo visual se ejecute como un runtime LangGraph completo
+## 19. Configurar un agente
 
-Si necesitás precisión operativa en ese punto, conviene tratar el flujo LangChain actual como diseño gobernado y base de trabajo, no como garantía de orquestación compleja total.
+La pestaña `Configurar` centraliza capacidades avanzadas por agente.
 
-## 20. Configuración avanzada por agente
+Hoy incluye cinco bloques:
 
-La pestaña `Configurar` centraliza varias capas avanzadas.
+- skills
+- servidores MCP
+- bases de conocimiento
+- política de comportamiento
+- guardrails
 
-## 20.1 Skills
+## 19.1 Skills
 
 Permite:
 
 - listar skills disponibles
-- asignarlas al agente
+- asignarlas
 - desasignarlas
 
-## 20.2 Servidores MCP
+La UI muestra también herramientas asociadas cuando la skill las tiene.
+
+## 19.2 Servidores MCP
 
 Permite:
 
-- ver servidores disponibles
+- ver servidores registrados
 - asignarlos al agente
 - quitarlos
 
-## 20.3 Bases de conocimiento
+Además muestra:
 
-Permite vincular knowledge bases al agente.
+- endpoint
+- cantidad de tools descubiertas
+- tipo de transporte
 
-## 20.4 Behavior Policy
+## 19.3 Bases de conocimiento
 
-La política de comportamiento permite configurar, entre otros:
+Permite:
+
+- ver KBs compartidas
+- asignarlas al agente
+- quitarlas
+
+## 19.4 Política de comportamiento
+
+Hoy la policy permite configurar:
 
 - tono
 - condiciones de escalación
 - triggers de confirmación
 - requisitos de formato
-- reglas custom
+- reglas adicionales
 
-## 20.5 Guardrails
+## 19.5 Guardrails
 
-Los guardrails permiten crear reglas activables para controlar:
+Los guardrails hoy permiten crear reglas sobre:
 
-- entradas
-- salidas
+- inputs
+- outputs
+- longitud
 - temas restringidos
-- keywords
-- patrones
-- acciones de bloqueo o tratamiento
+
+Tipos visibles:
+
+- `input_block`
+- `output_filter`
+- `length_limit`
+- `topic_restrict`
+
+Acciones visibles:
+
+- `block`
+- `warn`
+- `transform`
 
 Uso recomendado:
 
-- definir primero unas pocas reglas críticas
-- evitar sobrerregular el agente sin tener casos de prueba claros
+- empezar por pocas reglas críticas
+- probarlas antes de sobre-regular el agente
 
-## 21. Editar un agente ya creado
+## 20. Editar un agente ya creado
 
-La pestaña `Editar` permite cambios rápidos sobre el agente.
+La pestaña `Editar` permite cambios rápidos sobre el diseño.
 
-## 21.1 Qué se puede modificar
+Los cambios operativos más comunes son:
 
 - nombre visible
 - system prompt
 - modelo
-- temperature
+- temperatura
 - max tokens
 
-## 21.2 Fuente de modelos
+Importante:
 
-Los modelos disponibles en esta pantalla salen de la `Bóveda IA`.
+- los modelos disponibles salen de la `Boveda IA`
+- si no hay modelos cargados, no vas a poder seleccionar uno nuevo
+- guardar cambios reconstruye el runtime
 
-Si no hay modelos en la bóveda:
+## 21. Deploy y chat desplegado
 
-- no vas a poder elegir uno nuevo desde el selector
+## 21.1 Deploy
 
-## 21.3 Efecto del guardado
+Desde el monitor, `Deploy` deja al agente en estado desplegado.
 
-Guardar cambios:
+## 21.2 Abrir chat
 
-- actualiza el diseño
-- reconstruye el runtime
+Si el agente ya fue desplegado, aparece `Abrir chat`.
 
-Por eso, después de un guardado exitoso es normal volver al sandbox y validar otra vez.
-
-## 22. Deploy y chat desplegado
-
-## 22.1 Deploy
-
-Desde el monitor, el botón `Deploy` marca el agente como desplegado y habilita su uso por chat público/controlado según la configuración.
-
-## 22.2 Abrir chat
-
-Si el agente está desplegado, aparece `Abrir chat`.
-
-La ruta de chat standalone es del estilo:
+La ruta standalone hoy es del estilo:
 
 - `/c/{agent_id}`
 
-## 22.3 Contexto del chat desplegado
+## 21.3 Contexto del chat desplegado
 
-En el chat desplegado también se muestra una cabecera de contexto con:
+El chat standalone también muestra cabecera de contexto con:
 
 - agente
-- usuario si la sesión está autenticada
+- usuario si hay sesión
 - tenant cuando puede resolverse
 - entorno
 - canal
 
-En escenarios públicos con API key puede degradar con gracia y no tener todos los datos de usuario.
+En escenarios públicos o con API key, el sistema puede degradar con gracia si no tiene identidad completa del usuario.
 
-## 23. Observabilidad y billing
+## 22. Observabilidad y billing
 
 La pantalla `Observabilidad` resume el uso del workspace.
 
-## 23.1 Qué muestra
+## 22.1 Qué muestra
 
-- agentes activos
-- invocaciones del mes
+- plan actual
+- agentes activos vs límite
+- invocaciones del mes vs límite
 - costo acumulado
 - features habilitadas
 - uso del plan
 - billing de los últimos 14 días
 - uso por agente
 
-## 23.2 Cómo leerla
+## 22.2 Cómo leerla
 
 ### Agentes activos
 
-Muestra consumo de capacidad del plan.
+Mide capacidad consumida respecto del máximo del plan.
 
 ### Invocaciones del mes
 
-Muestra cuántas llamadas se realizaron respecto del límite mensual.
+Mide uso mensual respecto del límite del plan.
 
-### Costo acumulado
+### Features habilitadas
 
-Suma costo registrado en eventos de billing.
+Hoy la UI destaca principalmente:
+
+- `RAG`
+- `Multi-agente`
 
 ### Billing 14 días
 
-Muestra:
+La pantalla muestra:
 
-- llamadas diarias
+- llamadas por día
 - costo por día
+- total agregado del período cargado
 
 ### Uso por agente
 
@@ -874,18 +1001,18 @@ Permite detectar:
 - qué estado tienen
 - qué framework usan
 
-## 23.3 Relación con costos de modelos
+## 22.3 Relación con costos de modelos
 
-Para que el costo tenga sentido:
+Para que el costo tenga lectura útil:
 
-- el modelo debe estar configurado en la bóveda
-- el modelo debe tener precio de input/output
+- el modelo debe resolverse desde la Bóveda IA
+- el modelo debe tener precio input/output cargado
 
 Si no, podés ver invocaciones pero costo en cero.
 
-## 24. Buenas prácticas de operación
+## 23. Buenas prácticas de operación
 
-## 24.1 Antes de desplegar
+## 23.1 Antes de desplegar
 
 - corré `Rebuild`
 - probá en sandbox
@@ -893,51 +1020,58 @@ Si no, podés ver invocaciones pero costo en cero.
 - ejecutá `Evaluar`
 - verificá observabilidad básica
 
-## 24.2 Cuando cambiás modelo
+## 23.2 Cuando cambiás modelo
 
-- revisá el costo por millón de tokens
-- confirmá que la key de la bóveda sea la correcta
-- revalidá comportamiento y latencia
+- revisá costos por millón de tokens
+- confirmá qué llave del proveedor va a usarse
+- revalidá latencia y comportamiento
 
-## 24.3 Cuando agregás tools
+## 23.3 Cuando agregás tools
 
-- definí una descripción muy clara
-- revisá el badge de estado antes de asumir que está lista
-- evitá tools con efectos ambiguos
-- testealas aisladas antes de esperar que el agente las use bien
+- escribí descripciones claras
+- mirá readiness y compatibilidad antes de asumir que una tool está lista
+- testeá primero las custom tools de forma aislada
 
-## 24.4 Cuando usás RAG
+## 23.4 Cuando usás RAG
 
 - empezá con pocas fuentes confiables
-- revisá duplicados o fuentes de baja calidad
-- no mezcles conocimiento muy heterogéneo sin necesidad
+- revisá duplicados
+- evitá mezclar conocimiento heterogéneo sin necesidad
 
-## 24.5 Cuando editás flujo
+## 23.5 Cuando editás flujo
 
-- usá labels simples y consistentes
+- usá labels simples
 - validá antes de guardar
-- rebuild después de cambios importantes
-- en LangChain, no asumas todavía soporte total de orquestación compleja por grafo
+- hacé rebuild después de cambios importantes
+- en LangChain, no asumas soporte total de orquestación visual compleja
 
-## 25. Troubleshooting
+## 24. Troubleshooting
 
-## 25.1 No veo modelos en el wizard o en editar agente
-
-Revisá:
-
-- que exista una clave en `Bóveda IA`
-- que esa clave tenga modelos cargados
-- que el modelo esté asociado a la key correcta
-
-## 25.2 Las invocaciones no generan costo
+## 24.1 No veo modelos en el wizard o en editar agente
 
 Revisá:
 
-- que el modelo esté resuelto desde la bóveda
-- que el modelo tenga `input_cost_per_million` y `output_cost_per_million`
-- que el runtime esté registrando billing events
+- que exista una credencial en `Boveda IA`
+- que esa credencial tenga modelos cargados
+- que el proveedor tenga una llave usable
 
-## 25.3 El editor de flujo me muestra observaciones o no guarda
+## 24.2 Las invocaciones no generan costo
+
+Revisá:
+
+- que el modelo se resuelva desde la Bóveda
+- que el modelo tenga `input_cost_per_million`
+- que el modelo tenga `output_cost_per_million`
+
+## 24.3 El monitor no queda listo
+
+Revisá:
+
+- si el `Rebuild` terminó bien
+- si la configuración del modelo es válida
+- si alguna tool o integración externa está fallando
+
+## 24.4 El editor de flujo muestra errores o no guarda
 
 Revisá:
 
@@ -946,80 +1080,75 @@ Revisá:
 - edges con origen o destino inválido
 - nodos `agent` sin asignación correcta en modo crew
 
-## 25.4 El diagrama Mermaid no se ve bien
-
-El diagrama se genera desde el blueprint. Si hay problemas:
-
-- validá el flujo
-- guardalo nuevamente
-- revisá labels conflictivos
-
-## 25.5 El sandbox responde, pero el comportamiento no es el esperado
+## 24.5 El sandbox responde, pero el comportamiento no es el esperado
 
 Probá esta secuencia:
 
 1. revisar system prompt
 2. revisar tools asignadas y su estado operativo
-3. revisar conocimiento, skills o MCP conectados
-4. rebuildar si cambiaste flujo o configuración
+3. revisar skills, conocimiento y MCP conectados
+4. rebuildar si cambiaste diseño o configuración
+5. correr evaluación
 
-## 25.6 Una tool aparece, pero no funciona como esperabas
+## 24.6 Una tool aparece, pero no funciona como esperabas
 
 Revisá:
 
-- si el badge indica que requiere credencial, datasource, política o SMTP global
-- si el framework del agente soporta esa capacidad en el estado actual
-- si el builder ya fue recompilado con `Rebuild`
-- si el backend registró errores de tool en logs de observabilidad
-- si la dependencia externa existe de verdad, por ejemplo un servidor MCP activo o una knowledge base lista
-2. revisar tools asignadas
-3. revisar policy y guardrails
-4. evaluar
-5. optimizar si corresponde
+- si la tool requiere credencial, datasource, política o SMTP global
+- si el framework del agente soporta esa capacidad
+- si el agente fue rebuildado después del cambio
+- si la dependencia externa existe de verdad
 
-## 25.6 Un chat público no muestra todos los datos de contexto
+## 24.7 Una KB o fuente queda indexando
+
+Revisá:
+
+- si la URL es accesible
+- si el archivo tiene formato soportado
+- si la KB pasó a `ready` después de la ingesta
+
+## 24.8 Un chat público no muestra todos los datos de contexto
 
 Eso puede ser normal si:
 
 - entró por API key
-- no hay sesión autenticada de usuario
+- no hay sesión autenticada
 
-En esos casos el sistema muestra el mejor contexto disponible sin inventar identidad.
-
-## 26. Glosario breve
+## 25. Glosario breve
 
 - `Tenant`: workspace aislado
-- `Owner`: usuario con permisos máximos sobre el tenant y accesos administrativos
-- `Viewer`: usuario de solo lectura
+- `Viewer`: usuario de lectura
+- `Developer`: usuario con acceso de construcción
+- `Owner`: usuario con acceso a administración del tenant
 - `Spec`: definición funcional del agente
-- `Design`: diseño resultante del wizard
+- `Design`: diseño generado por el wizard
 - `Runtime`: implementación ejecutable del agente
 - `Rebuild`: reconstrucción del runtime
-- `Deploy`: habilitación operativa del agente desplegado
+- `Deploy`: habilitación operativa del chat desplegado
 - `RAG`: recuperación de conocimiento indexado
-- `MCP`: servidor de tools externas integradas por protocolo
+- `MCP`: protocolo para tools externas expuestas por servidor
 - `Graph blueprint`: estructura real del flujo
 - `Mermaid`: representación visual derivada del flujo
 
-## 27. Alcance y límites actuales
+## 26. Alcance y límites actuales
 
-Este manual describe la plataforma tal como existe hoy. Hay tres límites que conviene tener presentes:
+Este manual describe la plataforma tal como existe hoy. Conviene tener presentes estos límites:
 
-1. no toda configuración visual implica automáticamente soporte completo de ejecución compleja en todos los frameworks
-2. observabilidad depende de que el modelo y sus costos estén bien configurados
-3. algunas capacidades avanzadas están disponibles solo para roles con permisos de edición u owner
+1. no toda configuración visual implica ejecución compleja completa en todos los frameworks
+2. observabilidad económica depende de que los modelos y sus costos estén bien cargados
+3. varias pantallas y acciones cambian según rol y permisos efectivos del backend
 
-## 28. Recomendación final de uso
+## 27. Secuencia recomendada de uso
 
-Si estás arrancando con un tenant nuevo, una secuencia sana es:
+Si estás arrancando con un tenant nuevo, una secuencia sana hoy es:
 
-1. cargar llaves y modelos en `Bóveda IA`
+1. cargar credenciales y modelos en `Boveda IA`
 2. crear el agente con el wizard
 3. revisar diseño y flujo
 4. probar en sandbox
-5. conectar conocimiento, skills o MCP si hace falta
+5. conectar skills, conocimiento o MCP si hace falta
 6. evaluar
-7. optimizar
+7. optimizar si corresponde
 8. desplegar
 9. seguir uso y costo en `Observabilidad`
 
@@ -1031,5 +1160,6 @@ Si este manual se mantiene dentro del repo, conviene actualizarlo cada vez que c
 - wizard
 - monitor
 - editor de flujo
+- librerías
 - observabilidad
 - permisos
