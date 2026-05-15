@@ -346,9 +346,14 @@ class KnowledgeBuilderService:
         collection = self.collection_name(agent_id)
         try:
             info = await self._qdrant.get_collection(collection)
+            vectors_count = (
+                getattr(info, "points_count", None)
+                or getattr(info, "vectors_count", None)
+                or 0
+            )
             return {
                 "collection": collection,
-                "vectors_count": info.vectors_count,
+                "vectors_count": int(vectors_count),
                 "status": str(info.status),
             }
         except Exception:
