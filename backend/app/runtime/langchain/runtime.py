@@ -404,7 +404,7 @@ class LangChainRuntime(AgentRuntime):
         if iterations >= max_iterations:
             await self._emit_progress("fallback", "El flujo alcanzo su limite de iteraciones; entregando el ultimo resultado util")
 
-        final_output = self._resolve_graph_output(current_output, state)
+        final_output = await self._resolve_graph_output(current_output, state)
         return final_output, steps
 
     async def _run_agent_node(self, *, node: dict[str, Any], state: dict[str, Any]) -> str:
@@ -595,13 +595,69 @@ class LangChainRuntime(AgentRuntime):
             "final_answer": str(parsed.get("final_answer") or "").strip(),
         }
 
-    def _resolve_graph_output(self, current_output: str, state: dict[str, Any]) -> str:
+    async def _resolve_graph_output(self, current_output: str, state: dict[str, Any]) -> str:
         outputs = list(state.get("step_outputs") or [])
+        selected_step: dict[str, Any] | None = None
+        selected_output = ""
+
         for step in reversed(outputs):
             output = str(step.get("output") or "").strip()
-            if output:
-                return output
-        return current_output or "No se genero una salida visible para este flujo."
+            if not output:
+                continue
+            if selected_step is None:
+                selected_step = step
+                selected_output = output
+            if not _is_low_signal_output(output):
+                selected_step = step
+                selected_output = output
+                break
+
+        if not selected_output:
+            selected_output = str(current_output or "").strip()
+
+        if (
+            self._llm is not None
+            and selected_step is not None
+            and self._should_synthesize_graph_output(selected_step, selected_output)
+        ):
+            synthesized = await self._synthesize_graph_output(state)
+            if synthesized and not _is_low_signal_output(synthesized):
+                return synthesized
+
+        if selected_output:
+            return selected_output
+        return "No se genero una salida visible para este flujo."
+
+    def _should_synthesize_graph_output(self, step: dict[str, Any], output: str) -> bool:
+        step_type = str(step.get("type") or step.get("node_type") or "").strip().lower()
+        if _is_low_signal_output(output):
+            return True
+        if step_type in {"tool", "decision"}:
+            return True
+        if step_type == "agent":
+            normalized = output.strip().lower()
+            if normalized.startswith("decision:") or normalized.startswith("[") or "fuente:" in normalized:
+                return True
+        return False
+
+    async def _synthesize_graph_output(self, state: dict[str, Any]) -> str:
+        prompt = "\n\n".join(
+            [
+                self._system_prompt.strip(),
+                "Tu tarea ahora es redactar la respuesta final para el usuario usando el trabajo ya realizado por el flujo.",
+                "No describas el flujo interno, no menciones nodos, decisiones ni herramientas salvo que sea realmente necesario para responder.",
+                "Si hubo resultados de busqueda o herramientas, sintetizalos en una respuesta natural, util y directa.",
+                "Si faltan datos externos o una herramienta no estuvo disponible, responde igual con la mejor ayuda posible sin inventar hechos.",
+                "Entrega solo la respuesta final lista para mostrar en el chat.",
+                _render_graph_context(state),
+            ]
+        ).strip()
+        try:
+            result = await self._llm.ainvoke(prompt)
+        except Exception as exc:
+            logger.exception("[LangChainGraph] final synthesis failed: %s", exc)
+            return ""
+        return _strip_xml_tool_calls(_coerce_message_text(result)).strip()
 
     def _first_outgoing(self, node_id: str, outgoing: dict[str, list[dict[str, Any]]]) -> str | None:
         edge = next(iter(outgoing.get(node_id, [])), None)
@@ -672,6 +728,19 @@ def _trim_trace(text: str, limit: int = 900) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 3].rstrip() + "..."
+
+
+def _is_low_signal_output(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return True
+    low_signal_markers = (
+        "no se genero una salida visible",
+        "respuesta bloqueada por politica de seguridad",
+        "[tool no disponible:",
+        "[error de tool",
+    )
+    return any(marker in normalized for marker in low_signal_markers)
 
 
 def _split_into_sentences(text: str) -> list[str]:

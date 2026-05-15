@@ -12,11 +12,9 @@ interface Props {
 
 interface ChatMessage {
   id: string
-  role: 'user' | 'assistant' | 'trace'
+  role: 'user' | 'assistant'
   content: string
   streaming?: boolean
-  actor?: string
-  kind?: string
 }
 
 export function StandaloneChat({ agentId }: Props) {
@@ -34,8 +32,6 @@ export function StandaloneChat({ agentId }: Props) {
   const onTokenRef = useRef<(token: string) => void>(() => {})
   const onDoneRef  = useRef<(sid: string) => void>(() => {})
   const onErrorRef = useRef<(msg: string) => void>(() => {})
-  const onStatusRef = useRef<(payload: { message: string }) => void>(() => {})
-  const onTraceRef = useRef<(payload: { actor?: string | null; kind?: string; message: string }) => void>(() => {})
   
   const [agentReady, setAgentReady] = useState<'loading' | 'ok' | 'error'>('loading')
 
@@ -136,32 +132,14 @@ export function StandaloneChat({ agentId }: Props) {
       ))
       setSending(false)
     }
-    onStatusRef.current = (payload) => {
-      setMessages(prev => [...prev, {
-        id: `status_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
-        role: 'trace',
-        content: payload.message,
-        kind: 'status',
-      }])
-    }
-    onTraceRef.current = (payload) => {
-      setMessages(prev => [...prev, {
-        id: `trace_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
-        role: 'trace',
-        content: payload.message,
-        actor: payload.actor || undefined,
-        kind: payload.kind,
-      }])
-    }
-
     if (!wsRef.current) {
       wsRef.current = createAgentWebSocket(
         agentId,
         (token) => onTokenRef.current(token),
         (sid)   => onDoneRef.current(sid),
         (msg)   => onErrorRef.current(msg),
-        (payload) => onStatusRef.current(payload),
-        (payload) => onTraceRef.current(payload),
+        () => {},
+        () => {},
         { apiKey },
       )
     }
@@ -225,19 +203,10 @@ export function StandaloneChat({ agentId }: Props) {
             <div className={`max-w-[85%] md:max-w-[75%] px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed shadow-sm ${
               msg.role === 'user'
                 ? 'bg-violet-600 text-white rounded-br-sm'
-                : msg.role === 'trace'
-                ? 'bg-slate-50 border border-dashed border-slate-200 text-slate-500 rounded-bl-sm italic'
                 : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
             }`}>
               {msg.role === 'user'
                 ? <p className="whitespace-pre-wrap">{msg.content}</p>
-                : msg.role === 'trace'
-                  ? (
-                    <div className="space-y-1">
-                      {msg.actor && <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 not-italic">{msg.actor}</div>}
-                      <p className="whitespace-pre-wrap text-xs leading-5">{msg.content}</p>
-                    </div>
-                  )
                 : msg.content
                   ? <RichText content={msg.content} />
                   : msg.streaming
