@@ -66,8 +66,6 @@ export function AgentMonitor({ design, onOptimized }: Props) {
   const onTokenRef = useRef<(token: string) => void>(() => {})
   const onDoneRef  = useRef<(sid: string) => void>(() => {})
   const onErrorRef = useRef<(msg: string) => void>(() => {})
-  const onStatusRef = useRef<(payload: { message: string }) => void>(() => {})
-  const onTraceRef = useRef<(payload: { actor?: string | null; kind?: string; message: string }) => void>(() => {})
 
   useEffect(() => {
     handleBuild()
@@ -140,29 +138,6 @@ export function AgentMonitor({ design, onOptimized }: Props) {
       )
       setSending(false)
     }
-    onStatusRef.current = (payload) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `status_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
-          role: 'trace',
-          content: payload.message,
-          kind: 'status',
-        },
-      ])
-    }
-    onTraceRef.current = (payload) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `trace_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
-          role: 'trace',
-          content: payload.message,
-          actor: payload.actor || undefined,
-          kind: payload.kind,
-        },
-      ])
-    }
 
     if (!wsRef.current) {
       wsRef.current = createAgentWebSocket(
@@ -170,8 +145,8 @@ export function AgentMonitor({ design, onOptimized }: Props) {
         (token) => onTokenRef.current(token),
         (sid)   => onDoneRef.current(sid),
         (msg)   => onErrorRef.current(msg),
-        (payload) => onStatusRef.current(payload),
-        (payload) => onTraceRef.current(payload),
+        () => {},
+        () => {},
       )
     }
 

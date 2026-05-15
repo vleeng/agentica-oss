@@ -624,8 +624,20 @@ class LangChainRuntime(AgentRuntime):
             if synthesized and not _is_low_signal_output(synthesized):
                 return synthesized
 
+        if self._llm is not None and (
+            not selected_output
+            or _looks_like_internal_graph_output(selected_output)
+        ):
+            fallback = await self._direct_graph_fallback(state)
+            if fallback and not _is_low_signal_output(fallback):
+                return fallback
+
         if selected_output:
             return selected_output
+        if self._llm is not None:
+            fallback = await self._direct_graph_fallback(state)
+            if fallback and not _is_low_signal_output(fallback):
+                return fallback
         return "No se genero una salida visible para este flujo."
 
     def _should_synthesize_graph_output(self, step: dict[str, Any], output: str) -> bool:
@@ -656,6 +668,25 @@ class LangChainRuntime(AgentRuntime):
             result = await self._llm.ainvoke(prompt)
         except Exception as exc:
             logger.exception("[LangChainGraph] final synthesis failed: %s", exc)
+            return ""
+        return _strip_xml_tool_calls(_coerce_message_text(result)).strip()
+
+    async def _direct_graph_fallback(self, state: dict[str, Any]) -> str:
+        prompt = "\n\n".join(
+            [
+                self._system_prompt.strip(),
+                "Responde directamente al ultimo mensaje del usuario con una respuesta breve, clara y util.",
+                "No menciones el flujo interno, herramientas, decisiones ni errores tecnicos.",
+                "Si el usuario solo saluda, responde al saludo e invita a pedir una receta o ayuda concreta.",
+                "Si faltan datos para cumplir el objetivo, pide la aclaracion minima necesaria.",
+                "Entrega solo la respuesta final lista para mostrar en el chat.",
+                _render_graph_context(state),
+            ]
+        ).strip()
+        try:
+            result = await self._llm.ainvoke(prompt)
+        except Exception as exc:
+            logger.exception("[LangChainGraph] direct fallback failed: %s", exc)
             return ""
         return _strip_xml_tool_calls(_coerce_message_text(result)).strip()
 
@@ -736,11 +767,29 @@ def _is_low_signal_output(text: str) -> bool:
         return True
     low_signal_markers = (
         "no se genero una salida visible",
+        "sin resultados.",
+        "sin resultados",
         "respuesta bloqueada por politica de seguridad",
         "[tool no disponible:",
         "[error de tool",
     )
     return any(marker in normalized for marker in low_signal_markers)
+
+
+def _looks_like_internal_graph_output(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return True
+    internal_markers = (
+        "decision:",
+        "ruta seleccionada",
+        "para continuar segun el flujo",
+        "se requiere informacion adicional",
+        "fuente:",
+        "**",
+        "[web_search",
+    )
+    return any(marker in normalized for marker in internal_markers)
 
 
 def _split_into_sentences(text: str) -> list[str]:
