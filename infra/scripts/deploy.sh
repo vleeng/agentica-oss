@@ -4,6 +4,7 @@
 #
 # Uso:
 #   ./deploy.sh                    # deploy completo
+#   ./deploy.sh --ref main         # deploy de una rama, tag o commit especifico
 #   ./deploy.sh --only backend     # solo backend
 #   ./deploy.sh --only frontend    # solo frontend
 #   ./deploy.sh --rollback         # rollback al tag anterior
@@ -33,10 +34,20 @@ err()  { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$LOG_FILE"; exit 1; }
 
 ONLY=""
 ROLLBACK=false
+DEPLOY_REF="main"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --only)     ONLY="$2"; shift 2 ;;
+        --ref)
+            [[ $# -ge 2 ]] || err "Falta el valor para --ref"
+            DEPLOY_REF="$2"
+            shift 2
+            ;;
+        --only)
+            [[ $# -ge 2 ]] || err "Falta el valor para --only"
+            ONLY="$2"
+            shift 2
+            ;;
         --rollback) ROLLBACK=true; shift ;;
         *)          err "Argumento desconocido: $1" ;;
     esac
@@ -81,8 +92,16 @@ backup_database() {
 pull_latest() {
     log "Actualizando código..."
     cd "$DEPLOY_DIR"
-    git fetch origin main
-    git reset --hard origin/main
+    git fetch --all --tags --prune
+
+    if git rev-parse --verify --quiet "origin/$DEPLOY_REF^{commit}" >/dev/null; then
+        git checkout "$DEPLOY_REF" >/dev/null 2>&1 || git checkout -B "$DEPLOY_REF" "origin/$DEPLOY_REF"
+        git reset --hard "origin/$DEPLOY_REF"
+    elif git rev-parse --verify --quiet "$DEPLOY_REF^{commit}" >/dev/null; then
+        git checkout --detach "$DEPLOY_REF"
+    else
+        err "No se encontro la ref '$DEPLOY_REF' como rama remota, tag o commit."
+    fi
     log "Código actualizado a $(git rev-parse --short HEAD)"
 }
 

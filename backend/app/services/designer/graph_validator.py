@@ -80,7 +80,8 @@ def normalize_graph_blueprint(design: AgentDesign, blueprint: GraphBlueprint) ->
         )
 
     meta = blueprint.meta.model_copy(update={"version": max(1, blueprint.meta.version)})
-    return GraphBlueprint(nodes=normalized_nodes, edges=normalized_edges, meta=meta)
+    normalized = GraphBlueprint(nodes=normalized_nodes, edges=normalized_edges, meta=meta)
+    return _ensure_rag_knowledge_node(design, normalized)
 
 
 def validate_graph_blueprint(design: AgentDesign, blueprint: GraphBlueprint) -> GraphValidationReport:
@@ -146,6 +147,8 @@ def validate_graph_blueprint(design: AgentDesign, blueprint: GraphBlueprint) -> 
 
     available_role_names = {role.name for role in design.spec.agents} | {role.role for role in design.spec.agents}
     available_tool_names = {tool.name for tool in design.spec.tools}
+    if design.spec.mode.value == "single" and design.spec.rag.enabled:
+        available_tool_names.add("knowledge_base")
 
     for node in agents:
         if design.spec.mode.value == "crew":
@@ -266,3 +269,108 @@ def _reachable_nodes(start_id: str, outgoing: dict[str, list]) -> set[str]:
             if edge.to not in visited:
                 queue.append(edge.to)
     return visited
+
+
+def _ensure_rag_knowledge_node(design: AgentDesign, blueprint: GraphBlueprint) -> GraphBlueprint:
+    if design.spec.mode.value != "single" or not design.spec.rag.enabled:
+        return blueprint
+
+    existing_rag = next(
+        (
+            node for node in blueprint.nodes
+            if node.type.value == "tool" and (node.data.tool_name or "").strip() == "knowledge_base"
+        ),
+        None,
+    )
+    if existing_rag:
+        return blueprint
+
+    start_node = next((node for node in blueprint.nodes if node.type.value == "start"), None)
+    if start_node is None:
+        return blueprint
+
+    nodes = list(blueprint.nodes)
+    edges = list(blueprint.edges)
+    rag_node_id = _next_node_id({node.id for node in nodes}, "knowledge_base")
+    start_position = start_node.position or FlowNodePosition(x=120, y=120)
+    rag_node = FlowNode.model_validate(
+        {
+            "id": rag_node_id,
+            "type": "tool",
+            "label": "Base de conocimientos",
+            "description": "Consulta la base de conocimientos del agente antes de continuar el flujo.",
+            "position": {
+                "x": start_position.x + 240,
+                "y": start_position.y,
+            },
+            "data": {
+                "tool_name": "knowledge_base",
+                "description": "Consulta la base de conocimientos del agente antes de continuar el flujo.",
+            },
+        }
+    )
+    nodes.append(rag_node)
+
+    outgoing_from_start = [edge for edge in edges if edge.from_ == start_node.id]
+    remaining_edges = [edge for edge in edges if edge.from_ != start_node.id]
+    existing_edge_ids = {edge.id for edge in edges if edge.id}
+
+    start_to_rag = {
+        "id": _next_edge_id(existing_edge_ids, "edge_start_rag"),
+        "from": start_node.id,
+        "to": rag_node_id,
+        "condition": None,
+    }
+    existing_edge_ids.add(start_to_rag["id"])
+
+    next_edges = []
+    if outgoing_from_start:
+        for edge in outgoing_from_start:
+            next_edge = {
+                "id": _next_edge_id(existing_edge_ids, edge.id or f"{rag_node_id}_{edge.to}"),
+                "from": rag_node_id,
+                "to": edge.to,
+                "condition": edge.condition,
+            }
+            existing_edge_ids.add(next_edge["id"])
+            next_edges.append(next_edge)
+    else:
+        fallback_target = next(
+            (node.id for node in nodes if node.id not in {start_node.id, rag_node_id} and node.type.value != "start"),
+            None,
+        )
+        if fallback_target:
+            next_edge = {
+                "id": _next_edge_id(existing_edge_ids, f"{rag_node_id}_{fallback_target}"),
+                "from": rag_node_id,
+                "to": fallback_target,
+                "condition": None,
+            }
+            existing_edge_ids.add(next_edge["id"])
+            next_edges.append(next_edge)
+
+    rebuilt_edges = [
+        FlowEdge.model_validate(start_to_rag),
+        *[FlowEdge.model_validate(edge) for edge in next_edges],
+        *remaining_edges,
+    ]
+
+    return GraphBlueprint(nodes=nodes, edges=rebuilt_edges, meta=blueprint.meta)
+
+
+def _next_node_id(existing_ids: set[str], base_id: str) -> str:
+    candidate = base_id
+    suffix = 2
+    while candidate in existing_ids:
+        candidate = f"{base_id}_{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _next_edge_id(existing_ids: set[str], base_id: str) -> str:
+    candidate = base_id
+    suffix = 2
+    while candidate in existing_ids:
+        candidate = f"{base_id}_{suffix}"
+        suffix += 1
+    return candidate

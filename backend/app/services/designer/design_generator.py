@@ -102,6 +102,9 @@ FRAMEWORK: {framework.framework}
 HERRAMIENTAS: {[t.name for t in spec.tools]}
 AGENTES/ROLES: {[a.role for a in spec.agents] if spec.agents else []}
 PROCESO: {framework.process.value if framework.process else 'N/A'}
+RAG HABILITADO: {"si" if spec.rag.enabled else "no"}
+
+{"Si RAG esta habilitado, inclui explicitamente un nodo tool de base de conocimientos al inicio del flujo para consultar documentos del agente antes de responder." if spec.rag.enabled else ""}
 
 Respondé SOLO con el JSON válido, sin markdown, sin explicaciones."""
 
@@ -110,6 +113,26 @@ Respondé SOLO con el JSON válido, sin markdown, sin explicaciones."""
             return json.loads(content)
         except json.JSONDecodeError:
             # Fallback a blueprint mínimo si el LLM no devuelve JSON válido
+            if spec.rag.enabled:
+                return {
+                    "nodes": [
+                        {"id": "start", "type": "start", "label": "Inicio", "description": ""},
+                        {
+                            "id": "knowledge_base",
+                            "type": "tool",
+                            "label": "Base de conocimientos",
+                            "description": "Consulta los documentos y contexto indexado del agente.",
+                            "data": {"tool_name": "knowledge_base"},
+                        },
+                        {"id": "agent", "type": "agent", "label": spec.name, "description": spec.goal},
+                        {"id": "end", "type": "end", "label": "Respuesta", "description": ""},
+                    ],
+                    "edges": [
+                        {"from": "start", "to": "knowledge_base", "condition": None},
+                        {"from": "knowledge_base", "to": "agent", "condition": None},
+                        {"from": "agent", "to": "end", "condition": None},
+                    ],
+                }
             return {
                 "nodes": [
                     {"id": "start", "type": "start", "label": "Inicio", "description": ""},

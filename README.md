@@ -74,6 +74,10 @@ sudo nano /opt/agentica/.env
 cd /opt/agentica
 sudo bash infra/scripts/deploy.sh
 
+# Deploy de una rama, tag o commit especifico
+sudo bash infra/scripts/deploy.sh --ref codex-wizard-ai-advisor
+sudo bash infra/scripts/deploy.sh --ref 893ac1a
+
 # Solo backend
 sudo bash infra/scripts/deploy.sh --only backend
 

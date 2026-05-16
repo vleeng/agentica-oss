@@ -82,9 +82,21 @@ function asErrorMessage(value: unknown, fallback: string): string {
   return fallback
 }
 
+function buildToolOptions(design: AgentDesign) {
+  const baseTools = [...(design.spec.tools ?? [])]
+  if (design.spec.mode === 'single' && design.spec.rag.enabled && !baseTools.some((tool) => tool.name === 'knowledge_base')) {
+    baseTools.push({
+      name: 'knowledge_base',
+      source: 'library',
+      config: { description: 'Consultar la base de conocimientos del agente' },
+    })
+  }
+  return baseTools
+}
+
 function defaultNode(type: FlowNodeType, index: number, design: AgentDesign): FlowNode {
   const roleOptions = design.spec.agents ?? []
-  const toolOptions = design.spec.tools ?? []
+  const toolOptions = buildToolOptions(design)
   return {
     id: `${type}_${index}`,
     type,
@@ -292,7 +304,7 @@ export function FlowEditor({ design, onSaved }: Props) {
   )
 
   const roleOptions = design.spec.agents ?? []
-  const toolOptions = design.spec.tools ?? []
+  const toolOptions = buildToolOptions(design)
   const nodesById = useMemo(() => new Map(draft.nodes.map((node) => [node.id, node])), [draft.nodes])
 
   const allIssues = useMemo(

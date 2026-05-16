@@ -314,6 +314,7 @@ class LangChainRuntime(AgentRuntime):
             "chat_history": chat_history,
             "step_outputs": [],
             "selected_tools": [],
+            "rag_context_cache": {},
         }
         max_iterations = max(8, len(nodes) * 3)
         iterations = 0
@@ -408,6 +409,10 @@ class LangChainRuntime(AgentRuntime):
         return final_output, steps
 
     async def _run_agent_node(self, *, node: dict[str, Any], state: dict[str, Any]) -> str:
+        rag_context = await self._get_graph_rag_context(
+            state=state,
+            query=self._build_rag_query(node=node, state=state),
+        )
         prompt = "\n\n".join(
             [
                 self._system_prompt.strip(),
@@ -415,6 +420,7 @@ class LangChainRuntime(AgentRuntime):
                 f"Descripcion del paso: {str(node.get('description') or '').strip() or 'Sin descripcion adicional.'}",
                 "Trabaja sobre este paso del flujo. Si es intermedio, no hace falta responder al usuario final todavia.",
                 "Apoyate en el contexto acumulado del flujo y produce una salida clara para este paso.",
+                rag_context,
                 _render_graph_context(state),
             ]
         ).strip()
@@ -577,6 +583,14 @@ class LangChainRuntime(AgentRuntime):
         if tool_name:
             return tool_name
         label = str(node.get("label") or "").strip()
+        if label in self._tools_by_name:
+            return label
+        normalized_label = _normalize_tool_key(label)
+        if normalized_label in self._tools_by_name:
+            return normalized_label
+        for available_name in self._tools_by_name:
+            if _normalize_tool_key(available_name) == normalized_label:
+                return available_name
         return label
 
     def _parse_branch_response(self, raw_text: str, branches: list[dict[str, Any]]) -> dict[str, Any]:
@@ -653,6 +667,10 @@ class LangChainRuntime(AgentRuntime):
         return False
 
     async def _synthesize_graph_output(self, state: dict[str, Any]) -> str:
+        rag_context = await self._get_graph_rag_context(
+            state=state,
+            query=self._build_rag_query(state=state),
+        )
         prompt = "\n\n".join(
             [
                 self._system_prompt.strip(),
@@ -661,6 +679,7 @@ class LangChainRuntime(AgentRuntime):
                 "Si hubo resultados de busqueda o herramientas, sintetizalos en una respuesta natural, util y directa.",
                 "Si faltan datos externos o una herramienta no estuvo disponible, responde igual con la mejor ayuda posible sin inventar hechos.",
                 "Entrega solo la respuesta final lista para mostrar en el chat.",
+                rag_context,
                 _render_graph_context(state),
             ]
         ).strip()
@@ -672,6 +691,10 @@ class LangChainRuntime(AgentRuntime):
         return _strip_xml_tool_calls(_coerce_message_text(result)).strip()
 
     async def _direct_graph_fallback(self, state: dict[str, Any]) -> str:
+        rag_context = await self._get_graph_rag_context(
+            state=state,
+            query=self._build_rag_query(state=state),
+        )
         prompt = "\n\n".join(
             [
                 self._system_prompt.strip(),
@@ -680,6 +703,7 @@ class LangChainRuntime(AgentRuntime):
                 "Si el usuario solo saluda, responde al saludo e invita a pedir una receta o ayuda concreta.",
                 "Si faltan datos para cumplir el objetivo, pide la aclaracion minima necesaria.",
                 "Entrega solo la respuesta final lista para mostrar en el chat.",
+                rag_context,
                 _render_graph_context(state),
             ]
         ).strip()
@@ -689,6 +713,45 @@ class LangChainRuntime(AgentRuntime):
             logger.exception("[LangChainGraph] direct fallback failed: %s", exc)
             return ""
         return _strip_xml_tool_calls(_coerce_message_text(result)).strip()
+
+    def _build_rag_query(self, *, state: dict[str, Any], node: dict[str, Any] | None = None) -> str:
+        parts = [str(state.get("user_input") or "").strip()]
+        if node is not None:
+            label = str(node.get("label") or node.get("id") or "").strip()
+            description = str(node.get("description") or "").strip()
+            if label:
+                parts.append(f"Paso del flujo: {label}")
+            if description:
+                parts.append(f"Descripcion del paso: {description}")
+        return "\n".join(part for part in parts if part).strip()
+
+    async def _get_graph_rag_context(self, *, state: dict[str, Any], query: str) -> str:
+        if not getattr(self.spec, "rag", None) or not self.spec.rag.enabled or not self._agent_id:
+            return ""
+
+        normalized_query = query.strip()
+        if not normalized_query:
+            return ""
+
+        cache = state.setdefault("rag_context_cache", {})
+        if normalized_query in cache:
+            return cache[normalized_query]
+
+        try:
+            from app.components.rag.knowledge_builder import KnowledgeBuilderService
+
+            kb = KnowledgeBuilderService()
+            context = await kb.retrieve_as_context(
+                self._agent_id,
+                normalized_query,
+                self.spec.rag.top_k,
+            )
+        except Exception as exc:
+            logger.warning("[LangChainGraph] RAG context unavailable for agent %s: %s", self._agent_id, exc)
+            context = ""
+
+        cache[normalized_query] = context or ""
+        return cache[normalized_query]
 
     def _first_outgoing(self, node_id: str, outgoing: dict[str, list[dict[str, Any]]]) -> str | None:
         edge = next(iter(outgoing.get(node_id, [])), None)
@@ -759,6 +822,12 @@ def _trim_trace(text: str, limit: int = 900) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 3].rstrip() + "..."
+
+
+def _normalize_tool_key(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower())
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    return normalized
 
 
 def _is_low_signal_output(text: str) -> bool:
