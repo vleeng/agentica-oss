@@ -593,21 +593,21 @@ export function FlowEditor({ design, onSaved }: Props) {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 2xl:grid-cols-[1.2fr_0.8fr]">
-        <Card>
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
+        <Card className="min-w-0">
           <CardHeader>
             <CardTitle>Canvas del flujo</CardTitle>
             <CardDescription>
               Click en un nodo para inspeccionarlo. Arrastra desde el grip para moverlo.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-w-0">
             <div
               ref={canvasRef}
-              className="overflow-auto rounded-2xl border border-slate-200 bg-[radial-gradient(circle_at_1px_1px,#e2e8f0_1px,transparent_0)] [background-size:24px_24px]"
+              className="max-w-full overflow-x-auto overflow-y-auto rounded-2xl border border-slate-200 bg-[radial-gradient(circle_at_1px_1px,#e2e8f0_1px,transparent_0)] [background-size:24px_24px]"
             >
               <div
-                className="relative"
+                className="relative min-w-max"
                 style={{ width: canvasBounds.width, height: canvasBounds.height }}
                 onClick={() => {
                   setSelectedNodeId(null)
@@ -769,7 +769,7 @@ export function FlowEditor({ design, onSaved }: Props) {
           </CardContent>
         </Card>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Inspector</CardTitle>
