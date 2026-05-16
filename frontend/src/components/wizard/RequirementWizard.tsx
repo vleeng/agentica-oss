@@ -600,7 +600,7 @@ function StepModel({ state, update }: StepProps) {
                 ? <option value="">— Sin modelos — agregá en Bóveda IA —</option>
                 : availableModels.map(m => (
                     <option key={`${m.keyId}-${m.id}`} value={m.id}>
-                      {m.id} ({m.providerId})
+                      {m.id} ({m.keyName})
                     </option>
                   ))
               }
