@@ -8,34 +8,34 @@ import {
 import { StepCrew } from './StepCrew'
 import { WizardAdvisorPanel } from './WizardAdvisorPanel'
 
-// â”€â”€ Pasos del wizard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Wizard steps
 const STEPS_SINGLE = [
-  { id: 0, title: 'Tipo de agente',    description: 'ElegÃ­ cÃ³mo querÃ©s que funcione' },
-  { id: 1, title: 'Identidad',         description: 'Nombre, objetivo y descripciÃ³n' },
-  { id: 2, title: 'Herramientas',      description: 'QuÃ© puede hacer el agente' },
-  { id: 3, title: 'Memoria y canales', description: 'CÃ³mo recuerda y dÃ³nde se despliega' },
-  { id: 4, title: 'Modelo',            description: 'LLM y parÃ¡metros de generaciÃ³n' },
-  { id: 5, title: 'RevisiÃ³n',          description: 'ConfirmÃ¡ antes de generar el diseÃ±o' },
+  { id: 0, title: 'Tipo de agente',    description: 'Elegi como queres que funcione' },
+  { id: 1, title: 'Identidad',         description: 'Nombre, objetivo y descripcion' },
+  { id: 2, title: 'Herramientas',      description: 'Que puede hacer el agente' },
+  { id: 3, title: 'Memoria y canales', description: 'Como recuerda y donde se despliega' },
+  { id: 4, title: 'Modelo',            description: 'LLM y parametros de generacion' },
+  { id: 5, title: 'Revision',          description: 'Confirma antes de generar el diseno' },
 ]
 
 const STEPS_CREW = [
-  { id: 0, title: 'Tipo de agente',    description: 'ElegÃ­ cÃ³mo querÃ©s que funcione' },
+  { id: 0, title: 'Tipo de agente',    description: 'Elegi como queres que funcione' },
   { id: 1, title: 'Identidad',         description: 'Nombre y objetivo del equipo' },
   { id: 2, title: 'Equipo de agentes', description: 'Roles, objetivos y herramientas' },
-  { id: 3, title: 'Memoria y canales', description: 'CÃ³mo recuerda y dÃ³nde se despliega' },
+  { id: 3, title: 'Memoria y canales', description: 'Como recuerda y donde se despliega' },
   { id: 4, title: 'Modelo',            description: 'LLM base del equipo' },
-  { id: 5, title: 'RevisiÃ³n',          description: 'ConfirmÃ¡ antes de generar el diseÃ±o' },
+  { id: 5, title: 'Revision',          description: 'Confirma antes de generar el diseno' },
 ]
 
 function getSingleSteps(singleAgentMode: SingleAgentMode) {
   return singleAgentMode === 'direct'
     ? [
-        { id: 0, title: 'Tipo de agente', description: 'ElegÃƒÂ­ cÃƒÂ³mo querÃƒÂ©s que funcione' },
-        { id: 1, title: 'Identidad', description: 'Nombre, objetivo y descripciÃƒÂ³n' },
+        { id: 0, title: 'Tipo de agente', description: 'Elegi como queres que funcione' },
+        { id: 1, title: 'Identidad', description: 'Nombre, objetivo y descripcion' },
         { id: 2, title: 'Comportamiento', description: 'Respuesta inmediata apoyada por skills y prompt' },
-        { id: 3, title: 'Memoria y canales', description: 'CÃƒÂ³mo recuerda y dÃƒÂ³nde se despliega' },
-        { id: 4, title: 'Modelo', description: 'LLM y parÃƒÂ¡metros de generaciÃƒÂ³n' },
-        { id: 5, title: 'RevisiÃƒÂ³n', description: 'ConfirmÃƒÂ¡ antes de generar el diseÃƒÂ±o' },
+        { id: 3, title: 'Memoria y canales', description: 'Como recuerda y donde se despliega' },
+        { id: 4, title: 'Modelo', description: 'LLM y parametros de generacion' },
+        { id: 5, title: 'Revision', description: 'Confirma antes de generar el diseno' },
       ]
     : STEPS_SINGLE
 }
@@ -84,7 +84,7 @@ export function RequirementWizard({ onComplete }: Props) {
       })
       setAdvisorResult(result)
     } catch (e: any) {
-      setAdvisorError(e.response?.data?.detail || 'No se pudo analizar el diseÃ±o con IA.')
+      setAdvisorError(e.response?.data?.detail || 'No se pudo analizar el diseno con IA.')
     } finally {
       setAdvisorLoading(false)
     }
@@ -128,7 +128,7 @@ export function RequirementWizard({ onComplete }: Props) {
                   : 'bg-gray-100 text-gray-400'
               }`}
             >
-              {i < state.step ? 'âœ“' : i + 1}
+              {i < state.step ? 'OK' : i + 1}
             </button>
             {i < STEPS.length - 1 && (
               <div className={`h-0.5 flex-1 mx-1 ${i < state.step ? 'bg-violet-300' : 'bg-gray-200'}`} />
@@ -169,7 +169,7 @@ export function RequirementWizard({ onComplete }: Props) {
           disabled={state.step === 0}
           className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-30 transition-colors"
         >
-          â† Anterior
+          {'<- Anterior'}
         </button>
 
         {state.step < STEPS.length - 1 ? (
@@ -178,7 +178,7 @@ export function RequirementWizard({ onComplete }: Props) {
             disabled={!isStepValid(state)}
             className="px-5 py-2 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 disabled:opacity-40 transition-colors"
           >
-            Siguiente â†’
+            {'Siguiente ->'}
           </button>
         ) : (
           <button
@@ -187,9 +187,9 @@ export function RequirementWizard({ onComplete }: Props) {
             className="px-5 py-2 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 disabled:opacity-40 transition-colors flex items-center gap-2"
           >
             {generating ? (
-              <><span className="animate-spin">âŸ³</span> Generando diseÃ±o...</>
+              <><span className="animate-spin">...</span> Generando diseno...</>
             ) : (
-              'Generar diseÃ±o â†’'
+              'Generar diseno ->'
             )}
           </button>
         )}
@@ -210,21 +210,21 @@ export function RequirementWizard({ onComplete }: Props) {
 }
 
 
-// â”€â”€ Paso 0: Tipo de agente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Step 0: Agent type
 
 function StepMode({ state, update }: StepProps) {
   const options: Array<{ mode: AgentMode; title: string; description: string; icon: string }> = [
     {
       mode: 'single',
       title: 'Agente simple',
-      description: 'ElegÃƒÂ­ entre respuesta inmediata o ReAct con herramientas. Ideal para asistentes, soporte y automatizaciones concretas.',
-      icon: 'â—Ž',
+      description: 'Elegi entre respuesta inmediata o ReAct con herramientas. Ideal para asistentes, soporte y automatizaciones concretas.',
+      icon: 'A',
     },
     {
       mode: 'crew',
       title: 'Equipo de agentes',
-      description: 'Varios agentes con roles especializados que colaboran para resolver tareas complejas. Ideal para investigaciÃ³n, anÃ¡lisis multi-paso, workflows largos.',
-      icon: 'â¬¡',
+      description: 'Varios agentes con roles especializados que colaboran para resolver tareas complejas. Ideal para investigacion, analisis multi-paso y workflows largos.',
+      icon: 'E',
     },
   ]
 
@@ -260,7 +260,7 @@ function StepMode({ state, update }: StepProps) {
               <div className="text-sm text-gray-500 mt-1 leading-relaxed">{opt.description}</div>
             </div>
             {state.mode === opt.mode && (
-              <span className="ml-auto text-violet-500 text-lg">âœ“</span>
+              <span className="ml-auto text-violet-500 text-sm font-semibold">OK</span>
             )}
           </div>
         </button>
@@ -305,7 +305,7 @@ function StepMode({ state, update }: StepProps) {
 }
 
 
-// â”€â”€ Paso 1: Identidad â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Step 1: Identity
 
 function StepIdentity({ state, update }: StepProps) {
   return (
@@ -315,38 +315,38 @@ function StepIdentity({ state, update }: StepProps) {
           type="text"
           value={state.name}
           onChange={e => update({ name: e.target.value })}
-          placeholder="ej: Asistente de soporte tÃ©cnico"
+          placeholder="ej: Asistente de soporte tecnico"
           className={inputCls}
         />
       </Field>
 
-      <Field label="Objetivo principal" required hint="Â¿QuÃ© problema resuelve este agente?">
+      <Field label="Objetivo principal" required hint="Que problema resuelve este agente?">
         <textarea
           value={state.goal}
           onChange={e => update({ goal: e.target.value })}
-          placeholder="ej: Responder consultas tÃ©cnicas de clientes sobre productos industriales, escalar a humanos cuando no puede resolver."
+          placeholder="ej: Responder consultas tecnicas de clientes sobre productos industriales, escalar a humanos cuando no puede resolver."
           rows={3}
           className={inputCls}
         />
       </Field>
 
-      <Field label="DescripciÃ³n" hint="Contexto adicional para el diseÃ±o (opcional)">
+      <Field label="Descripcion" hint="Contexto adicional para el diseno (opcional)">
         <textarea
           value={state.description}
           onChange={e => update({ description: e.target.value })}
-          placeholder="ej: El agente atiende a operadores de planta. Tiene acceso a manuales tÃ©cnicos y a la base de datos de tickets."
+          placeholder="ej: El agente atiende a operadores de planta. Tiene acceso a manuales tecnicos y a la base de datos de tickets."
           rows={2}
           className={inputCls}
         />
       </Field>
 
-      <Field label="Restricciones" hint="Una por lÃ­nea. Ej: No revelar precios, no modificar datos de producciÃ³n">
+      <Field label="Restricciones" hint="Una por linea. Ej: No revelar precios, no modificar datos de produccion">
         <textarea
           value={state.constraints.join('\n')}
           onChange={e => update({ constraints: e.target.value.split('\n').filter(Boolean) })}
           rows={2}
           className={inputCls}
-          placeholder="No revelar informaciÃ³n confidencial&#10;Solo responder en espaÃ±ol"
+          placeholder="No revelar informacion confidencial&#10;Solo responder en espanol"
         />
       </Field>
     </div>
@@ -354,7 +354,7 @@ function StepIdentity({ state, update }: StepProps) {
 }
 
 
-// â”€â”€ Paso 2: Herramientas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Step 2: Tools
 
 function StepTools({ state, update, toolsCatalog }: StepProps & { toolsCatalog: typeof AVAILABLE_TOOLS }) {
   const [customTools, setCustomTools] = useState<Array<{ id: string; name: string; description: string; is_active: boolean }>>([])
@@ -551,7 +551,7 @@ function StepMemoryChannels({ state, update }: StepProps) {
               <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
                 state.channels.includes(ch.id) ? 'border-violet-500 bg-violet-500' : 'border-gray-300'
               }`}>
-                {state.channels.includes(ch.id) && <span className="text-white text-xs">âœ“</span>}
+                {state.channels.includes(ch.id) && <span className="text-white text-xs">OK</span>}
               </div>
               <span className="text-sm text-gray-800 flex-1 text-left">{ch.label}</span>
               {ch.badge && (
@@ -568,9 +568,9 @@ function StepMemoryChannels({ state, update }: StepProps) {
           onChange={e => update({ memory: { ...state.memory, type: e.target.value as MemoryType } })}
           className={inputCls}
         >
-          <option value="none">Sin memoria â€” cada mensaje es independiente</option>
-          <option value="session">Por sesiÃ³n â€” recuerda mientras la conversaciÃ³n estÃ¡ activa (Redis)</option>
-          <option value="persistent">Persistente â€” recuerda entre sesiones (PostgreSQL)</option>
+          <option value="none">Sin memoria - cada mensaje es independiente</option>
+          <option value="session">Por sesion - recuerda mientras la conversacion esta activa (Redis)</option>
+          <option value="persistent">Persistente - recuerda entre sesiones (PostgreSQL)</option>
         </select>
       </Field>
 
@@ -585,7 +585,7 @@ function StepMemoryChannels({ state, update }: StepProps) {
         />
         <label htmlFor="rag-enabled" className="text-sm text-gray-800 cursor-pointer">
           <span className="font-medium">Habilitar RAG</span>
-          <span className="text-gray-500 ml-2">â€” el agente podrÃ¡ consultar documentos o datos propios</span>
+          <span className="text-gray-500 ml-2">- el agente podra consultar documentos o datos propios</span>
         </label>
       </div>
       {directSingleAgent && (
@@ -598,7 +598,7 @@ function StepMemoryChannels({ state, update }: StepProps) {
 }
 
 
-// â”€â”€ Paso 4: Modelo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Step 4: Model
 
 function StepModel({ state, update }: StepProps) {
   const [keys, setKeys] = useState<any[]>([])
@@ -609,12 +609,12 @@ function StepModel({ state, update }: StepProps) {
     import('../../lib/api').then(({ llmKeysApi }) =>
       llmKeysApi.list()
         .then(data => { if (Array.isArray(data)) setKeys(data) })
-        .catch(() => setKeysError('No se pudieron cargar las llaves de la BÃ³veda IA.'))
+        .catch(() => setKeysError('No se pudieron cargar las llaves de la Boveda IA.'))
         .finally(() => setLoading(false))
     )
   }, [])
 
-  // Construir lista de modelos desde la BÃ³veda: { id, name, providerId, keyId }
+  // Construir lista de modelos desde la Boveda: { id, name, providerId, keyId }
   const availableModels = keys.flatMap(k =>
     (k.models || []).map(model => ({
       id: model.id,
@@ -627,7 +627,7 @@ function StepModel({ state, update }: StepProps) {
   )
 
   // Llave seleccionada: la que corresponde al modelo elegido
-  // Si el modelo actual ya no estÃ¡ disponible, resetear al primero
+  // Si el modelo actual ya no esta disponible, resetear al primero
   useEffect(() => {
     if (!loading && availableModels.length > 0 && !availableModels.find(m => m.id === state.model_params.model)) {
       const first = availableModels[0]
@@ -645,8 +645,8 @@ function StepModel({ state, update }: StepProps) {
 
       {!loading && availableModels.length === 0 && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          No tenÃ©s ninguna llave de proveedor LLM configurada.{' '}
-          <strong>AndÃ¡ a BÃ³veda IA</strong> y agregÃ¡ al menos una antes de continuar.
+          No tenes ninguna llave de proveedor LLM configurada.{' '}
+          <strong>Anda a Boveda IA</strong> y agrega al menos una antes de continuar.
         </div>
       )}
 
@@ -674,7 +674,7 @@ function StepModel({ state, update }: StepProps) {
               disabled={availableModels.length === 0}
             >
               {availableModels.length === 0
-                ? <option value="">â€” Sin modelos â€” agregÃ¡ en BÃ³veda IA â€”</option>
+                ? <option value="">- Sin modelos - agrega en Boveda IA -</option>
                 : availableModels.map(m => (
                     <option key={`${m.keyId}-${m.id}`} value={m.id}>
                       {m.id} ({m.keyName})
@@ -684,7 +684,7 @@ function StepModel({ state, update }: StepProps) {
             </select>
           </Field>
 
-          <Field label={`Temperatura: ${state.model_params.temperature}`} hint="0 = determinÃ­stico Â· 1 = creativo">
+          <Field label={`Temperatura: ${state.model_params.temperature}`} hint="0 = deterministico · 1 = creativo">
             <input
               type="range" min="0" max="1" step="0.05"
               value={state.model_params.temperature}
@@ -696,7 +696,7 @@ function StepModel({ state, update }: StepProps) {
             </div>
           </Field>
 
-          <Field label={`MÃ¡ximo de tokens: ${state.model_params.max_tokens}`}>
+          <Field label={`Maximo de tokens: ${state.model_params.max_tokens}`}>
             <input
               type="range" min="256" max="8192" step="256"
               value={state.model_params.max_tokens}
@@ -714,25 +714,25 @@ function StepModel({ state, update }: StepProps) {
 }
 
 
-// â”€â”€ Paso 5: RevisiÃ³n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Step 5: Review
 
 function StepReview({ state }: { state: WizardState }) {
   const rows: Array<{ label: string; value: string }> = [
-    { label: 'Nombre',      value: state.name || 'â€”' },
+    { label: 'Nombre',      value: state.name || '-' },
     { label: 'Modo',        value: state.mode === 'single' ? 'Agente simple' : 'Equipo de agentes' },
     { label: 'Comportamiento', value: state.mode === 'single' ? (state.single_agent_mode === 'direct' ? 'Respuesta inmediata' : 'ReAct con herramientas') : 'N/A' },
-    { label: 'Objetivo',    value: state.goal || 'â€”' },
+    { label: 'Objetivo',    value: state.goal || '-' },
     { label: 'Herramientas', value: state.tools.map(t => t.name).join(', ') || 'Ninguna' },
     { label: 'Memoria',     value: state.memory.type },
     { label: 'Canales',     value: state.channels.join(', ') },
-    { label: 'RAG',         value: state.rag.enabled ? 'SÃ­' : 'No' },
+    { label: 'RAG',         value: state.rag.enabled ? 'Si' : 'No' },
     { label: 'Modelo',      value: state.model_params.model },
     { label: 'Temperatura', value: String(state.model_params.temperature) },
   ]
   return (
     <div className="space-y-3">
       <p className="text-sm text-gray-500 mb-4">
-        RevisÃ¡ la configuraciÃ³n antes de que el sistema genere el diseÃ±o del agente. Este proceso puede demorar unos segundos.
+        Revisa la configuracion antes de que el sistema genere el diseno del agente. Este proceso puede demorar unos segundos.
       </p>
       <div className="rounded-xl border border-gray-200 overflow-hidden">
         {rows.map((row, i) => (
@@ -747,7 +747,7 @@ function StepReview({ state }: { state: WizardState }) {
 }
 
 
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Helpers
 
 type MemoryType = 'none' | 'session' | 'persistent' | 'summary'
 
