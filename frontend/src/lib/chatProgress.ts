@@ -2,6 +2,18 @@ import type { WSMessage } from './api'
 
 type ProgressEvent = Extract<WSMessage, { type: 'status' | 'trace' }>
 
+export function appendProgressEntry(entries: string[] | undefined, nextEntry: string | null, limit = 8): string[] {
+  const label = String(nextEntry || '').trim()
+  const current = Array.isArray(entries) ? [...entries] : []
+  if (!label) return current
+  if (current[current.length - 1] === label) return current
+  current.push(label)
+  if (current.length > limit) {
+    return current.slice(current.length - limit)
+  }
+  return current
+}
+
 export function summarizeAgentProgress(event: ProgressEvent): string | null {
   const phase = String(event.phase || '').toLowerCase()
   const kind = String(('kind' in event ? event.kind : '') || '').toLowerCase()

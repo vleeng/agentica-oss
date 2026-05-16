@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { agentsApi, authApi, createAgentWebSocket, normalizeAgentChatError, type AuthMe } from '../../lib/api'
-import { summarizeAgentProgress } from '../../lib/chatProgress'
+import { appendProgressEntry, summarizeAgentProgress } from '../../lib/chatProgress'
 import type { AgentDesign } from '../../types/agent'
 import { getAuthToken } from '../../stores/auth'
 import { RichText } from '../visual/RichText'
@@ -17,6 +17,7 @@ interface ChatMessage {
   content: string
   streaming?: boolean
   status?: string
+  progress?: string[]
 }
 
 export function StandaloneChat({ agentId }: Props) {
@@ -115,12 +116,20 @@ export function StandaloneChat({ agentId }: Props) {
       content: '',
       streaming: true,
       status: 'Pensando',
+      progress: ['Pensando'],
     }])
 
     // Update refs so the stable WS callbacks always point to the current message
     onTokenRef.current = (token) => {
       setMessages(prev => prev.map(m =>
-        m.id === assistantId ? { ...m, content: m.content + token, status: 'Redactando respuesta' } : m
+        m.id === assistantId
+          ? {
+              ...m,
+              content: m.content + token,
+              status: 'Redactando respuesta',
+              progress: appendProgressEntry(m.progress, 'Redactando respuesta'),
+            }
+          : m
       ))
     }
     onDoneRef.current = () => {
@@ -139,7 +148,9 @@ export function StandaloneChat({ agentId }: Props) {
     onStatusRef.current = (label) => {
       if (!label) return
       setMessages(prev => prev.map(m =>
-        m.id === assistantId && m.streaming ? { ...m, status: label } : m
+        m.id === assistantId && m.streaming
+          ? { ...m, status: label, progress: appendProgressEntry(m.progress, label) }
+          : m
       ))
     }
     if (!wsRef.current) {
@@ -223,9 +234,16 @@ export function StandaloneChat({ agentId }: Props) {
                   ? <span className="animate-pulse">●</span>
                   : null
               }
-              {msg.role === 'assistant' && msg.status && (
-                <div className="mt-2 text-xs font-medium text-violet-600">
-                  {msg.status}
+              {msg.role === 'assistant' && Array.isArray(msg.progress) && msg.progress.length > 0 && (
+                <div className="mt-3 space-y-1 border-t border-slate-100 pt-2">
+                  {msg.progress.map((entry, index) => (
+                    <div
+                      key={`${msg.id}_progress_${index}`}
+                      className={`text-xs ${msg.streaming && msg.status === entry ? 'font-medium text-violet-600' : 'text-slate-500'}`}
+                    >
+                      {index + 1}. {entry}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

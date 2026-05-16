@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { AgentDesign } from '../../types/agent'
 import { agentsApi, authApi, createAgentWebSocket, normalizeAgentChatError, type AuthMe } from '../../lib/api'
-import { summarizeAgentProgress } from '../../lib/chatProgress'
+import { appendProgressEntry, summarizeAgentProgress } from '../../lib/chatProgress'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { AgentEditPanel } from './AgentEditPanel'
 import { ChatContextHeader } from './ChatContextHeader'
@@ -30,6 +30,7 @@ interface ChatMessage {
   actor?: string
   kind?: string
   status?: string
+  progress?: string[]
 }
 
 function stripMermaidFromPrompt(prompt: string) {
@@ -116,13 +117,22 @@ export function AgentMonitor({ design, onOptimized }: Props) {
     setMessages((prev) => [
       ...prev,
       { id: `user_${Date.now()}`, role: 'user', content: userText },
-      { id: assistantId, role: 'assistant', content: '', streaming: true, status: 'Pensando' },
+      { id: assistantId, role: 'assistant', content: '', streaming: true, status: 'Pensando', progress: ['Pensando'] },
     ])
 
     // Update refs so the stable WS callbacks always point to the current message
     onTokenRef.current = (token) => {
       setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + token, status: 'Redactando respuesta' } : m))
+        prev.map((m) =>
+          m.id === assistantId
+            ? {
+                ...m,
+                content: m.content + token,
+                status: 'Redactando respuesta',
+                progress: appendProgressEntry(m.progress, 'Redactando respuesta'),
+              }
+            : m
+        )
       )
     }
     onDoneRef.current = () => {
@@ -143,7 +153,11 @@ export function AgentMonitor({ design, onOptimized }: Props) {
     onStatusRef.current = (label) => {
       if (!label) return
       setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId && m.streaming ? { ...m, status: label } : m))
+        prev.map((m) =>
+          m.id === assistantId && m.streaming
+            ? { ...m, status: label, progress: appendProgressEntry(m.progress, label) }
+            : m
+        )
       )
     }
 
@@ -375,9 +389,16 @@ export function AgentMonitor({ design, onOptimized }: Props) {
                       ) : (
                         <>
                           {message.content ? <RichText content={message.content} /> : message.streaming && <span className="animate-pulse">●</span>}
-                          {message.status && (
-                            <div className="mt-2 text-xs font-medium text-violet-600">
-                              {message.status}
+                          {Array.isArray(message.progress) && message.progress.length > 0 && (
+                            <div className="mt-3 space-y-1 border-t border-slate-100 pt-2">
+                              {message.progress.map((entry, index) => (
+                                <div
+                                  key={`${message.id}_progress_${index}`}
+                                  className={`text-xs ${message.streaming && message.status === entry ? 'font-medium text-violet-600' : 'text-slate-500'}`}
+                                >
+                                  {index + 1}. {entry}
+                                </div>
+                              ))}
                             </div>
                           )}
                         </>
