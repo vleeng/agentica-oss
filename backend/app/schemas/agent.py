@@ -13,6 +13,11 @@ class AgentMode(str, Enum):
     crew   = "crew"     # Equipo de agentes con roles → CrewAI
 
 
+class SingleAgentMode(str, Enum):
+    direct = "direct"   # Respuesta inmediata, sin ejecutar tools
+    react = "react"     # ReAct, con acceso a tools
+
+
 class MemoryType(str, Enum):
     none          = "none"
     session       = "session"       # Redis, se borra al cerrar sesión
@@ -205,6 +210,7 @@ class AgentSpec(BaseModel):
     rag: RAGSpec = Field(default_factory=RAGSpec)
 
     # Solo para mode=single
+    single_agent_mode: SingleAgentMode = SingleAgentMode.react
     tools: list[ToolRef] = Field(default_factory=list)
     autonomy_level: AutonomyLevel = AutonomyLevel.reactive
 
@@ -223,7 +229,7 @@ class AgentSpec(BaseModel):
 
 class FrameworkSelection(BaseModel):
     framework: Literal["langchain", "crewai"]
-    agent_type: Optional[Literal["openai_functions", "react"]] = None  # solo langchain
+    agent_type: Optional[Literal["direct", "openai_functions", "react"]] = None  # solo langchain
     process: Optional[CrewProcess] = None                               # solo crewai
     justification: str
     estimated_complexity: Literal["low", "medium", "high"]

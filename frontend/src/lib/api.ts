@@ -532,6 +532,7 @@ export function wizardStateToSpec(state: WizardState, tenantId: string): AgentSp
     expected_outputs: [],
     memory: state.memory,
     rag: state.rag,
+    single_agent_mode: state.single_agent_mode,
     tools: state.tools,
     autonomy_level: 'reactive',
     agents: state.agents,

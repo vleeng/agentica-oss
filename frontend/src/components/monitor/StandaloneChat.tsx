@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { agentsApi, authApi, createAgentWebSocket, normalizeAgentChatError, type AuthMe } from '../../lib/api'
+import { summarizeAgentProgress } from '../../lib/chatProgress'
 import type { AgentDesign } from '../../types/agent'
 import { getAuthToken } from '../../stores/auth'
 import { RichText } from '../visual/RichText'
@@ -15,6 +16,7 @@ interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   streaming?: boolean
+  status?: string
 }
 
 export function StandaloneChat({ agentId }: Props) {
@@ -32,6 +34,7 @@ export function StandaloneChat({ agentId }: Props) {
   const onTokenRef = useRef<(token: string) => void>(() => {})
   const onDoneRef  = useRef<(sid: string) => void>(() => {})
   const onErrorRef = useRef<(msg: string) => void>(() => {})
+  const onStatusRef = useRef<(label: string | null) => void>(() => {})
   
   const [agentReady, setAgentReady] = useState<'loading' | 'ok' | 'error'>('loading')
 
@@ -111,26 +114,33 @@ export function StandaloneChat({ agentId }: Props) {
       role: 'assistant',
       content: '',
       streaming: true,
+      status: 'Pensando',
     }])
 
     // Update refs so the stable WS callbacks always point to the current message
     onTokenRef.current = (token) => {
       setMessages(prev => prev.map(m =>
-        m.id === assistantId ? { ...m, content: m.content + token } : m
+        m.id === assistantId ? { ...m, content: m.content + token, status: 'Redactando respuesta' } : m
       ))
     }
     onDoneRef.current = () => {
       setMessages(prev => prev.map(m =>
-        m.id === assistantId ? { ...m, streaming: false } : m
+        m.id === assistantId ? { ...m, streaming: false, status: undefined } : m
       ))
       setSending(false)
     }
     onErrorRef.current = (err) => {
       const friendlyMessage = normalizeAgentChatError(err)
       setMessages(prev => prev.map(m =>
-        m.id === assistantId ? { ...m, content: `Error: ${friendlyMessage}`, streaming: false } : m
+        m.id === assistantId ? { ...m, content: `Error: ${friendlyMessage}`, streaming: false, status: undefined } : m
       ))
       setSending(false)
+    }
+    onStatusRef.current = (label) => {
+      if (!label) return
+      setMessages(prev => prev.map(m =>
+        m.id === assistantId && m.streaming ? { ...m, status: label } : m
+      ))
     }
     if (!wsRef.current) {
       wsRef.current = createAgentWebSocket(
@@ -138,8 +148,8 @@ export function StandaloneChat({ agentId }: Props) {
         (token) => onTokenRef.current(token),
         (sid)   => onDoneRef.current(sid),
         (msg)   => onErrorRef.current(msg),
-        () => {},
-        () => {},
+        (payload) => onStatusRef.current(summarizeAgentProgress(payload)),
+        (payload) => onStatusRef.current(summarizeAgentProgress(payload)),
         { apiKey },
       )
     }
@@ -213,6 +223,11 @@ export function StandaloneChat({ agentId }: Props) {
                   ? <span className="animate-pulse">●</span>
                   : null
               }
+              {msg.role === 'assistant' && msg.status && (
+                <div className="mt-2 text-xs font-medium text-violet-600">
+                  {msg.status}...
+                </div>
+              )}
             </div>
           </div>
         ))}

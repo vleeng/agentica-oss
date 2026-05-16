@@ -77,7 +77,7 @@ class DeployEngineService:
             "agent_name":    spec.name,
             "system_prompt": design.system_prompt,
             "framework":     fw.framework,
-            "agent_type":    fw.agent_type or "openai_functions",
+            "agent_type":    fw.agent_type or "react",
             "process":       fw.process.value if fw.process else "sequential",
             "model":         spec.model_params.model,
             "temperature":   spec.model_params.temperature,

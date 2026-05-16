@@ -51,6 +51,7 @@ async def create_agent_from_spec(
 ) -> AgentDesign:
     ctx.require_developer()
     spec.tenant_id = ctx.tenant_id
+    _normalize_single_agent_spec(spec)
 
     from app.core.plan_limits import plan_checker
     from app.core.rate_limiter import get_rate_limiter
@@ -69,6 +70,15 @@ async def create_agent_from_spec(
     await get_runtime_store().save_design(str(design.agent_id), design)
 
     return design
+
+
+def _normalize_single_agent_spec(spec: AgentSpec) -> None:
+    if spec.mode.value != "single" or spec.single_agent_mode.value != "direct":
+        return
+
+    spec.tools = []
+    spec.rag.enabled = False
+    spec.rag.sources = []
 
 
 @router.post("/{agent_id}/build", status_code=202)

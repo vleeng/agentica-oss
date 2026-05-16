@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.core.config import get_settings
-from app.schemas.agent import AgentMode, AgentSpec, CrewProcess, FrameworkSelection
+from app.schemas.agent import AgentMode, AgentSpec, CrewProcess, FrameworkSelection, SingleAgentMode
 from app.services.llm_client import TextGenerationClient
 
 settings = get_settings()
@@ -50,11 +50,7 @@ class FrameworkSelectorService:
         complexity = self._estimate_complexity(spec)
 
         if framework == "langchain":
-            agent_type = (
-                "openai_functions"
-                if _supports_function_calling(spec.model_params.model)
-                else "react"
-            )
+            agent_type = "direct" if spec.single_agent_mode == SingleAgentMode.direct else "react"
         else:
             process = spec.process or CrewProcess.sequential
 
@@ -77,8 +73,8 @@ class FrameworkSelectorService:
             return "medium"
 
         # Single agent
-        tool_count = len(spec.tools)
-        has_rag = spec.rag.enabled
+        tool_count = 0 if spec.single_agent_mode == SingleAgentMode.direct else len(spec.tools)
+        has_rag = False if spec.single_agent_mode == SingleAgentMode.direct else spec.rag.enabled
         has_memory = spec.memory.type.value != "none"
 
         score = tool_count + (2 if has_rag else 0) + (1 if has_memory else 0)
@@ -95,8 +91,16 @@ class FrameworkSelectorService:
         agent_type: str | None,
         complexity: str,
     ) -> str:
+        simple_label = (
+            "agente simple de respuesta inmediata"
+            if framework == "langchain" and agent_type == "direct"
+            else "agente simple ReAct con herramientas"
+            if framework == "langchain"
+            else "equipo de agentes con roles"
+        )
+
         prompt = f"""Explicá en 2-3 oraciones, en español y en lenguaje simple (sin mencionar LangChain ni CrewAI), 
-por qué este agente fue configurado como {'agente simple con herramientas' if framework == 'langchain' else 'equipo de agentes con roles'}.
+por qué este agente fue configurado como {simple_label}.
 
 Objetivo del agente: {spec.goal}
 Modo: {spec.mode.value}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { AgentDesign } from '../../types/agent'
 import { agentsApi, authApi, createAgentWebSocket, normalizeAgentChatError, type AuthMe } from '../../lib/api'
+import { summarizeAgentProgress } from '../../lib/chatProgress'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { AgentEditPanel } from './AgentEditPanel'
 import { ChatContextHeader } from './ChatContextHeader'
@@ -28,6 +29,7 @@ interface ChatMessage {
   streaming?: boolean
   actor?: string
   kind?: string
+  status?: string
 }
 
 function stripMermaidFromPrompt(prompt: string) {
@@ -65,6 +67,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
   const onTokenRef = useRef<(token: string) => void>(() => {})
   const onDoneRef  = useRef<(sid: string) => void>(() => {})
   const onErrorRef = useRef<(msg: string) => void>(() => {})
+  const onStatusRef = useRef<(label: string | null) => void>(() => {})
 
   useEffect(() => {
     handleBuild()
@@ -113,18 +116,18 @@ export function AgentMonitor({ design, onOptimized }: Props) {
     setMessages((prev) => [
       ...prev,
       { id: `user_${Date.now()}`, role: 'user', content: userText },
-      { id: assistantId, role: 'assistant', content: '', streaming: true },
+      { id: assistantId, role: 'assistant', content: '', streaming: true, status: 'Pensando' },
     ])
 
     // Update refs so the stable WS callbacks always point to the current message
     onTokenRef.current = (token) => {
       setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + token } : m))
+        prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + token, status: 'Redactando respuesta' } : m))
       )
     }
     onDoneRef.current = () => {
       setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m))
+        prev.map((m) => (m.id === assistantId ? { ...m, streaming: false, status: undefined } : m))
       )
       setSending(false)
     }
@@ -132,10 +135,16 @@ export function AgentMonitor({ design, onOptimized }: Props) {
       const friendlyMessage = normalizeAgentChatError(msg)
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === assistantId ? { ...m, content: `Error: ${friendlyMessage}`, streaming: false } : m
+          m.id === assistantId ? { ...m, content: `Error: ${friendlyMessage}`, streaming: false, status: undefined } : m
         )
       )
       setSending(false)
+    }
+    onStatusRef.current = (label) => {
+      if (!label) return
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId && m.streaming ? { ...m, status: label } : m))
+      )
     }
 
     if (!wsRef.current) {
@@ -144,8 +153,8 @@ export function AgentMonitor({ design, onOptimized }: Props) {
         (token) => onTokenRef.current(token),
         (sid)   => onDoneRef.current(sid),
         (msg)   => onErrorRef.current(msg),
-        () => {},
-        () => {},
+        (payload) => onStatusRef.current(summarizeAgentProgress(payload)),
+        (payload) => onStatusRef.current(summarizeAgentProgress(payload)),
       )
     }
 
@@ -366,6 +375,11 @@ export function AgentMonitor({ design, onOptimized }: Props) {
                       ) : (
                         <>
                           {message.content ? <RichText content={message.content} /> : message.streaming && <span className="animate-pulse">●</span>}
+                          {message.status && (
+                            <div className="mt-2 text-xs font-medium text-violet-600">
+                              {message.status}...
+                            </div>
+                          )}
                         </>
                       )}
                     </div>

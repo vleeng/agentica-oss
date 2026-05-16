@@ -1,6 +1,7 @@
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
 export type AgentMode = 'single' | 'crew'
+export type SingleAgentMode = 'direct' | 'react'
 export type MemoryType = 'none' | 'session' | 'persistent' | 'summary'
 export type CrewProcess = 'sequential' | 'hierarchical' | 'parallel'
 export type AutonomyLevel = 'reactive' | 'semi' | 'autonomous'
@@ -70,6 +71,7 @@ export interface AgentSpec {
   memory: MemorySpec
   rag: RAGSpec
   // single
+  single_agent_mode: SingleAgentMode
   tools: ToolRef[]
   autonomy_level: AutonomyLevel
   // crew
@@ -83,7 +85,7 @@ export interface AgentSpec {
 
 export interface FrameworkSelection {
   framework: 'langchain' | 'crewai'
-  agent_type?: 'openai_functions' | 'react'
+  agent_type?: 'direct' | 'openai_functions' | 'react'
   process?: CrewProcess
   justification: string
   estimated_complexity: 'low' | 'medium' | 'high'
@@ -187,6 +189,7 @@ export interface WizardState {
   description: string
   goal: string
   channels: ChannelType[]
+  single_agent_mode: SingleAgentMode
   tools: ToolRef[]
   memory: MemorySpec
   rag: RAGSpec
@@ -231,6 +234,7 @@ export const WIZARD_DEFAULTS: WizardState = {
   description: '',
   goal: '',
   channels: ['web_chat'],
+  single_agent_mode: 'react',
   tools: [],
   memory: { type: 'session', max_messages: 50 },
   rag: {

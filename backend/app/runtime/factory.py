@@ -4,7 +4,7 @@ from app.builders.crewai.builder import CrewAIAgentBuilder
 from app.builders.langchain.builder import LangChainAgentBuilder
 from app.runtime.base import AgentRuntime
 from app.runtime.llm import LLMConfig, canonical_provider, infer_provider, resolve_base_url
-from app.schemas.agent import AgentDesign, AgentMode
+from app.schemas.agent import AgentDesign, AgentMode, SingleAgentMode
 from app.components.skills.skill_loader import expand_skill
 from app.components.mcp.mcp_client import get_agent_mcp_tools
 from app.components.policies.policy_renderer import render_policy
@@ -64,6 +64,10 @@ class RuntimeFactory:
             return
 
         agent_id = str(design.agent_id)
+        tools_allowed = not (
+            design.spec.mode == AgentMode.single
+            and design.spec.single_agent_mode == SingleAgentMode.direct
+        )
 
         try:
             async with self._session_factory() as session:
@@ -74,11 +78,12 @@ class RuntimeFactory:
                 skills = await repo.get_agent_skills(agent_id)
                 for skill in skills:
                     extra_tools, prompt_fragment = expand_skill(skill)
-                    design.spec.tools.extend(extra_tools)
+                    if tools_allowed:
+                        design.spec.tools.extend(extra_tools)
                     design.system_prompt += f"\n{prompt_fragment}"
 
                 # 2. MCP servers → inyectar tools descubiertas (se pasan como _mcp_tools al builder)
-                mcp_servers = await repo.get_agent_mcp_servers(agent_id)
+                mcp_servers = await repo.get_agent_mcp_servers(agent_id) if tools_allowed else []
                 if mcp_servers:
                     mcp_tools = await get_agent_mcp_tools(mcp_servers)
                     # Guardamos en design para que el builder pueda accederlas

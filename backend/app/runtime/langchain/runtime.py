@@ -168,6 +168,7 @@ class LangChainRuntime(AgentRuntime):
                         collected_output.append(token)
                         yield token
             else:
+                await self._emit_progress("status", "Pensando la mejor forma de resolverlo")
                 is_react = not hasattr(self._executor.agent, "functions")
                 react_buffer = ""
                 react_final_found = False
@@ -189,9 +190,17 @@ class LangChainRuntime(AgentRuntime):
                     if kind == "on_tool_start":
                         tool_was_used = True
                         pre_tool_buffer.clear()
+                        tool_name = str(event.get("name") or "herramienta")
+                        await self._emit_progress(
+                            "status",
+                            f"Usando herramienta: {tool_name}",
+                            actor=tool_name,
+                            kind="tool",
+                        )
 
                     elif kind == "on_tool_end":
                         in_final_response = True
+                        await self._emit_progress("status", "Armando la respuesta final", kind="answer")
 
                     elif kind == "on_chat_model_stream":
                         chunk = event["data"]["chunk"]
@@ -211,11 +220,15 @@ class LangChainRuntime(AgentRuntime):
                                     yield after
                         elif not is_react:
                             if in_final_response:
+                                if not collected_output:
+                                    await self._emit_progress("status", "Redactando la respuesta", kind="answer")
                                 collected_output.append(token)
                                 yield token
                             else:
                                 pre_tool_buffer.append(token)
                         else:
+                            if not collected_output:
+                                await self._emit_progress("status", "Redactando la respuesta", kind="answer")
                             collected_output.append(token)
                             yield token
 

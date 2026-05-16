@@ -35,6 +35,39 @@ class LangChainAgentBuilder:
         llm_config = llm_config or LLMConfig(provider="anthropic", api_key=api_key)
         llm = create_chat_llm(spec.model_params, llm_config)
 
+        selected_mode = getattr(spec, "single_agent_mode", None)
+        selected_mode_value = getattr(selected_mode, "value", selected_mode)
+        if fw.agent_type:
+            agent_type = fw.agent_type
+        elif selected_mode_value == "direct":
+            agent_type = "direct"
+        else:
+            from app.services.selector.framework_selector import _supports_function_calling
+
+            agent_type = (
+                "openai_functions"
+                if _supports_function_calling(spec.model_params.model)
+                else "react"
+            )
+
+        memory = self._build_memory(design)
+
+        if agent_type == "direct":
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", self._escape_prompt(design.system_prompt)),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ])
+            chain = prompt | llm | StrOutputParser()
+            return LangChainRuntime(
+                executor=chain,
+                memory_adapter=memory,
+                spec=spec,
+                agent_id=str(design.agent_id),
+                session_factory=self._session_factory,
+                is_simple_chain=True,
+            )
+
         tools: list[BaseTool] = []
         for tool_ref in spec.tools:
             if tool_ref.source == "library":
@@ -74,16 +107,6 @@ class LangChainAgentBuilder:
             )
 
         tools_by_name = {tool.name: tool for tool in tools}
-
-        from app.services.selector.framework_selector import _supports_function_calling
-
-        agent_type = (
-            "openai_functions"
-            if _supports_function_calling(spec.model_params.model)
-            else (fw.agent_type or "react")
-        )
-
-        memory = self._build_memory(design)
 
         if self._should_use_graph_runtime(design):
             return LangChainRuntime(
