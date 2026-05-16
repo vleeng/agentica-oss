@@ -550,11 +550,6 @@ function StepModel({ state, update }: StepProps) {
   )
 
   // Llave seleccionada: la que corresponde al modelo elegido
-  const selectedModelEntry = availableModels.find(m => m.id === state.model_params.model)
-  const keysForProvider = selectedModelEntry
-    ? keys.filter(k => k.provider === selectedModelEntry.providerId)
-    : []
-
   // Si el modelo actual ya no está disponible, resetear al primero
   useEffect(() => {
     if (!loading && availableModels.length > 0 && !availableModels.find(m => m.id === state.model_params.model)) {
@@ -605,25 +600,12 @@ function StepModel({ state, update }: StepProps) {
                 ? <option value="">— Sin modelos — agregá en Bóveda IA —</option>
                 : availableModels.map(m => (
                     <option key={`${m.keyId}-${m.id}`} value={m.id}>
-                      {m.id} ({m.keyName})
+                      {m.id} ({m.providerId})
                     </option>
                   ))
               }
             </select>
-          </Field>
-
-          <Field label="Llave de IA" hint="La llave predeterminada del proveedor se usa automáticamente.">
-            <select
-              value={state.model_params.llm_key_id || ''}
-              onChange={e => update({ model_params: { ...state.model_params, llm_key_id: e.target.value || undefined } })}
-              className={inputCls}
-            >
-              <option value="">★ Usar la llave predeterminada</option>
-              {keysForProvider.map(k => (
-                <option key={k.id} value={k.id}>{k.name} ({k.truncated_key}){k.is_default ? ' ★' : ''}</option>
-              ))}
-            </select>
-          </Field>
+          </Field>
 
           <Field label={`Temperatura: ${state.model_params.temperature}`} hint="0 = determinístico · 1 = creativo">
             <input
@@ -738,3 +720,4 @@ function getStepKey(title: string): string {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '') || 'unknown'
 }
+
