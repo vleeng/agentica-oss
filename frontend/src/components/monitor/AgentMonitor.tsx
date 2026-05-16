@@ -377,7 +377,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
                           {message.content ? <RichText content={message.content} /> : message.streaming && <span className="animate-pulse">●</span>}
                           {message.status && (
                             <div className="mt-2 text-xs font-medium text-violet-600">
-                              {message.status}...
+                              {message.status}
                             </div>
                           )}
                         </>

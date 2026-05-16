@@ -191,15 +191,34 @@ class LangChainRuntime(AgentRuntime):
                         tool_was_used = True
                         pre_tool_buffer.clear()
                         tool_name = str(event.get("name") or "herramienta")
+                        tool_input = event.get("data", {}).get("input")
+                        if tool_name == "knowledge_base":
+                            query = _extract_tool_query(tool_input)
+                            detail = _summarize_query(query)
+                            message = f"Buscando en conocimientos{detail}"
+                        else:
+                            message = f"Usando herramienta: {tool_name}"
                         await self._emit_progress(
                             "status",
-                            f"Usando herramienta: {tool_name}",
+                            message,
                             actor=tool_name,
                             kind="tool",
+                            query=_extract_tool_query(tool_input),
                         )
 
                     elif kind == "on_tool_end":
                         in_final_response = True
+                        tool_name = str(event.get("name") or "herramienta")
+                        tool_output = str(event.get("data", {}).get("output") or "").strip()
+                        if tool_name == "knowledge_base":
+                            titles = _extract_rag_titles(tool_output)
+                            await self._emit_progress(
+                                "status",
+                                _summarize_rag_result(titles, tool_output),
+                                actor=tool_name,
+                                kind="rag_result",
+                                titles=titles,
+                            )
                         await self._emit_progress("status", "Armando la respuesta final", kind="answer")
 
                     elif kind == "on_chat_model_stream":
@@ -454,11 +473,17 @@ class LangChainRuntime(AgentRuntime):
             return f"[tool no disponible: {tool_name or 'sin tool_name'}]"
 
         payload = await self._build_tool_payload(tool=tool, node=node, state=state)
+        if tool_name == "knowledge_base":
+            query = _extract_tool_query(payload)
+            message = f"Buscando en conocimientos{_summarize_query(query)}"
+        else:
+            message = f"Usando {tool_name} con input preparado"
         await self._emit_progress(
             "trace",
-            f"Usando {tool_name} con input preparado",
+            message,
             actor=str(node.get("label") or tool_name),
             kind="tool",
+            query=_extract_tool_query(payload),
         )
         try:
             if hasattr(tool, "ainvoke"):
@@ -470,6 +495,15 @@ class LangChainRuntime(AgentRuntime):
             return f"[error de tool {tool_name}: {exc}]"
 
         output = str(result or "").strip()
+        if tool_name == "knowledge_base":
+            titles = _extract_rag_titles(output)
+            await self._emit_progress(
+                "status",
+                _summarize_rag_result(titles, output),
+                actor="knowledge_base",
+                kind="rag_result",
+                titles=titles,
+            )
         await self._emit_progress(
             "trace",
             _trim_trace(output),
@@ -520,6 +554,12 @@ class LangChainRuntime(AgentRuntime):
         await self._emit_progress(
             "trace",
             f"Decision: {parsed.get('reason') or parsed.get('next_node_id')}",
+            actor=str(node.get("label") or "Decision"),
+            kind="decision",
+        )
+        await self._emit_progress(
+            "status",
+            f"Pensando: {parsed.get('reason') or 'eligiendo el siguiente paso'}",
             actor=str(node.get("label") or "Decision"),
             kind="decision",
         )
@@ -844,6 +884,56 @@ def _default_tool_input(state: dict[str, Any]) -> str:
         if output:
             return output
     return str(state.get("user_input") or "").strip()
+
+
+def _extract_tool_query(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("query", "input", "text", "expression"):
+            candidate = str(value.get(key) or "").strip()
+            if candidate:
+                return candidate
+        return ""
+    return str(value or "").strip()
+
+
+def _summarize_query(query: str, max_length: int = 72) -> str:
+    text = " ".join(str(query or "").split()).strip()
+    if not text:
+        return ""
+    if len(text) > max_length:
+        text = text[: max_length - 3].rstrip() + "..."
+    return f": {text}"
+
+
+def _extract_rag_titles(output: str) -> list[str]:
+    titles: list[str] = []
+    for raw_line in str(output or "").splitlines():
+        line = raw_line.strip()
+        if "(fuente:" not in line.lower():
+            continue
+        try:
+            source = line.split("fuente:", 1)[1].split(")", 1)[0].strip()
+        except Exception:
+            continue
+        if not source:
+            continue
+        source = source.replace("\\", "/").rstrip("/")
+        title = source.split("/")[-1] or source
+        if title not in titles:
+            titles.append(title)
+    return titles
+
+
+def _summarize_rag_result(titles: list[str], output: str) -> str:
+    if titles:
+        preview = ", ".join(titles[:3])
+        if len(titles) > 3:
+            preview += f" y {len(titles) - 3} mas"
+        return f"Encontre en conocimientos: {preview}"
+    lowered = str(output or "").strip().lower()
+    if "no se encontro" in lowered or "no encontr" in lowered:
+        return "No encontre informacion relevante en conocimientos"
+    return "Revise los conocimientos disponibles"
 
 
 def _extract_json_block(text: str) -> str:

@@ -225,7 +225,7 @@ export function StandaloneChat({ agentId }: Props) {
               }
               {msg.role === 'assistant' && msg.status && (
                 <div className="mt-2 text-xs font-medium text-violet-600">
-                  {msg.status}...
+                  {msg.status}
                 </div>
               )}
             </div>

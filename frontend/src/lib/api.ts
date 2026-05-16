@@ -331,8 +331,8 @@ export type WSMessage =
   | { type: 'token'; content: string }
   | { type: 'done'; session_id: string }
   | { type: 'error'; message: string }
-  | { type: 'status'; framework?: string; phase?: string; message: string; elapsed_seconds?: number; attempt?: number; retry_from?: string | null }
-  | { type: 'trace'; framework?: string; phase?: string; actor?: string | null; kind?: string; message: string }
+  | { type: 'status'; framework?: string; phase?: string; actor?: string | null; kind?: string; query?: string; titles?: string[]; message: string; elapsed_seconds?: number; attempt?: number; retry_from?: string | null }
+  | { type: 'trace'; framework?: string; phase?: string; actor?: string | null; kind?: string; query?: string; titles?: string[]; message: string }
 
 export function normalizeAgentChatError(message: string): string {
   const text = (message || '').trim()
