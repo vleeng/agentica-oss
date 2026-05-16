@@ -31,8 +31,8 @@ const NODE_TYPES: Array<{ value: FlowNodeType; label: string }> = [
   { value: 'end', label: 'End' },
 ]
 
-const NODE_WIDTH = 240
-const NODE_HEIGHT = 128
+const NODE_WIDTH = 200
+const NODE_HEIGHT = 104
 const HANDLE_SIZE = 12
 const CANVAS_PADDING = 64
 
@@ -111,7 +111,7 @@ function defaultNode(type: FlowNodeType, index: number, design: AgentDesign): Fl
               ? 'Inicio'
               : 'Fin',
     description: '',
-    position: { x: 120 + ((index - 1) % 3) * 280, y: 120 + Math.floor((index - 1) / 3) * 180 },
+    position: { x: 96 + ((index - 1) % 3) * 236, y: 96 + Math.floor((index - 1) / 3) * 148 },
     data: {
       assigned_agent:
         type === 'agent' && design.spec.mode === 'crew' && roleOptions.length
@@ -213,8 +213,8 @@ function autoLayoutGraph(graph: GraphBlueprint): GraphBlueprint {
       ? {
           ...node,
           position: {
-            x: CANVAS_PADDING + level * 320,
-            y: CANVAS_PADDING + row * 180,
+            x: CANVAS_PADDING + level * 248,
+            y: CANVAS_PADDING + row * 148,
           },
         }
       : node
@@ -245,6 +245,7 @@ export function FlowEditor({ design, onSaved }: Props) {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [pendingConnectionFrom, setPendingConnectionFrom] = useState<string | null>(null)
   const canvasRef = useRef<HTMLDivElement | null>(null)
+  const viewportResetRef = useRef(false)
   const dragRef = useRef<{
     nodeId: string
     offsetX: number
@@ -260,6 +261,14 @@ export function FlowEditor({ design, onSaved }: Props) {
     setSelectedEdgeId(null)
     setPendingConnectionFrom(null)
   }, [design])
+
+  useEffect(() => {
+    if (!viewportResetRef.current || !canvasRef.current) return
+    viewportResetRef.current = false
+    window.requestAnimationFrame(() => {
+      canvasRef.current?.scrollTo({ left: 0, top: 0, behavior: 'smooth' })
+    })
+  }, [draft.nodes])
 
   useEffect(() => {
     const handleMove = (event: MouseEvent) => {
@@ -329,6 +338,12 @@ export function FlowEditor({ design, onSaved }: Props) {
   const selectedNodeIssues = selectedNode ? issuesForId(allIssues, 'node', selectedNode.id) : []
   const selectedEdgeIssues = selectedEdge ? issuesForId(allIssues, 'edge', selectedEdge.id) : []
 
+  const getNodeDisplayName = (nodeId: string) => {
+    const node = nodesById.get(nodeId)
+    if (!node) return nodeId
+    return `${node.label || node.id} (${node.id})`
+  }
+
   const updateNode = (nodeId: string, updater: (node: FlowNode) => FlowNode) => {
     setDraft((prev) => ({
       ...prev,
@@ -336,11 +351,37 @@ export function FlowEditor({ design, onSaved }: Props) {
     }))
   }
 
+  const renameNode = (nodeId: string, nextIdRaw: string) => {
+    const nextId = nextIdRaw.trim()
+    if (!nextId || nextId === nodeId || draft.nodes.some((node) => node.id === nextId)) return
+    setDraft((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((node) => (node.id === nodeId ? { ...node, id: nextId } : node)),
+      edges: prev.edges.map((edge) => ({
+        ...edge,
+        from: edge.from === nodeId ? nextId : edge.from,
+        to: edge.to === nodeId ? nextId : edge.to,
+      })),
+    }))
+    if (selectedNodeId === nodeId) setSelectedNodeId(nextId)
+    if (pendingConnectionFrom === nodeId) setPendingConnectionFrom(nextId)
+  }
+
   const updateEdge = (edgeId: string, updater: (edge: FlowEdge) => FlowEdge) => {
     setDraft((prev) => ({
       ...prev,
       edges: prev.edges.map((edge) => (edge.id === edgeId ? updater(edge) : edge)),
     }))
+  }
+
+  const renameEdge = (edgeId: string, nextIdRaw: string) => {
+    const nextId = nextIdRaw.trim()
+    if (!nextId || nextId === edgeId || draft.edges.some((edge) => edge.id === nextId)) return
+    setDraft((prev) => ({
+      ...prev,
+      edges: prev.edges.map((edge) => (edge.id === edgeId ? { ...edge, id: nextId } : edge)),
+    }))
+    if (selectedEdgeId === edgeId) setSelectedEdgeId(nextId)
   }
 
   const handleAddNode = (type: FlowNodeType) => {
@@ -380,6 +421,13 @@ export function FlowEditor({ design, onSaved }: Props) {
 
   const handleCompleteConnection = (targetId: string) => {
     if (!pendingConnectionFrom || pendingConnectionFrom === targetId) return
+    const existingEdge = draft.edges.find((edge) => edge.from === pendingConnectionFrom && edge.to === targetId)
+    if (existingEdge) {
+      setPendingConnectionFrom(null)
+      setSelectedEdgeId(existingEdge.id)
+      setSelectedNodeId(null)
+      return
+    }
     const edgeId = `edge_${draft.edges.length + 1}`
     const nextEdge: FlowEdge = {
       id: edgeId,
@@ -397,6 +445,7 @@ export function FlowEditor({ design, onSaved }: Props) {
   }
 
   const handleAutoLayout = () => {
+    viewportResetRef.current = true
     setDraft((prev) => autoLayoutGraph(prev))
     push({
       tone: 'info',
@@ -404,6 +453,31 @@ export function FlowEditor({ design, onSaved }: Props) {
       description: 'Se aplico un layout automatico para acomodar el esquema.',
     })
   }
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const tagName = target?.tagName ?? ''
+      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return
+
+      if (event.key === 'Escape') {
+        setPendingConnectionFrom(null)
+        return
+      }
+
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      if (selectedEdgeId) {
+        event.preventDefault()
+        handleDeleteEdge(selectedEdgeId)
+      } else if (selectedNodeId) {
+        event.preventDefault()
+        handleDeleteNode(selectedNodeId)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedEdgeId, selectedNodeId])
 
   const handleValidate = async () => {
     setValidating(true)
@@ -514,6 +588,7 @@ export function FlowEditor({ design, onSaved }: Props) {
                 Conectando desde {pendingConnectionFrom}. Hace click en la entrada del nodo destino.
               </span>
             )}
+            <span>Supr/Backspace elimina lo seleccionado</span>
           </div>
         </CardContent>
       </Card>
@@ -631,7 +706,7 @@ export function FlowEditor({ design, onSaved }: Props) {
 
                       <div className="flex h-full flex-col">
                         <div
-                          className="flex cursor-move items-center justify-between gap-3 rounded-t-xl border-b border-slate-100 px-3 py-2"
+                          className="flex cursor-move items-center justify-between gap-2 rounded-t-xl border-b border-slate-100 px-2.5 py-1.5"
                           onMouseDown={(event) => {
                             if (!canvasRef.current) return
                             const rect = canvasRef.current.getBoundingClientRect()
@@ -645,30 +720,43 @@ export function FlowEditor({ design, onSaved }: Props) {
                           }}
                         >
                           <div className="flex items-center gap-2">
-                            <Grip className="h-4 w-4 text-slate-400" />
+                            <Grip className="h-3.5 w-3.5 text-slate-400" />
                             <Badge className={getNodeTone(node.type)}>{node.type}</Badge>
                           </div>
-                          {(errorCount > 0 || warningCount > 0) && (
-                            <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                              {errorCount > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-rose-700">{errorCount} err</span>}
-                              {warningCount > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">{warningCount} warn</span>}
-                            </div>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {(errorCount > 0 || warningCount > 0) && (
+                              <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                                {errorCount > 0 && <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-rose-700">{errorCount} err</span>}
+                                {warningCount > 0 && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-700">{warningCount} warn</span>}
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              className="rounded-md p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleDeleteNode(node.id)
+                              }}
+                              title="Borrar nodo"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex flex-1 flex-col justify-between px-3 py-3">
+                        <div className="flex flex-1 flex-col justify-between px-2.5 py-2.5">
                           <div>
                             <div className="line-clamp-1 text-sm font-semibold text-slate-950">{node.label}</div>
-                            <div className="mt-1 line-clamp-3 text-xs leading-5 text-slate-500">
+                            <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-500">
                               {node.description || node.data?.description || 'Sin descripcion operativa.'}
                             </div>
                           </div>
-                          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
-                            <span>{node.id}</span>
+                          <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-400">
+                            <span className="truncate">{node.id}</span>
                             {node.type === 'agent' && design.spec.mode === 'crew' && (
-                              <span>{node.data?.assigned_agent || 'Sin agente'}</span>
+                              <span className="truncate">{node.data?.assigned_agent || 'Sin agente'}</span>
                             )}
                             {node.type === 'tool' && design.spec.mode === 'single' && (
-                              <span>{node.data?.tool_name || 'Sin tool'}</span>
+                              <span className="truncate">{node.data?.tool_name || 'Sin tool'}</span>
                             )}
                           </div>
                         </div>
@@ -690,6 +778,52 @@ export function FlowEditor({ design, onSaved }: Props) {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium text-slate-900">Conexiones</div>
+                  <Badge tone="slate">{draft.edges.length}</Badge>
+                </div>
+                {draft.edges.length === 0 ? (
+                  <div className="text-xs text-slate-500">Todavia no hay conexiones creadas.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {draft.edges.map((edge) => {
+                      const selected = selectedEdgeId === edge.id
+                      return (
+                        <div
+                          key={edge.id}
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+                            selected ? 'border-violet-300 bg-violet-50' : 'border-slate-200 bg-white'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            className="flex-1 text-left text-slate-700"
+                            onClick={() => {
+                              setSelectedEdgeId(edge.id)
+                              setSelectedNodeId(null)
+                            }}
+                          >
+                            <div className="font-medium text-slate-900">{edge.id}</div>
+                            <div className="text-slate-500">
+                              {getNodeDisplayName(edge.from)} {'->'} {getNodeDisplayName(edge.to)}
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-md p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                            onClick={() => handleDeleteEdge(edge.id)}
+                            title="Borrar conexion"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
               {!selectedNode && !selectedEdge && (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">
                   Selecciona un nodo o una conexion para editar propiedades. Si quieres empezar
@@ -712,9 +846,7 @@ export function FlowEditor({ design, onSaved }: Props) {
                   <Field label="ID">
                     <Input
                       value={selectedNode.id}
-                      onChange={(event) =>
-                        updateNode(selectedNode.id, (current) => ({ ...current, id: event.target.value }))
-                      }
+                      onChange={(event) => renameNode(selectedNode.id, event.target.value)}
                     />
                   </Field>
 
@@ -841,9 +973,7 @@ export function FlowEditor({ design, onSaved }: Props) {
                   <Field label="ID">
                     <Input
                       value={selectedEdge.id}
-                      onChange={(event) =>
-                        updateEdge(selectedEdge.id, (current) => ({ ...current, id: event.target.value }))
-                      }
+                      onChange={(event) => renameEdge(selectedEdge.id, event.target.value)}
                     />
                   </Field>
 
