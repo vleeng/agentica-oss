@@ -745,6 +745,7 @@ class LangChainRuntime(AgentRuntime):
                 self._agent_id,
                 normalized_query,
                 self.spec.rag.top_k,
+                extra_owner_ids=await self._assigned_kb_ids(state),
             )
         except Exception as exc:
             logger.warning("[LangChainGraph] RAG context unavailable for agent %s: %s", self._agent_id, exc)
@@ -752,6 +753,28 @@ class LangChainRuntime(AgentRuntime):
 
         cache[normalized_query] = context or ""
         return cache[normalized_query]
+
+    async def _assigned_kb_ids(self, state: dict[str, Any]) -> list[str]:
+        cached = state.get("assigned_kb_ids")
+        if isinstance(cached, list):
+            return cached
+        if not self._session_factory or not self._agent_id:
+            state["assigned_kb_ids"] = []
+            return []
+        try:
+            from app.db.repository import AgentRepository
+
+            async with self._session_factory() as session:
+                repo = AgentRepository(session)
+                rows = await repo.get_agent_knowledge_bases(self._agent_id)
+        except Exception as exc:
+            logger.debug("[LangChainGraph] Could not load assigned KBs for %s: %s", self._agent_id, exc)
+            state["assigned_kb_ids"] = []
+            return []
+
+        kb_ids = [str(row.get("id") or "").strip() for row in rows if str(row.get("id") or "").strip()]
+        state["assigned_kb_ids"] = kb_ids
+        return kb_ids
 
     def _first_outgoing(self, node_id: str, outgoing: dict[str, list[dict[str, Any]]]) -> str | None:
         edge = next(iter(outgoing.get(node_id, [])), None)

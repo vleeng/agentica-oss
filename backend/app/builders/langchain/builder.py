@@ -56,7 +56,11 @@ class LangChainAgentBuilder:
 
             tools.append(
                 instrument_tool(
-                    RAGTool(agent_id=str(design.agent_id), top_k=spec.rag.top_k),
+                    RAGTool(
+                        agent_id=str(design.agent_id),
+                        top_k=spec.rag.top_k,
+                        session_factory=self._session_factory,
+                    ),
                     framework="langchain",
                     source="rag",
                 )

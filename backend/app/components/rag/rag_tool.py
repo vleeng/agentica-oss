@@ -25,6 +25,7 @@ class RAGTool(BaseTool):
     args_schema: Type[BaseModel] = RAGQueryInput
     agent_id: str = ""
     top_k: int = 4
+    session_factory: object | None = None
 
     def _run(self, query: str) -> str:
         raise NotImplementedError("Usar arun()")
@@ -33,7 +34,13 @@ class RAGTool(BaseTool):
         try:
             from app.components.rag.knowledge_builder import KnowledgeBuilderService
             kb = KnowledgeBuilderService()
-            context = await kb.retrieve_as_context(self.agent_id, query, self.top_k)
+            extra_owner_ids = await self._assigned_kb_ids()
+            context = await kb.retrieve_as_context(
+                self.agent_id,
+                query,
+                self.top_k,
+                extra_owner_ids=extra_owner_ids,
+            )
             return context or "No se encontró información relevante en la base de conocimiento."
         except ValueError as e:
             # Clave de embeddings no configurada — devolver aviso en lugar de crashear el agente
@@ -42,6 +49,25 @@ class RAGTool(BaseTool):
             import logging
             logging.getLogger(__name__).warning(f"[RAGTool] Error en retrieval: {e}")
             return "No se pudo consultar la base de conocimiento en este momento."
+
+    async def _assigned_kb_ids(self) -> list[str]:
+        if not self.session_factory or not self.agent_id:
+            return []
+        try:
+            from app.db.repository import AgentRepository
+
+            async with self.session_factory() as session:
+                repo = AgentRepository(session)
+                rows = await repo.get_agent_knowledge_bases(self.agent_id)
+        except Exception:
+            return []
+
+        kb_ids: list[str] = []
+        for row in rows:
+            kb_id = str(row.get("id") or "").strip()
+            if kb_id:
+                kb_ids.append(kb_id)
+        return kb_ids
 
 
 class CrewAIRAGTool(BaseTool):
@@ -60,10 +86,11 @@ class CrewAIRAGTool(BaseTool):
     args_schema: Type[BaseModel] = RAGQueryInput
     agent_id: str = ""
     top_k: int = 4
+    session_factory: object | None = None
 
     def _run(self, query: str) -> str:
         return asyncio.run(self._arun(query))
 
     async def _arun(self, query: str) -> str:
-        delegate = RAGTool(agent_id=self.agent_id, top_k=self.top_k)
+        delegate = RAGTool(agent_id=self.agent_id, top_k=self.top_k, session_factory=self.session_factory)
         return await delegate._arun(query)

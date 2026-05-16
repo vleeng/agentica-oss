@@ -257,33 +257,72 @@ class KnowledgeBuilderService:
         Busca los top_k fragmentos más relevantes para la query.
         Retorna lista de { text, source, score }.
         """
-        collection = self.collection_name(agent_id)
         query_vector = (await self._embed_texts([query]))[0]
+        return await self._search_owner_ids([agent_id], query_vector, top_k)
 
-        results = await self._qdrant.search(
-            collection_name=collection,
-            query_vector=query_vector,
-            limit=top_k,
-            with_payload=True,
-        )
-        return [
-            {
-                "text":   r.payload["text"],
-                "source": r.payload["source"],
-                "score":  r.score,
-            }
-            for r in results
-        ]
+    async def retrieve_multi(
+        self,
+        owner_ids: list[str],
+        query: str,
+        top_k: int = 4,
+    ) -> list[dict]:
+        query_vector = (await self._embed_texts([query]))[0]
+        return await self._search_owner_ids(owner_ids, query_vector, top_k)
 
-    async def retrieve_as_context(self, agent_id: str, query: str, top_k: int = 4) -> str:
+    async def retrieve_as_context(
+        self,
+        agent_id: str,
+        query: str,
+        top_k: int = 4,
+        extra_owner_ids: list[str] | None = None,
+    ) -> str:
         """Retorna los fragmentos formateados como contexto para el LLM."""
-        chunks = await self.retrieve(agent_id, query, top_k)
+        owner_ids = [agent_id, *(extra_owner_ids or [])]
+        chunks = await self.retrieve_multi(owner_ids, query, top_k) if len(owner_ids) > 1 else await self.retrieve(agent_id, query, top_k)
         if not chunks:
             return ""
         lines = ["CONTEXTO RELEVANTE DE LA BASE DE CONOCIMIENTO:"]
         for i, c in enumerate(chunks, 1):
             lines.append(f"\n[{i}] (fuente: {c['source']})\n{c['text']}")
         return "\n".join(lines)
+
+    async def _search_owner_ids(
+        self,
+        owner_ids: list[str],
+        query_vector: list[float],
+        top_k: int,
+    ) -> list[dict]:
+        aggregated: list[dict] = []
+        seen_owner_ids: set[str] = set()
+        for owner_id in owner_ids:
+            owner_id = str(owner_id or "").strip()
+            if not owner_id or owner_id in seen_owner_ids:
+                continue
+            seen_owner_ids.add(owner_id)
+            collection = self.collection_name(owner_id)
+            try:
+                results = await self._qdrant.search(
+                    collection_name=collection,
+                    query_vector=query_vector,
+                    limit=top_k,
+                    with_payload=True,
+                )
+            except Exception as exc:
+                logger.debug("[RAG] Collection %s unavailable during retrieval: %s", collection, exc)
+                continue
+
+            aggregated.extend(
+                {
+                    "text": r.payload["text"],
+                    "source": r.payload["source"],
+                    "score": r.score,
+                }
+                for r in results
+                if r.payload and r.payload.get("text")
+            )
+
+        aggregated.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
+        return aggregated[:top_k]
 
     # ── Gestión de colecciones ────────────────────────────────────────────────
 

@@ -151,7 +151,11 @@ class CrewAIAgentBuilder:
         if rag_enabled:
             tools.append(
                 instrument_tool(
-                    CrewAIRAGTool(agent_id=agent_id, top_k=rag_top_k),
+                    CrewAIRAGTool(
+                        agent_id=agent_id,
+                        top_k=rag_top_k,
+                        session_factory=self._session_factory,
+                    ),
                     framework="crewai",
                     source="rag",
                 )
