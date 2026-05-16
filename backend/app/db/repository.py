@@ -784,17 +784,18 @@ class AgentRepository:
     async def get_agent_knowledge_bases(self, agent_id: str) -> list[dict]:
         result = await self._db.execute(
             text("""
-                SELECT DISTINCT kb.*,
-                       CASE
-                           WHEN kb.access_mode = 'global' THEN 0
-                           ELSE 1
-                       END AS sort_priority
+                SELECT kb.*
                 FROM knowledge_bases kb
-                LEFT JOIN agent_knowledge_bases akb
-                    ON akb.kb_id = kb.id
-                   AND akb.agent_id = CAST(:agent_id AS uuid)
-                WHERE kb.access_mode = 'global' OR akb.agent_id IS NOT NULL
-                ORDER BY sort_priority, akb.assigned_at NULLS LAST, kb.created_at DESC
+                WHERE kb.access_mode = 'global'
+                   OR EXISTS (
+                        SELECT 1
+                        FROM agent_knowledge_bases akb
+                        WHERE akb.kb_id = kb.id
+                          AND akb.agent_id = CAST(:agent_id AS uuid)
+                   )
+                ORDER BY
+                    CASE WHEN kb.access_mode = 'global' THEN 0 ELSE 1 END,
+                    kb.created_at DESC
             """),
             {"agent_id": agent_id},
         )
