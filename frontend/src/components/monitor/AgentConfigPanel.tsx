@@ -57,10 +57,33 @@ export function AgentConfigPanel({ agentId }: Props) {
   })
   const [conditionInput, setConditionInput] = useState('{"keywords": []}')
   const [condError, setCondError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const [error, setError] = useState('')
 
+  async function loadConfig() {
+    setLoading(true)
+    setError('')
+    try {
+      const [all, asgn, allM, asgnM, allK, asgnK, grs] = await Promise.all([
+        skillsApi.list(), skillsApi.forAgent(agentId),
+        mcpApi.list(), mcpApi.forAgent(agentId),
+        knowledgeBasesApi.list(), knowledgeBasesApi.forAgent(agentId),
+        guardrailsApi.list(agentId),
+      ])
+      setAllSkills(all); setAssignedSkills(asgn)
+      setAllMcp(allM); setAssignedMcp(asgnM)
+      setAllKbs(allK); setAssignedKbs(asgnK)
+      setRules(grs)
+    } catch {
+      setError('Error cargando configuración')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
+    loadConfig()
     Promise.all([
       skillsApi.list(), skillsApi.forAgent(agentId),
       mcpApi.list(), mcpApi.forAgent(agentId),
@@ -113,11 +136,10 @@ export function AgentConfigPanel({ agentId }: Props) {
     try {
       if (isAssigned) {
         await knowledgeBasesApi.unassignFromAgent(agentId, kb.id)
-        setAssignedKbs(prev => prev.filter(k => k.id !== kb.id))
       } else {
         await knowledgeBasesApi.assignToAgent(agentId, kb.id)
-        setAssignedKbs(prev => [...prev, kb])
       }
+      await loadConfig()
     } catch { setError('Error actualizando knowledge base') }
   }
 
@@ -169,6 +191,15 @@ export function AgentConfigPanel({ agentId }: Props) {
 
   return (
     <div className="space-y-4 max-w-2xl">
+      <div className="flex justify-end">
+        <button
+          onClick={loadConfig}
+          disabled={loading}
+          className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-40"
+        >
+          {loading ? 'Actualizando...' : 'Actualizar configuración'}
+        </button>
+      </div>
       {error && (
         <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg flex justify-between">
           {error}
@@ -245,7 +276,7 @@ export function AgentConfigPanel({ agentId }: Props) {
       {/* ── Knowledge Bases ── */}
       <Section title="Bases de Conocimiento" badge={`${assignedKbs.length} disponibles`}>
         {allKbs.length === 0 ? (
-          <p className="text-xs text-gray-400">Sin KBs compartidas. Creá una en <strong>Librería → Conocimiento</strong>.</p>
+          <p className="text-xs text-gray-400">Sin bases disponibles en este tenant. Si acabás de crear o editar una, usá <strong>Actualizar configuración</strong>.</p>
         ) : (
           <div className="space-y-2">
             {allKbs.map(kb => {
