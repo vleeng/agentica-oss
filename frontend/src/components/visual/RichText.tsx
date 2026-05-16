@@ -1,5 +1,13 @@
 import type { ReactNode } from 'react'
 
+function normalizeRichTextContent(content: string): string {
+  return String(content || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/([^\n])\s+(#{1,3}\s+)/g, '$1\n\n$2')
+    .replace(/([.!?])\s+(\d+\.\s+)/g, '$1\n$2')
+    .replace(/([^\n])\s+([-*]\s+)/g, '$1\n$2')
+}
+
 // ── Inline rendering (bold, italic, inline-code) ──────────────────────────────
 function renderInline(text: string): ReactNode[] {
   // Split on inline-code first, then bold, then italic
@@ -52,7 +60,7 @@ function parseTable(lines: string[]): ReactNode {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export function RichText({ content }: { content: string }) {
-  const lines = content.split('\n')
+  const lines = normalizeRichTextContent(content).split('\n')
   const nodes: ReactNode[] = []
 
   let bulletItems: string[] = []
