@@ -1,15 +1,46 @@
 from __future__ import annotations
 import asyncio
 import json
+import shutil
 from fastapi import APIRouter, HTTPException, Response, UploadFile, File, Form
+from pathlib import Path
 
 from app.api.deps import TenantRepo
 from app.core.security import CurrentContext
+from app.core.config import get_settings
 from app.components.rag.knowledge_builder import KnowledgeBuilderService
 from app.schemas.knowledge_base import KnowledgeBaseIn, KnowledgeBaseOut
+from app.schemas.agent import RAGSpec
 
 router = APIRouter()
 _kb_builder = KnowledgeBuilderService()
+_settings = get_settings()
+
+
+def _kb_storage_dir(kb_id: str) -> Path:
+    return Path(_settings.builds_path) / "knowledge_bases" / kb_id
+
+
+def _kb_rag_spec(row: dict) -> RAGSpec:
+    rag_raw = row.get("rag_spec_json", {})
+    rag_spec_dict = json.loads(rag_raw) if isinstance(rag_raw, str) else rag_raw
+    return RAGSpec(**rag_spec_dict)
+
+
+async def _save_kb_rag_spec(repo: TenantRepo, kb_id: str, row: dict, rag_spec: RAGSpec, *, status: str | None = None) -> None:
+    payload: dict[str, str] = {"rag_spec_json": json.dumps(rag_spec.model_dump())}
+    if status is not None:
+        payload["status"] = status
+    await repo.update_knowledge_base(kb_id, payload)
+
+
+def _is_managed_kb_source(kb_id: str, source: str) -> bool:
+    try:
+        source_path = Path(source).resolve()
+        managed_root = _kb_storage_dir(kb_id).resolve()
+        return managed_root == source_path or managed_root in source_path.parents
+    except Exception:
+        return False
 
 
 @router.get("/knowledge-bases/", response_model=list[KnowledgeBaseOut])
@@ -24,6 +55,7 @@ async def create_knowledge_base(body: KnowledgeBaseIn, repo: TenantRepo, ctx: Cu
     data = {
         "name": body.name,
         "description": body.description,
+        "access_mode": body.access_mode,
         "rag_spec_json": json.dumps(body.rag_spec.model_dump()),
     }
     row = await repo.create_knowledge_base(data)
@@ -44,6 +76,7 @@ async def update_knowledge_base(kb_id: str, body: KnowledgeBaseIn, repo: TenantR
     data = {
         "name": body.name,
         "description": body.description,
+        "access_mode": body.access_mode,
         "rag_spec_json": json.dumps(body.rag_spec.model_dump()),
     }
     row = await repo.update_knowledge_base(kb_id, data)
@@ -60,6 +93,10 @@ async def delete_knowledge_base(kb_id: str, repo: TenantRepo, ctx: CurrentContex
         await _kb_builder.delete_collection(kb_id)
     except Exception:
         pass
+    try:
+        shutil.rmtree(_kb_storage_dir(kb_id), ignore_errors=True)
+    except Exception:
+        pass
     deleted = await repo.delete_knowledge_base(kb_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Knowledge base no encontrada")
@@ -74,11 +111,7 @@ async def ingest_knowledge_base(kb_id: str, repo: TenantRepo, ctx: CurrentContex
     if not row:
         raise HTTPException(status_code=404, detail="Knowledge base no encontrada")
 
-    rag_raw = row.get("rag_spec_json", {})
-    rag_spec_dict = json.loads(rag_raw) if isinstance(rag_raw, str) else rag_raw
-
-    from app.schemas.agent import RAGSpec
-    rag_spec = RAGSpec(**rag_spec_dict)
+    rag_spec = _kb_rag_spec(row)
 
     await repo.update_knowledge_base(kb_id, {"status": "indexing"})
 
@@ -103,34 +136,46 @@ async def ingest_file_to_kb(
     chunk_overlap: int = Form(50),
 ):
     ctx.require_developer()
-    import tempfile, os
     row = await repo.get_knowledge_base(kb_id)
     if not row:
         raise HTTPException(status_code=404, detail="Knowledge base no encontrada")
+    rag_spec = _kb_rag_spec(row)
 
-    suffix = os.path.splitext(file.filename or "")[1] or ".txt"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(await file.read())
-        tmp_path = tmp.name
+    safe_filename = Path(file.filename or "upload.bin").name
+    storage_dir = _kb_storage_dir(kb_id)
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    stored_path = storage_dir / safe_filename
+    stored_path.write_bytes(await file.read())
+    stored_source = str(stored_path)
 
-    from app.schemas.agent import RAGSpec
-    rag_spec = RAGSpec(enabled=True, sources=[tmp_path], chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    await repo.update_knowledge_base(kb_id, {"status": "indexing"})
+    updated_sources = [src for src in rag_spec.sources if src != stored_source]
+    updated_sources.append(stored_source)
+    rag_spec = rag_spec.model_copy(
+        update={
+            "enabled": True,
+            "sources": updated_sources,
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
+        }
+    )
+    await _save_kb_rag_spec(repo, kb_id, row, rag_spec, status="indexing")
 
     async def _run():
         try:
-            await _kb_builder.ingest(kb_id, rag_spec)
+            try:
+                await _kb_builder.delete_source(kb_id, stored_source)
+            except Exception:
+                pass
+            await _kb_builder.ingest(
+                kb_id,
+                rag_spec.model_copy(update={"sources": [stored_source]}),
+            )
             await repo.update_knowledge_base(kb_id, {"status": "ready"})
         except Exception:
             await repo.update_knowledge_base(kb_id, {"status": "error"})
-        finally:
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
 
     asyncio.create_task(_run())
-    return {"status": "indexing", "kb_id": kb_id, "filename": file.filename}
+    return {"status": "indexing", "kb_id": kb_id, "filename": file.filename, "source": stored_source}
 
 
 @router.get("/knowledge-bases/{kb_id}/sources")
@@ -150,6 +195,15 @@ async def delete_kb_source(kb_id: str, source: str, repo: TenantRepo, ctx: Curre
     if not row:
         raise HTTPException(status_code=404, detail="Knowledge base no encontrada")
     await _kb_builder.delete_source(kb_id, source)
+    rag_spec = _kb_rag_spec(row)
+    if source in rag_spec.sources:
+        rag_spec = rag_spec.model_copy(update={"sources": [src for src in rag_spec.sources if src != source]})
+        await _save_kb_rag_spec(repo, kb_id, row, rag_spec)
+    if _is_managed_kb_source(kb_id, source):
+        try:
+            Path(source).unlink(missing_ok=True)
+        except Exception:
+            pass
     return {"deleted": source}
 
 
@@ -167,6 +221,8 @@ async def assign_kb(agent_id: str, kb_id: str, repo: TenantRepo, ctx: CurrentCon
     kb = await repo.get_knowledge_base(kb_id)
     if not kb:
         raise HTTPException(status_code=404, detail="Knowledge base no encontrada")
+    if (kb.get("access_mode") or "restricted") == "global":
+        return Response(status_code=204)
     await repo.assign_kb_to_agent(agent_id, kb_id)
     return Response(status_code=204)
 
@@ -174,5 +230,8 @@ async def assign_kb(agent_id: str, kb_id: str, repo: TenantRepo, ctx: CurrentCon
 @router.delete("/agents/{agent_id}/knowledge-bases/{kb_id}", status_code=204)
 async def unassign_kb(agent_id: str, kb_id: str, repo: TenantRepo, ctx: CurrentContext):
     ctx.require_developer()
+    kb = await repo.get_knowledge_base(kb_id)
+    if kb and (kb.get("access_mode") or "restricted") == "global":
+        raise HTTPException(status_code=400, detail="Una knowledge base global no puede desasignarse desde un agente")
     await repo.unassign_kb_from_agent(agent_id, kb_id)
     return Response(status_code=204)

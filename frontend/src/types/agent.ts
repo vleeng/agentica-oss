@@ -298,6 +298,7 @@ export interface KnowledgeBase {
   id: string
   name: string
   description: string
+  access_mode: 'global' | 'restricted'
   rag_spec: RAGSpec
   status: 'empty' | 'indexing' | 'ready' | 'error'
   created_at: string

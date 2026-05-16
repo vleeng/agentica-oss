@@ -727,8 +727,8 @@ class AgentRepository:
     async def create_knowledge_base(self, data: dict) -> dict:
         result = await self._db.execute(
             text("""
-                INSERT INTO knowledge_bases (name, description, rag_spec_json)
-                VALUES (:name, :description, CAST(:rag_spec_json AS jsonb))
+                INSERT INTO knowledge_bases (name, description, access_mode, rag_spec_json)
+                VALUES (:name, :description, :access_mode, CAST(:rag_spec_json AS jsonb))
                 RETURNING *
             """),
             data,
@@ -738,7 +738,7 @@ class AgentRepository:
 
     async def update_knowledge_base(self, kb_id: str, data: dict) -> Optional[dict]:
         sets, params = [], {"id": kb_id}
-        for field in ("name", "description", "status"):
+        for field in ("name", "description", "status", "access_mode"):
             if field in data:
                 sets.append(f"{field} = :{field}")
                 params[field] = data[field]
@@ -784,10 +784,17 @@ class AgentRepository:
     async def get_agent_knowledge_bases(self, agent_id: str) -> list[dict]:
         result = await self._db.execute(
             text("""
-                SELECT kb.* FROM knowledge_bases kb
-                JOIN agent_knowledge_bases akb ON akb.kb_id = kb.id
-                WHERE akb.agent_id = CAST(:agent_id AS uuid)
-                ORDER BY akb.assigned_at
+                SELECT DISTINCT kb.*,
+                       CASE
+                           WHEN kb.access_mode = 'global' THEN 0
+                           ELSE 1
+                       END AS sort_priority
+                FROM knowledge_bases kb
+                LEFT JOIN agent_knowledge_bases akb
+                    ON akb.kb_id = kb.id
+                   AND akb.agent_id = CAST(:agent_id AS uuid)
+                WHERE kb.access_mode = 'global' OR akb.agent_id IS NOT NULL
+                ORDER BY sort_priority, akb.assigned_at NULLS LAST, kb.created_at DESC
             """),
             {"agent_id": agent_id},
         )

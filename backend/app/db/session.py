@@ -49,6 +49,7 @@ def _make_tenant_schema(tenant_id: str) -> str:
 
 
 _tenant_engines: dict[str, AsyncEngine] = {}
+_verified_tenants: set[str] = set()
 
 def get_tenant_session_factory(tenant_id: str) -> async_sessionmaker[AsyncSession]:
     """
@@ -220,12 +221,16 @@ CREATE TABLE IF NOT EXISTS {schema}.knowledge_bases (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name          TEXT NOT NULL,
     description   TEXT,
+    access_mode   TEXT NOT NULL DEFAULT 'restricted',
     rag_spec_json JSONB NOT NULL DEFAULT '{{}}',
     status        TEXT NOT NULL DEFAULT 'empty',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (name)
 );
+
+ALTER TABLE IF EXISTS {schema}.knowledge_bases
+ADD COLUMN IF NOT EXISTS access_mode TEXT NOT NULL DEFAULT 'restricted';
 
 CREATE TABLE IF NOT EXISTS {schema}.agent_skills (
     agent_id    UUID NOT NULL REFERENCES {schema}.agents(id) ON DELETE CASCADE,
@@ -291,6 +296,14 @@ async def provision_tenant(tenant_id: str, conn: AsyncConnection) -> None:
         if stmt:
             await conn.execute(text(stmt))
     await conn.commit()
+    _verified_tenants.add(tenant_id)
+
+
+async def ensure_tenant_schema(tenant_id: str) -> None:
+    if tenant_id in _verified_tenants:
+        return
+    async with engine.begin() as conn:
+        await provision_tenant(tenant_id, conn)
 
 
 @asynccontextmanager

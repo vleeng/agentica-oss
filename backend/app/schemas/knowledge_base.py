@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from app.schemas.agent import RAGSpec
 
@@ -7,6 +8,7 @@ from app.schemas.agent import RAGSpec
 class KnowledgeBaseIn(BaseModel):
     name: str
     description: str = ""
+    access_mode: Literal["global", "restricted"] = "restricted"
     rag_spec: RAGSpec = Field(default_factory=RAGSpec)
 
 
@@ -25,6 +27,7 @@ class KnowledgeBaseOut(KnowledgeBaseIn):
             id=str(row["id"]),
             name=row["name"],
             description=row.get("description") or "",
+            access_mode=row.get("access_mode") or "restricted",
             rag_spec=RAGSpec(**rag_raw) if rag_raw else RAGSpec(),
             status=row["status"],
             created_at=row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),

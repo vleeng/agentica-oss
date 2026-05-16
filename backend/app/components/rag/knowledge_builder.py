@@ -275,10 +275,13 @@ class KnowledgeBuilderService:
         query: str,
         top_k: int = 4,
         extra_owner_ids: list[str] | None = None,
+        include_agent_source: bool = True,
     ) -> str:
         """Retorna los fragmentos formateados como contexto para el LLM."""
-        owner_ids = [agent_id, *(extra_owner_ids or [])]
-        chunks = await self.retrieve_multi(owner_ids, query, top_k) if len(owner_ids) > 1 else await self.retrieve(agent_id, query, top_k)
+        owner_ids = ([agent_id] if include_agent_source else []) + list(extra_owner_ids or [])
+        if not owner_ids:
+            return ""
+        chunks = await self.retrieve_multi(owner_ids, query, top_k) if len(owner_ids) > 1 else await self.retrieve(owner_ids[0], query, top_k)
         if not chunks:
             return ""
         lines = ["CONTEXTO RELEVANTE DE LA BASE DE CONOCIMIENTO:"]

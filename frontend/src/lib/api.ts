@@ -570,9 +570,9 @@ export const mcpApi = {
 export const knowledgeBasesApi = {
   list: (): Promise<KnowledgeBase[]> => api.get('/knowledge-bases/').then((r) => r.data),
   get: (id: string): Promise<KnowledgeBase> => api.get(`/knowledge-bases/${id}`).then((r) => r.data),
-  create: (data: Pick<KnowledgeBase, 'name' | 'description' | 'rag_spec'>): Promise<KnowledgeBase> =>
+  create: (data: Pick<KnowledgeBase, 'name' | 'description' | 'access_mode' | 'rag_spec'>): Promise<KnowledgeBase> =>
     api.post('/knowledge-bases/', data).then((r) => r.data),
-  update: (id: string, data: Pick<KnowledgeBase, 'name' | 'description' | 'rag_spec'>): Promise<KnowledgeBase> =>
+  update: (id: string, data: Pick<KnowledgeBase, 'name' | 'description' | 'access_mode' | 'rag_spec'>): Promise<KnowledgeBase> =>
     api.put(`/knowledge-bases/${id}`, data).then((r) => r.data),
   delete: (id: string) => api.delete(`/knowledge-bases/${id}`),
   ingest: (id: string) => api.post(`/knowledge-bases/${id}/ingest`).then((r) => r.data),

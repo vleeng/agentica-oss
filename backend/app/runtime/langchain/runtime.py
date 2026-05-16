@@ -741,11 +741,13 @@ class LangChainRuntime(AgentRuntime):
             from app.components.rag.knowledge_builder import KnowledgeBuilderService
 
             kb = KnowledgeBuilderService()
+            accessible_kb_ids = await self._assigned_kb_ids(state)
             context = await kb.retrieve_as_context(
                 self._agent_id,
                 normalized_query,
                 self.spec.rag.top_k,
-                extra_owner_ids=await self._assigned_kb_ids(state),
+                extra_owner_ids=accessible_kb_ids,
+                include_agent_source=not accessible_kb_ids,
             )
         except Exception as exc:
             logger.warning("[LangChainGraph] RAG context unavailable for agent %s: %s", self._agent_id, exc)

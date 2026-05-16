@@ -34,12 +34,13 @@ class RAGTool(BaseTool):
         try:
             from app.components.rag.knowledge_builder import KnowledgeBuilderService
             kb = KnowledgeBuilderService()
-            extra_owner_ids = await self._assigned_kb_ids()
+            extra_owner_ids = await self._accessible_kb_ids()
             context = await kb.retrieve_as_context(
                 self.agent_id,
                 query,
                 self.top_k,
                 extra_owner_ids=extra_owner_ids,
+                include_agent_source=not extra_owner_ids,
             )
             return context or "No se encontró información relevante en la base de conocimiento."
         except ValueError as e:
@@ -50,7 +51,7 @@ class RAGTool(BaseTool):
             logging.getLogger(__name__).warning(f"[RAGTool] Error en retrieval: {e}")
             return "No se pudo consultar la base de conocimiento en este momento."
 
-    async def _assigned_kb_ids(self) -> list[str]:
+    async def _accessible_kb_ids(self) -> list[str]:
         if not self.session_factory or not self.agent_id:
             return []
         try:

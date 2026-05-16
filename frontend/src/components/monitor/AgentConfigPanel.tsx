@@ -108,6 +108,7 @@ export function AgentConfigPanel({ agentId }: Props) {
 
   // ── KBs ───────────────────────────────────────────────────────────────────
   async function toggleKb(kb: KnowledgeBase) {
+    if (kb.access_mode === 'global') return
     const isAssigned = assignedKbs.some(k => k.id === kb.id)
     try {
       if (isAssigned) {
@@ -242,27 +243,32 @@ export function AgentConfigPanel({ agentId }: Props) {
       </Section>
 
       {/* ── Knowledge Bases ── */}
-      <Section title="Bases de Conocimiento" badge={`${assignedKbs.length} asignadas`}>
+      <Section title="Bases de Conocimiento" badge={`${assignedKbs.length} disponibles`}>
         {allKbs.length === 0 ? (
           <p className="text-xs text-gray-400">Sin KBs compartidas. Creá una en <strong>Librería → Conocimiento</strong>.</p>
         ) : (
           <div className="space-y-2">
             {allKbs.map(kb => {
               const assigned = assignedKbs.some(k => k.id === kb.id)
+              const isGlobal = kb.access_mode === 'global'
               const statusColor = { empty: 'text-gray-400', indexing: 'text-amber-500', ready: 'text-green-500', error: 'text-red-500' }[kb.status]
               return (
                 <div key={kb.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-all ${
                   assigned ? 'border-violet-400 bg-violet-50' : 'border-gray-200'
                 }`}>
                   <button onClick={() => toggleKb(kb)}
+                    disabled={isGlobal}
                     className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 ${
                       assigned ? 'border-violet-500 bg-violet-500' : 'border-gray-300'
-                    }`}>
+                    } ${isGlobal ? 'cursor-not-allowed opacity-70' : ''}`}>
                     {assigned && <span className="text-white text-xs">✓</span>}
                   </button>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-800">{kb.name}</div>
                     <div className={`text-xs ${statusColor}`}>{kb.status}</div>
+                    <div className="text-xs text-gray-500">
+                      {isGlobal ? 'Disponible para todos los agentes' : 'Disponible solo para agentes asignados'}
+                    </div>
                   </div>
                 </div>
               )

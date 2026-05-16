@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { AgentDesign } from '../../types/agent'
 import { agentsApi, authApi, createAgentWebSocket, normalizeAgentChatError, type AuthMe } from '../../lib/api'
-import { KnowledgePanel } from './KnowledgePanel'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { AgentEditPanel } from './AgentEditPanel'
 import { ChatContextHeader } from './ChatContextHeader'
@@ -20,7 +19,7 @@ interface Props {
 }
 
 type Phase = 'idle' | 'building' | 'ready' | 'evaluating' | 'optimizing' | 'deploying'
-type TabId = 'sandbox' | 'eval' | 'design' | 'knowledge' | 'config' | 'edit'
+type TabId = 'sandbox' | 'eval' | 'design' | 'config' | 'edit'
 
 interface ChatMessage {
   id: string
@@ -202,7 +201,6 @@ export function AgentMonitor({ design, onOptimized }: Props) {
     { id: 'sandbox', label: 'Sandbox' },
     { id: 'eval', label: 'Evaluación' },
     { id: 'design', label: 'Diseño' },
-    { id: 'knowledge', label: 'Conocimiento' },
     { id: 'config', label: 'Configurar' },
     { id: 'edit', label: 'Editar' },
   ]
@@ -471,7 +469,6 @@ export function AgentMonitor({ design, onOptimized }: Props) {
         </div>
       )}
 
-      {activeTab === 'knowledge' && <KnowledgePanel agentId={currentDesign.agent_id} />}
 
       {activeTab === 'config' && <AgentConfigPanel agentId={currentDesign.agent_id} />}
 
