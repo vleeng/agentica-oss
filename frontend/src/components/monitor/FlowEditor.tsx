@@ -33,7 +33,7 @@ const NODE_TYPES: Array<{ value: FlowNodeType; label: string }> = [
 
 const NODE_WIDTH = 200
 const NODE_HEIGHT = 104
-const HANDLE_SIZE = 12
+const HANDLE_SIZE = 16
 const CANVAS_PADDING = 64
 
 function cloneGraph(graph: GraphBlueprint): GraphBlueprint {
@@ -444,6 +444,15 @@ export function FlowEditor({ design, onSaved }: Props) {
     setSelectedNodeId(null)
   }
 
+  const handleNodeCanvasClick = (nodeId: string) => {
+    if (pendingConnectionFrom && pendingConnectionFrom !== nodeId) {
+      handleCompleteConnection(nodeId)
+      return
+    }
+    setSelectedNodeId(nodeId)
+    setSelectedEdgeId(null)
+  }
+
   const handleAutoLayout = () => {
     viewportResetRef.current = true
     setDraft((prev) => autoLayoutGraph(prev))
@@ -585,7 +594,7 @@ export function FlowEditor({ design, onSaved }: Props) {
             {isDirty && <span>Cambios sin guardar</span>}
             {pendingConnectionFrom && (
               <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-sky-700">
-                Conectando desde {pendingConnectionFrom}. Hace click en la entrada del nodo destino.
+                Conectando desde {pendingConnectionFrom}. Hace click en el nodo destino o en su entrada.
               </span>
             )}
             <span>Supr/Backspace elimina lo seleccionado</span>
@@ -679,13 +688,18 @@ export function FlowEditor({ design, onSaved }: Props) {
                       }}
                       onClick={(event) => {
                         event.stopPropagation()
-                        setSelectedNodeId(node.id)
-                        setSelectedEdgeId(null)
+                        handleNodeCanvasClick(node.id)
                       }}
                     >
                       <button
                         type="button"
-                        className="absolute left-[-6px] top-[calc(50%-6px)] h-3 w-3 rounded-full border-2 border-white bg-slate-400 shadow"
+                        className="absolute top-1/2 z-10 rounded-full border-2 border-white bg-slate-400 shadow transition hover:scale-110"
+                        style={{
+                          left: -(HANDLE_SIZE / 2),
+                          width: HANDLE_SIZE,
+                          height: HANDLE_SIZE,
+                          marginTop: -(HANDLE_SIZE / 2),
+                        }}
                         onClick={(event) => {
                           event.stopPropagation()
                           handleCompleteConnection(node.id)
@@ -694,9 +708,15 @@ export function FlowEditor({ design, onSaved }: Props) {
                       />
                       <button
                         type="button"
-                        className={`absolute right-[-6px] top-[calc(50%-6px)] h-3 w-3 rounded-full border-2 border-white shadow ${
+                        className={`absolute top-1/2 z-10 rounded-full border-2 border-white shadow transition hover:scale-110 ${
                           pendingConnectionFrom === node.id ? 'bg-violet-600' : 'bg-sky-500'
                         }`}
+                        style={{
+                          right: -(HANDLE_SIZE / 2),
+                          width: HANDLE_SIZE,
+                          height: HANDLE_SIZE,
+                          marginTop: -(HANDLE_SIZE / 2),
+                        }}
                         onClick={(event) => {
                           event.stopPropagation()
                           handleBeginConnection(node.id)
