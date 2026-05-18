@@ -4,6 +4,7 @@ from collections import defaultdict, deque
 
 from app.schemas.agent import (
     AgentDesign,
+    FlowEdge,
     FlowNode,
     FlowNodePosition,
     GraphBlueprint,
@@ -275,6 +276,12 @@ def _ensure_rag_knowledge_node(design: AgentDesign, blueprint: GraphBlueprint) -
     if design.spec.mode.value != "single" or not design.spec.rag.enabled:
         return blueprint
 
+    start_node = next((node for node in blueprint.nodes if node.type.value == "start"), None)
+    if start_node is None:
+        return blueprint
+
+    nodes = list(blueprint.nodes)
+    edges = list(blueprint.edges)
     existing_rag = next(
         (
             node for node in blueprint.nodes
@@ -283,58 +290,66 @@ def _ensure_rag_knowledge_node(design: AgentDesign, blueprint: GraphBlueprint) -
         None,
     )
     if existing_rag:
-        return blueprint
-
-    start_node = next((node for node in blueprint.nodes if node.type.value == "start"), None)
-    if start_node is None:
-        return blueprint
-
-    nodes = list(blueprint.nodes)
-    edges = list(blueprint.edges)
-    rag_node_id = _next_node_id({node.id for node in nodes}, "knowledge_base")
-    start_position = start_node.position or FlowNodePosition(x=120, y=120)
-    rag_node = FlowNode.model_validate(
-        {
-            "id": rag_node_id,
-            "type": "tool",
-            "label": "Base de conocimientos",
-            "description": "Consulta la base de conocimientos del agente antes de continuar el flujo.",
-            "position": {
-                "x": start_position.x + 240,
-                "y": start_position.y,
-            },
-            "data": {
-                "tool_name": "knowledge_base",
+        rag_node = existing_rag
+        rag_node_id = existing_rag.id
+    else:
+        rag_node_id = _next_node_id({node.id for node in nodes}, "knowledge_base")
+        start_position = start_node.position or FlowNodePosition(x=120, y=120)
+        rag_node = FlowNode.model_validate(
+            {
+                "id": rag_node_id,
+                "type": "tool",
+                "label": "Base de conocimientos",
                 "description": "Consulta la base de conocimientos del agente antes de continuar el flujo.",
-            },
-        }
-    )
-    nodes.append(rag_node)
+                "position": {
+                    "x": start_position.x + 240,
+                    "y": start_position.y,
+                },
+                "data": {
+                    "tool_name": "knowledge_base",
+                    "description": "Consulta la base de conocimientos del agente antes de continuar el flujo.",
+                },
+            }
+        )
+        nodes.append(rag_node)
 
     outgoing_from_start = [edge for edge in edges if edge.from_ == start_node.id]
+    outgoing_from_rag = [edge for edge in edges if edge.from_ == rag_node_id]
+    redirected_edges = [edge for edge in outgoing_from_start if edge.to != rag_node_id]
     remaining_edges = [edge for edge in edges if edge.from_ != start_node.id]
     existing_edge_ids = {edge.id for edge in edges if edge.id}
 
-    start_to_rag = {
-        "id": _next_edge_id(existing_edge_ids, "edge_start_rag"),
-        "from": start_node.id,
-        "to": rag_node_id,
-        "condition": None,
-    }
-    existing_edge_ids.add(start_to_rag["id"])
-
-    next_edges = []
-    if outgoing_from_start:
-        for edge in outgoing_from_start:
-            next_edge = {
-                "id": _next_edge_id(existing_edge_ids, edge.id or f"{rag_node_id}_{edge.to}"),
-                "from": rag_node_id,
-                "to": edge.to,
-                "condition": edge.condition,
-            }
-            existing_edge_ids.add(next_edge["id"])
-            next_edges.append(next_edge)
+    rebuilt_edges: list[FlowEdge] = []
+    start_to_rag_exists = any(edge.to == rag_node_id for edge in outgoing_from_start)
+    if not start_to_rag_exists:
+        start_to_rag = {
+            "id": _next_edge_id(existing_edge_ids, "edge_start_rag"),
+            "from": start_node.id,
+            "to": rag_node_id,
+            "condition": None,
+        }
+        existing_edge_ids.add(start_to_rag["id"])
+        rebuilt_edges.append(FlowEdge.model_validate(start_to_rag))
     else:
+        existing_start_to_rag = next(edge for edge in outgoing_from_start if edge.to == rag_node_id)
+        rebuilt_edges.append(existing_start_to_rag)
+
+    rag_targets = {(edge.to, (edge.condition or "").strip()) for edge in outgoing_from_rag}
+    for edge in redirected_edges:
+        key = (edge.to, (edge.condition or "").strip())
+        if key in rag_targets:
+            continue
+        next_edge = {
+            "id": _next_edge_id(existing_edge_ids, edge.id or f"{rag_node_id}_{edge.to}"),
+            "from": rag_node_id,
+            "to": edge.to,
+            "condition": edge.condition,
+        }
+        existing_edge_ids.add(next_edge["id"])
+        rebuilt_edges.append(FlowEdge.model_validate(next_edge))
+        rag_targets.add(key)
+
+    if not rag_targets:
         fallback_target = next(
             (node.id for node in nodes if node.id not in {start_node.id, rag_node_id} and node.type.value != "start"),
             None,
@@ -347,14 +362,9 @@ def _ensure_rag_knowledge_node(design: AgentDesign, blueprint: GraphBlueprint) -
                 "condition": None,
             }
             existing_edge_ids.add(next_edge["id"])
-            next_edges.append(next_edge)
+            rebuilt_edges.append(FlowEdge.model_validate(next_edge))
 
-    rebuilt_edges = [
-        FlowEdge.model_validate(start_to_rag),
-        *[FlowEdge.model_validate(edge) for edge in next_edges],
-        *remaining_edges,
-    ]
-
+    rebuilt_edges.extend(remaining_edges)
     return GraphBlueprint(nodes=nodes, edges=rebuilt_edges, meta=blueprint.meta)
 
 
