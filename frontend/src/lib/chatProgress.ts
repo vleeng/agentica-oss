@@ -15,6 +15,10 @@ export function appendProgressEntry(entries: string[] | undefined, nextEntry: st
 }
 
 export function summarizeAgentProgress(event: ProgressEvent): string | null {
+  if (event.type === 'trace') {
+    return null
+  }
+
   const phase = String(event.phase || '').toLowerCase()
   const kind = String(('kind' in event ? event.kind : '') || '').toLowerCase()
   const actor = String(('actor' in event ? event.actor : '') || '').trim()
@@ -47,6 +51,10 @@ export function summarizeAgentProgress(event: ProgressEvent): string | null {
     if (message.toLowerCase().startsWith('decision:')) {
       return `Pensando: ${message.slice('Decision:'.length).trim()}`
     }
+    return message || 'Pensando'
+  }
+
+  if (kind === 'thought' || kind === 'step_summary') {
     return message || 'Pensando'
   }
 

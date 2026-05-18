@@ -464,6 +464,14 @@ class LangChainRuntime(AgentRuntime):
             actor=str(node.get("label") or "Paso"),
             kind="answer",
         )
+        summary = _summarize_step_output(output)
+        if summary:
+            await self._emit_progress(
+                "status",
+                f"Pensando: {summary}",
+                actor=str(node.get("label") or "Paso"),
+                kind="thought",
+            )
         return output
 
     async def _run_tool_node(self, *, node: dict[str, Any], state: dict[str, Any]) -> str:
@@ -933,7 +941,45 @@ def _summarize_rag_result(titles: list[str], output: str) -> str:
     lowered = str(output or "").strip().lower()
     if "no se encontro" in lowered or "no encontr" in lowered:
         return "No encontre informacion relevante en conocimientos"
+    snippets = _extract_rag_snippets(output)
+    if snippets:
+        preview = " | ".join(snippets[:2])
+        return f"Encontre en conocimientos: {preview}"
     return "Revise los conocimientos disponibles"
+
+
+def _extract_rag_snippets(output: str) -> list[str]:
+    snippets: list[str] = []
+    capture_next = False
+    for raw_line in str(output or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if "(fuente:" in line.lower():
+            capture_next = True
+            continue
+        if capture_next:
+            snippet = " ".join(line.split()).strip()
+            if len(snippet) > 90:
+                snippet = snippet[:87].rstrip() + "..."
+            if snippet and snippet not in snippets:
+                snippets.append(snippet)
+            capture_next = False
+    return snippets
+
+
+def _summarize_step_output(output: str) -> str:
+    text = " ".join(str(output or "").split()).strip()
+    if not text:
+        return ""
+    if len(text) > 180:
+        return ""
+    lowered = text.lower()
+    if any(marker in lowered for marker in ["## ", "### ", "ingredientes", "preparacion", "respuesta final:", "final answer:"]):
+        return ""
+    if text.startswith(("[", "-", "*")):
+        return ""
+    return text
 
 
 def _extract_json_block(text: str) -> str:
