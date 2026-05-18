@@ -212,7 +212,7 @@ class LangChainAgentBuilder:
 
         return bool(
             len(agent_nodes) > 1
-            or any(node.get("type") in {"tool", "decision"} for node in nodes)
+            or any(self._normalize_node_type(node.get("type")) in {"tool", "decision"} for node in nodes)
             or branching
         )
 
@@ -224,7 +224,7 @@ class LangChainAgentBuilder:
         if not normalized_target:
             return False
         for node in nodes:
-            if self._normalize_node_type(node.get("type")) != "tool":
+            if LangChainAgentBuilder._normalize_node_type(node.get("type")) != "tool":
                 continue
             data = node.get("data") or {}
             candidate = str(data.get("tool_name") or "").strip().lower()
