@@ -37,6 +37,10 @@ export function summarizeAgentProgress(event: ProgressEvent): string | null {
     return message || 'Revise los conocimientos disponibles'
   }
 
+  if (kind === 'rag_preview') {
+    return message || 'Revise los hallazgos encontrados'
+  }
+
   if (kind === 'tool') {
     if (actor === 'knowledge_base') {
       return query ? `Buscando en conocimientos: ${query}` : 'Buscando en conocimientos'

@@ -374,7 +374,6 @@ class LangChainRuntime(AgentRuntime):
                 await self._emit_progress("status", f"Ejecutando paso: {label}")
                 current_output = await self._run_agent_node(node=node, state=state)
             elif node_type == "tool":
-                await self._emit_progress("status", f"Ejecutando herramienta: {label}")
                 current_output = await self._run_tool_node(node=node, state=state)
             elif node_type == "decision":
                 await self._emit_progress("status", f"Resolviendo decision: {label}")
@@ -481,17 +480,18 @@ class LangChainRuntime(AgentRuntime):
             return f"[tool no disponible: {tool_name or 'sin tool_name'}]"
 
         payload = await self._build_tool_payload(tool=tool, node=node, state=state)
+        query = _extract_tool_query(payload)
         if tool_name == "knowledge_base":
-            query = _extract_tool_query(payload)
             message = f"Buscando en conocimientos{_summarize_query(query)}"
         else:
-            message = f"Usando {tool_name} con input preparado"
+            label = str(node.get("label") or tool_name).strip() or tool_name
+            message = f"Usando {label}{_summarize_query(query, max_length=56)}"
         await self._emit_progress(
-            "trace",
+            "status",
             message,
-            actor=str(node.get("label") or tool_name),
+            actor="knowledge_base" if tool_name == "knowledge_base" else str(node.get("label") or tool_name),
             kind="tool",
-            query=_extract_tool_query(payload),
+            query=query,
         )
         try:
             if hasattr(tool, "ainvoke"):
@@ -505,6 +505,7 @@ class LangChainRuntime(AgentRuntime):
         output = str(result or "").strip()
         if tool_name == "knowledge_base":
             titles = _extract_rag_titles(output)
+            snippets = _extract_rag_snippets(output)
             await self._emit_progress(
                 "status",
                 _summarize_rag_result(titles, output),
@@ -512,6 +513,13 @@ class LangChainRuntime(AgentRuntime):
                 kind="rag_result",
                 titles=titles,
             )
+            if snippets:
+                await self._emit_progress(
+                    "status",
+                    f"Hallazgos: {' | '.join(snippets[:2])}",
+                    actor="knowledge_base",
+                    kind="rag_preview",
+                )
         await self._emit_progress(
             "trace",
             _trim_trace(output),
