@@ -549,6 +549,8 @@ class LangChainRuntime(AgentRuntime):
         if tool_name == "knowledge_base":
             titles = _extract_rag_titles(output)
             snippets = _extract_rag_snippets(output)
+            state["knowledge_base_context"] = output
+            state["knowledge_base_query"] = query
             await self._emit_progress(
                 "status",
                 _summarize_rag_result(titles, output),
@@ -855,6 +857,18 @@ class LangChainRuntime(AgentRuntime):
         if normalized_query in cache:
             return cache[normalized_query]
 
+        cached_tool_context = str(state.get("knowledge_base_context") or "").strip()
+        cached_tool_query = str(state.get("knowledge_base_query") or "").strip()
+        user_input = str(state.get("user_input") or "").strip()
+        if (
+            cached_tool_context
+            and user_input
+            and _normalize_rag_key(cached_tool_query or user_input) == _normalize_rag_key(user_input)
+            and normalized_query.startswith(user_input)
+        ):
+            cache[normalized_query] = cached_tool_context
+            return cached_tool_context
+
         try:
             from app.components.rag.knowledge_builder import KnowledgeBuilderService
 
@@ -1102,6 +1116,10 @@ def _normalize_tool_key(value: str) -> str:
     normalized = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower())
     normalized = re.sub(r"_+", "_", normalized).strip("_")
     return normalized
+
+
+def _normalize_rag_key(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
 def _is_low_signal_output(text: str) -> bool:
