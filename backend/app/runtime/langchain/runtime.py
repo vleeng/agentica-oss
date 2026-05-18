@@ -565,6 +565,26 @@ class LangChainRuntime(AgentRuntime):
                     actor="knowledge_base",
                     kind="rag_preview",
                 )
+        elif tool_name == "web_search":
+            web_results = _extract_web_results(output)
+            if web_results:
+                state["web_search_results"] = web_results
+                titles = [result["title"] for result in web_results if result.get("title")]
+                await self._emit_progress(
+                    "status",
+                    _summarize_web_result(web_results),
+                    actor="web_search",
+                    kind="web_result",
+                    titles=titles,
+                )
+                previews = [result["url"] for result in web_results if result.get("url")]
+                if previews:
+                    await self._emit_progress(
+                        "status",
+                        f"Fuentes web: {' | '.join(previews[:2])}",
+                        actor="web_search",
+                        kind="web_sources",
+                    )
         await self._emit_progress(
             "trace",
             _trim_trace(output),
@@ -750,7 +770,7 @@ class LangChainRuntime(AgentRuntime):
         ):
             synthesized = await self._synthesize_graph_output(state)
             if synthesized and not _is_low_signal_output(synthesized):
-                return synthesized
+                return _append_web_citations(synthesized, state)
 
         if self._llm is not None and (
             not selected_output
@@ -758,14 +778,14 @@ class LangChainRuntime(AgentRuntime):
         ):
             fallback = await self._direct_graph_fallback(state)
             if fallback and not _is_low_signal_output(fallback):
-                return fallback
+                return _append_web_citations(fallback, state)
 
         if selected_output:
-            return selected_output
+            return _append_web_citations(selected_output, state)
         if self._llm is not None:
             fallback = await self._direct_graph_fallback(state)
             if fallback and not _is_low_signal_output(fallback):
-                return fallback
+                return _append_web_citations(fallback, state)
         return "No se genero una salida visible para este flujo."
 
     def _should_synthesize_graph_output(self, step: dict[str, Any], output: str) -> bool:
@@ -791,6 +811,7 @@ class LangChainRuntime(AgentRuntime):
                 "Tu tarea ahora es redactar la respuesta final para el usuario usando el trabajo ya realizado por el flujo.",
                 "No describas el flujo interno, no menciones nodos, decisiones ni herramientas salvo que sea realmente necesario para responder.",
                 "Si hubo resultados de busqueda o herramientas, sintetizalos en una respuesta natural, util y directa.",
+                _render_web_source_instruction(state),
                 "Si faltan datos externos o una herramienta no estuvo disponible, responde igual con la mejor ayuda posible sin inventar hechos.",
                 "Entrega solo la respuesta final lista para mostrar en el chat.",
                 rag_context,
@@ -815,6 +836,7 @@ class LangChainRuntime(AgentRuntime):
                 "Responde directamente al ultimo mensaje del usuario con una respuesta breve, clara y util.",
                 "No menciones el flujo interno, herramientas, decisiones ni errores tecnicos.",
                 "Si el usuario solo saluda, responde al saludo e invita a pedir una receta o ayuda concreta.",
+                _render_web_source_instruction(state),
                 "Si faltan datos para cumplir el objetivo, pide la aclaracion minima necesaria.",
                 "Entrega solo la respuesta final lista para mostrar en el chat.",
                 rag_context,
@@ -989,6 +1011,16 @@ def _render_graph_context(state: dict[str, Any]) -> str:
     return "\n".join(part for part in parts if part is not None).strip()
 
 
+def _render_web_source_instruction(state: dict[str, Any]) -> str:
+    web_results = state.get("web_search_results") or []
+    if not isinstance(web_results, list) or not web_results:
+        return ""
+    return (
+        "Como se usaron resultados web, al final de la respuesta inclui una seccion titulada "
+        "'Fuentes web' con las URLs realmente usadas, una por linea o en lista."
+    )
+
+
 def _default_tool_input(state: dict[str, Any]) -> str:
     outputs = state.get("step_outputs") or []
     for step in reversed(outputs):
@@ -1080,6 +1112,89 @@ def _extract_rag_snippets(output: str) -> list[str]:
                 snippets.append(snippet)
             capture_next = False
     return snippets
+
+
+def _extract_web_results(output: str) -> list[dict[str, str]]:
+    results: list[dict[str, str]] = []
+    title = ""
+    content_lines: list[str] = []
+    url = ""
+
+    def flush() -> None:
+        nonlocal title, content_lines, url
+        if not (title or url):
+            title = ""
+            content_lines = []
+            url = ""
+            return
+        results.append(
+            {
+                "title": title.strip(),
+                "content": " ".join(line.strip() for line in content_lines if line.strip()).strip(),
+                "url": url.strip(),
+            }
+        )
+        title = ""
+        content_lines = []
+        url = ""
+
+    for raw_line in str(output or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("**") and line.endswith("**") and len(line) > 4:
+            flush()
+            title = line.strip("* ").strip()
+            continue
+        if line.lower().startswith("fuente:"):
+            url = line.split(":", 1)[1].strip()
+            flush()
+            continue
+        content_lines.append(line)
+
+    flush()
+    return [result for result in results if result.get("title") or result.get("url")]
+
+
+def _summarize_web_result(results: list[dict[str, str]]) -> str:
+    titles = [result["title"] for result in results if result.get("title")]
+    if titles:
+        preview = " | ".join(titles[:2])
+        if len(titles) > 2:
+            preview += f" | y {len(titles) - 2} más"
+        return f"Encontré en web: {preview}"
+    urls = [result["url"] for result in results if result.get("url")]
+    if urls:
+        return f"Encontré en web: {urls[0]}"
+    return "Encontré resultados en web"
+
+
+def _format_web_sources(state: dict[str, Any]) -> str:
+    web_results = state.get("web_search_results") or []
+    if not isinstance(web_results, list) or not web_results:
+        return ""
+    lines = ["Fuentes web:"]
+    for result in web_results[:5]:
+        title = str(result.get("title") or "").strip()
+        url = str(result.get("url") or "").strip()
+        if title and url:
+            lines.append(f"- {title}: {url}")
+        elif url:
+            lines.append(f"- {url}")
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def _append_web_citations(text: str, state: dict[str, Any]) -> str:
+    response = str(text or "").strip()
+    if not response:
+        return response
+    sources_block = _format_web_sources(state)
+    if not sources_block:
+        return response
+    lowered = response.lower()
+    if "fuentes web:" in lowered or "http://" in lowered or "https://" in lowered:
+        return response
+    return f"{response}\n\n{sources_block}"
 
 
 def _summarize_step_output(output: str) -> str:

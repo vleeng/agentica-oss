@@ -41,9 +41,20 @@ export function summarizeAgentProgress(event: ProgressEvent): string | null {
     return message || 'Revise los hallazgos encontrados'
   }
 
+  if (kind === 'web_result') {
+    return message || 'Encontre resultados en web'
+  }
+
+  if (kind === 'web_sources') {
+    return message || 'Revise las fuentes web encontradas'
+  }
+
   if (kind === 'tool') {
     if (actor === 'knowledge_base') {
       return query ? `Buscando en conocimientos: ${query}` : 'Buscando en conocimientos'
+    }
+    if (actor === 'web_search') {
+      return query ? `Buscando en web: ${query}` : 'Buscando en web'
     }
     return actor ? `Usando ${actor}` : 'Usando herramienta'
   }
