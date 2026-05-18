@@ -112,7 +112,7 @@ class LangChainAgentBuilder:
             )
 
         tools_by_name = {tool.name: tool for tool in tools}
-        logger.info(
+        logger.warning(
             "[LangChainBuilder] agent_id=%s mode=%s selected_mode=%s agent_type=%s rag_enabled=%s graph_uses_kb=%s graph_nodes=%s tools=%s",
             design.agent_id,
             spec.mode.value,
@@ -125,7 +125,7 @@ class LangChainAgentBuilder:
         )
 
         if self._should_use_graph_runtime(design):
-            logger.info(
+            logger.warning(
                 "[LangChainBuilder] agent_id=%s using graph runtime",
                 design.agent_id,
             )
@@ -143,7 +143,7 @@ class LangChainAgentBuilder:
             )
 
         if not tools:
-            logger.info(
+            logger.warning(
                 "[LangChainBuilder] agent_id=%s falling back to simple chain without tools",
                 design.agent_id,
             )
