@@ -111,12 +111,13 @@ class WizardChatService:
             session.reviewed.add(session.current_focus)
 
         updates = await self._extract_updates(session, content)
+        session.reviewed.update(self._infer_answered_focuses(updates))
         self._merge_state(session.draft_state, updates)
         self._fill_inferred_defaults(session.draft_state)
 
         next_focus = self._next_focus(session.draft_state, session.reviewed)
         session.current_focus = next_focus or "review"
-        assistant = self._build_followup(session.draft_state, next_focus)
+        assistant = self._build_followup(session.draft_state, next_focus, updates)
         session.messages.append(WizardChatMessage(role="assistant", content=assistant))
         return self._as_response(session)
 
@@ -236,12 +237,14 @@ Schema:
   "tools": ["web_search"],
   "rag_enabled": true | false | null,
   "constraints": ["string"],
+  "answered_focuses": ["intro", "behavior", "knowledge", "channels"],
   "agents": [{{"name": "researcher", "role": "Researcher", "goal": "string", "backstory": "string", "tools": [], "allow_delegation": false}}]
 }}
 
 Reglas:
 - No inventes herramientas fuera de allowed_tools.
 - Si el usuario no menciono un campo, devolvelo vacio o null.
+- En answered_focuses inclui los temas que el usuario ya respondio de forma suficiente, aunque nadie se los haya preguntado todavia.
 - Si menciona un equipo, intenta proponer de 2 a 4 roles utiles.
 - Escribi en espanol claro.
 
@@ -280,6 +283,13 @@ Contexto:
         constraints = parsed.get("constraints")
         if isinstance(constraints, list):
             updates["constraints"] = [str(item).strip() for item in constraints if str(item).strip()]
+        answered_focuses = parsed.get("answered_focuses")
+        if isinstance(answered_focuses, list):
+            updates["answered_focuses"] = [
+                str(item).strip()
+                for item in answered_focuses
+                if str(item).strip() in FOCUS_ORDER
+            ]
         agents = parsed.get("agents")
         if isinstance(agents, list):
             updates["agents"] = [item for item in agents if isinstance(item, dict)]
@@ -293,7 +303,7 @@ Contexto:
     ) -> dict[str, Any]:
         text = user_message.strip()
         lower = text.lower()
-        updates: dict[str, Any] = {}
+        updates: dict[str, Any] = {"answered_focuses": []}
 
         mode = None
         if any(token in lower for token in ("equipo", "crew", "varios agentes", "multiagente", "muchos agentes")):
@@ -304,11 +314,17 @@ Contexto:
             mode = "single"
         if mode:
             updates["mode"] = mode
+            updates["answered_focuses"].append("intro")
 
         if any(token in lower for token in ("react", "herramient", "tools", "buscar", "consultar", "web", "datos externos", "documentos", "base de conocimiento", "rag", "calcular", "ejecutar")):
             updates["single_agent_mode"] = "react"
         elif any(token in lower for token in ("directo", "inmediata", "sin tools", "sin herramientas", "solo responda", "solo responder", "solo chat", "solo contestar")):
             updates["single_agent_mode"] = "direct"
+        if "single_agent_mode" in updates or any(
+            token in lower
+            for token in ("herramient", "tools", "web", "datos externos", "base de conocimiento", "rag", "calcular", "ejecutar")
+        ):
+            updates["answered_focuses"].append("behavior")
 
         detected_channels = [
             channel
@@ -317,6 +333,7 @@ Contexto:
         ]
         if detected_channels:
             updates["channels"] = detected_channels
+            updates["answered_focuses"].append("channels")
 
         detected_tools = [
             tool
@@ -328,13 +345,16 @@ Contexto:
 
         if "base de conocimiento" in lower or "document" in lower or "rag" in lower:
             updates["rag"] = {"enabled": True}
+            updates["answered_focuses"].append("knowledge")
         elif current_focus == "knowledge" and any(token in lower for token in ("no", "sin", "ninguna")):
             updates["rag"] = {"enabled": False}
+            updates["answered_focuses"].append("knowledge")
 
         if current_focus == "name":
             updates["name"] = self._clean_sentence(text)
         elif current_focus == "intro":
             updates["goal"] = text
+            updates["answered_focuses"].append("intro")
         elif current_focus == "behavior" and draft_state.get("mode") == "crew":
             role_names = [
                 self._to_role_name(chunk)
@@ -353,11 +373,14 @@ Contexto:
                     }
                     for role in role_names[:4]
                 ]
+                updates["answered_focuses"].append("behavior")
         elif current_focus == "knowledge" and "rag" not in updates:
             updates["rag"] = {"enabled": not any(token in lower for token in ("no", "sin"))}
+            updates["answered_focuses"].append("knowledge")
 
         if not draft_state.get("goal") and current_focus != "intro" and len(text) > 20:
             updates.setdefault("goal", text)
+            updates["answered_focuses"].append("intro")
 
         return updates
 
@@ -411,9 +434,9 @@ Contexto:
             return "name"
         if draft_state.get("mode") == "crew" and not draft_state.get("agents"):
             return "behavior"
-        if draft_state.get("mode") == "single" and "behavior" not in reviewed:
+        if draft_state.get("mode") == "single" and not self._behavior_defined(draft_state):
             return "behavior"
-        if "knowledge" not in reviewed:
+        if not self._knowledge_defined(draft_state) and "knowledge" not in reviewed:
             return "knowledge"
         if "channels" not in reviewed:
             return "channels"
@@ -432,42 +455,112 @@ Contexto:
         completed = sum(1 for item in checks if item)
         return round((completed / len(checks)) * 100)
 
-    def _build_followup(self, draft_state: dict[str, Any], next_focus: str | None) -> str:
+    def _build_followup(self, draft_state: dict[str, Any], next_focus: str | None, updates: dict[str, Any]) -> str:
+        acknowledgement = self._build_acknowledgement(draft_state, updates)
         if next_focus is None:
             mode = "agente simple" if draft_state.get("mode") == "single" else "equipo de agentes"
             channels = ", ".join(draft_state.get("channels") or ["web_chat"])
-            return (
+            message = (
                 f"Ya tengo un borrador listo para crear un {mode}. "
                 f"Nombre: {draft_state.get('name')}. Canal principal: {channels}. "
                 "Si queres, ya podes crear el agente o seguir refinando tools, restricciones y tono."
             )
+            return f"{acknowledgement} {message}".strip() if acknowledgement else message
 
         if next_focus == "intro":
-            return (
+            message = (
                 "Perfecto. Ahora contame mejor el objetivo y decime si esto lo resuelve "
                 "un solo agente o si necesitas varios roles colaborando."
             )
+            return f"{acknowledgement} {message}".strip() if acknowledgement else message
         if next_focus == "name":
-            return "Bien. Como queres llamarlo en Agentica? Podes usar un nombre operativo corto."
+            message = "Bien. Como queres llamarlo en Agentica? Podes usar un nombre operativo corto."
+            return f"{acknowledgement} {message}".strip() if acknowledgement else message
         if next_focus == "behavior":
             if draft_state.get("mode") == "crew":
-                return (
+                message = (
                     "Para el equipo, decime que roles queres. Por ejemplo: Researcher, Planner, Writer."
                 )
-            return (
+                return f"{acknowledgement} {message}".strip() if acknowledgement else message
+            message = (
                 "Necesitas que solo responda, o tambien que use herramientas para buscar, consultar datos, "
                 "calcular o ejecutar acciones? Si queres, decime cuales."
             )
+            return f"{acknowledgement} {message}".strip() if acknowledgement else message
         if next_focus == "knowledge":
-            return (
+            message = (
                 "Va a consumir conocimiento propio, documentos internos o una base de conocimiento? "
                 "Si la respuesta es si, despues vas a tener que asociarle al menos una base."
             )
+            return f"{acknowledgement} {message}".strip() if acknowledgement else message
         if next_focus == "channels":
-            return (
+            message = (
                 "Por que canales lo vas a usar? Hoy puedo dejarlo listo para web_chat, WhatsApp, Telegram, Slack o REST API."
             )
-        return "Contame que otra configuracion queres ajustar."
+            return f"{acknowledgement} {message}".strip() if acknowledgement else message
+        message = "Contame que otra configuracion queres ajustar."
+        return f"{acknowledgement} {message}".strip() if acknowledgement else message
+
+    def _build_acknowledgement(self, draft_state: dict[str, Any], updates: dict[str, Any]) -> str:
+        parts: list[str] = []
+        if updates.get("goal"):
+            parts.append(f"Entiendo que el objetivo es {self._clean_sentence(str(updates['goal']))}.")
+        elif updates.get("description"):
+            parts.append("Perfecto, ya tengo mejor identificado el objetivo.")
+        if self._updates_include_knowledge(updates):
+            parts.append("Tambien entiendo que va a usar una base de conocimiento o documentos internos.")
+        if self._updates_include_external_or_tools(updates):
+            parts.append("Y lo tomo como un agente que puede usar herramientas cuando haga falta.")
+        if updates.get("channels"):
+            channels = ", ".join(updates["channels"])
+            parts.append(f"Anoto tambien los canales: {channels}.")
+        if not parts:
+            return ""
+        return " ".join(parts[:3])
+
+    def _updates_include_knowledge(self, updates: dict[str, Any]) -> bool:
+        rag_update = updates.get("rag")
+        if isinstance(rag_update, dict) and rag_update.get("enabled") is True:
+            return True
+        tool_names = [item for item in updates.get("tools", []) if isinstance(item, str)]
+        return "knowledge_base" in tool_names
+
+    def _updates_include_external_or_tools(self, updates: dict[str, Any]) -> bool:
+        if updates.get("single_agent_mode") == "react":
+            return True
+        tool_names = [item for item in updates.get("tools", []) if isinstance(item, str)]
+        return any(tool in {"web_search", "calculator", "rest_api_call", "send_email", "sql_query"} for tool in tool_names)
+
+    def _behavior_defined(self, draft_state: dict[str, Any]) -> bool:
+        if draft_state.get("mode") == "crew":
+            return bool(draft_state.get("agents"))
+        if draft_state.get("single_agent_mode") == "direct":
+            return True
+        if draft_state.get("single_agent_mode") == "react":
+            return True
+        return bool(draft_state.get("tools"))
+
+    def _knowledge_defined(self, draft_state: dict[str, Any]) -> bool:
+        rag_state = draft_state.get("rag") or {}
+        return bool(rag_state.get("enabled"))
+
+    def _infer_answered_focuses(self, updates: dict[str, Any]) -> set[str]:
+        inferred = {
+            item
+            for item in updates.get("answered_focuses", [])
+            if isinstance(item, str) and item in FOCUS_ORDER
+        }
+        if updates.get("goal") or updates.get("mode"):
+            inferred.add("intro")
+        if updates.get("single_agent_mode") or updates.get("tools") or updates.get("agents"):
+            inferred.add("behavior")
+        if self._updates_include_knowledge(updates) or (
+            isinstance(updates.get("rag"), dict) and updates["rag"].get("enabled") is False
+        ):
+            inferred.add("knowledge")
+        if updates.get("channels"):
+            inferred.add("channels")
+        return inferred
 
     def _build_description(self, goal: str) -> str:
         trimmed = self._clean_sentence(goal)
