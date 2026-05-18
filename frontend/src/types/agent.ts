@@ -78,6 +78,7 @@ export interface AgentSpec {
   agents: AgentRoleSpec[]
   process: CrewProcess
   manager_model?: string
+  knowledge_base_ids?: string[]
 }
 
 
@@ -196,6 +197,7 @@ export interface WizardState {
   model_params: ModelParams
   constraints: string[]
   autonomy_level: AutonomyLevel
+  knowledge_base_ids: string[]
   // crew
   agents: AgentRoleSpec[]
   process: CrewProcess
@@ -268,6 +270,7 @@ export const WIZARD_DEFAULTS: WizardState = {
   },
   constraints: [],
   autonomy_level: 'reactive',
+  knowledge_base_ids: [],
   agents: [],
   process: 'sequential',
 }

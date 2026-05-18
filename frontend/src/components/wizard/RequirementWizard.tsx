@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   AgentMode, WizardState, WIZARD_DEFAULTS,
-  applyToolReadiness, AVAILABLE_TOOLS, AVAILABLE_MODELS, ChannelType, SingleAgentMode, ToolReadinessStatus, ToolRef,
+  applyToolReadiness, AVAILABLE_TOOLS, AVAILABLE_MODELS, ChannelType, KnowledgeBase, SingleAgentMode, ToolReadinessStatus, ToolRef,
   WizardAdvisorResponse,
 } from '../../types/agent'
 import { StepCrew } from './StepCrew'
@@ -49,6 +49,7 @@ export function RequirementWizard({ onComplete }: Props) {
   const [generating, setGenerating] = useState(false)
   const [toolReadiness, setToolReadiness] = useState<Record<string, ToolReadinessStatus>>({})
   const [toolReadinessRows, setToolReadinessRows] = useState<ToolReadinessStatus[]>([])
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
   const [aiAssistEnabled, setAiAssistEnabled] = useState(false)
   const [advisorLoading, setAdvisorLoading] = useState(false)
   const [advisorError, setAdvisorError] = useState('')
@@ -111,6 +112,15 @@ export function RequirementWizard({ onComplete }: Props) {
     )
   }, [])
 
+  useEffect(() => {
+    import('../../lib/api').then(({ knowledgeBasesApi }) =>
+      knowledgeBasesApi
+        .list()
+        .then((rows) => setKnowledgeBases(Array.isArray(rows) ? rows : []))
+        .catch(() => setKnowledgeBases([]))
+    )
+  }, [])
+
   return (
     <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 lg:grid-cols-[minmax(0,42rem)_20rem]">
       <div>
@@ -156,9 +166,9 @@ export function RequirementWizard({ onComplete }: Props) {
           {state.step === 1 && <StepIdentity state={state} update={update} />}
           {state.step === 2 && state.mode === 'single' && <StepTools state={state} update={update} toolsCatalog={toolsCatalog} />}
           {state.step === 2 && state.mode === 'crew'   && <StepCrew  state={state} update={update} toolsCatalog={toolsCatalog} />}
-          {state.step === 3 && <StepMemoryChannels state={state} update={update} />}
+          {state.step === 3 && <StepMemoryChannels state={state} update={update} knowledgeBases={knowledgeBases} />}
           {state.step === 4 && <StepModel state={state} update={update} />}
-          {state.step === 5 && <StepReview state={state} />}
+          {state.step === 5 && <StepReview state={state} knowledgeBases={knowledgeBases} />}
         </motion.div>
       </AnimatePresence>
 
@@ -514,7 +524,7 @@ function StepTools({ state, update, toolsCatalog }: StepProps & { toolsCatalog: 
   )
 }
 
-function StepMemoryChannels({ state, update }: StepProps) {
+function StepMemoryChannels({ state, update, knowledgeBases }: StepProps & { knowledgeBases: KnowledgeBase[] }) {
   const directSingleAgent = state.mode === 'single' && state.single_agent_mode === 'direct'
   const channels: Array<{ id: ChannelType; label: string; badge?: string }> = [
     { id: 'web_chat',  label: 'Web chat embebible' },
@@ -592,6 +602,59 @@ function StepMemoryChannels({ state, update }: StepProps) {
         <p className="text-xs text-gray-500">
           En `Respuesta inmediata`, el agente usa skills y prompt, pero no ejecuta RAG ni otras herramientas.
         </p>
+      )}
+
+      {state.rag.enabled && !directSingleAgent && (
+        <div className="space-y-3 rounded-xl border border-violet-200 bg-violet-50/60 p-4">
+          <div>
+            <div className="text-sm font-semibold text-gray-900">Bases de conocimiento asociadas</div>
+            <div className="text-xs text-gray-500 mt-1">
+              Si el agente va a consumir conocimiento interno, asociá al menos una base antes de crearlo.
+            </div>
+          </div>
+
+          {knowledgeBases.length === 0 ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+              No hay bases de conocimiento disponibles. Crea una en Libreria -&gt; Conocimiento antes de continuar.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {knowledgeBases.map((kb) => {
+                const selected = state.knowledge_base_ids.includes(kb.id)
+                return (
+                  <button
+                    key={kb.id}
+                    type="button"
+                    onClick={() => update({
+                      knowledge_base_ids: selected
+                        ? state.knowledge_base_ids.filter((id) => id !== kb.id)
+                        : [...state.knowledge_base_ids, kb.id],
+                    })}
+                    className={`w-full rounded-lg border px-4 py-3 text-left transition-all ${
+                      selected ? 'border-violet-400 bg-white shadow-sm' : 'border-violet-200 bg-white/80 hover:border-violet-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{kb.name}</div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {kb.access_mode === 'global' ? 'Global' : 'Asignada'} · Estado: {kb.status}
+                        </div>
+                      </div>
+                      {selected && <span className="text-sm font-semibold text-violet-600">OK</span>}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {state.knowledge_base_ids.length === 0 && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
+              Este agente necesita al menos una base de conocimiento asociada antes de crearse.
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
@@ -716,7 +779,8 @@ function StepModel({ state, update }: StepProps) {
 
 // Step 5: Review
 
-function StepReview({ state }: { state: WizardState }) {
+function StepReview({ state, knowledgeBases }: { state: WizardState; knowledgeBases: KnowledgeBase[] }) {
+  const selectedKnowledgeBases = knowledgeBases.filter((kb) => state.knowledge_base_ids.includes(kb.id))
   const rows: Array<{ label: string; value: string }> = [
     { label: 'Nombre',      value: state.name || '-' },
     { label: 'Modo',        value: state.mode === 'single' ? 'Agente simple' : 'Equipo de agentes' },
@@ -726,6 +790,7 @@ function StepReview({ state }: { state: WizardState }) {
     { label: 'Memoria',     value: state.memory.type },
     { label: 'Canales',     value: state.channels.join(', ') },
     { label: 'RAG',         value: state.rag.enabled ? 'Si' : 'No' },
+    { label: 'KBs asociadas', value: selectedKnowledgeBases.length ? selectedKnowledgeBases.map((kb) => kb.name).join(', ') : 'Ninguna' },
     { label: 'Modelo',      value: state.model_params.model },
     { label: 'Temperatura', value: String(state.model_params.temperature) },
   ]
@@ -742,6 +807,11 @@ function StepReview({ state }: { state: WizardState }) {
           </div>
         ))}
       </div>
+      {state.rag.enabled && state.knowledge_base_ids.length === 0 && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Este agente esta configurado para usar conocimiento interno, pero todavia no tiene ninguna base asociada.
+        </div>
+      )}
     </div>
   )
 }
@@ -776,6 +846,8 @@ function isStepValid(state: WizardState): boolean {
   switch (state.step) {
     case 0: return !!state.mode
     case 1: return state.name.length >= 2 && state.goal.length >= 10
+    case 3: return !state.rag.enabled || state.knowledge_base_ids.length > 0
+    case 5: return !state.rag.enabled || state.knowledge_base_ids.length > 0
     default: return true
   }
 }

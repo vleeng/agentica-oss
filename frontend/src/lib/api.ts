@@ -523,6 +523,7 @@ export function wizardStateToSpec(state: WizardState, tenantId: string): AgentSp
     single_agent_mode: state.single_agent_mode,
     tools: state.tools,
     autonomy_level: 'reactive',
+    knowledge_base_ids: state.knowledge_base_ids,
     agents: state.agents,
     process: state.process,
   }

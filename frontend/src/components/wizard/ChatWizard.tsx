@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { wizardChatApi } from '../../lib/api'
-import type { WizardChatSession, WizardState } from '../../types/agent'
+import { knowledgeBasesApi, wizardChatApi } from '../../lib/api'
+import type { KnowledgeBase, WizardChatSession, WizardState } from '../../types/agent'
 
 interface ChatWizardProps {
   onComplete: (state: WizardState) => void
@@ -22,6 +22,7 @@ export function ChatWizard({ onComplete }: ChatWizardProps) {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -50,12 +51,20 @@ export function ChatWizard({ onComplete }: ChatWizardProps) {
   }, [])
 
   useEffect(() => {
+    knowledgeBasesApi
+      .list()
+      .then((rows) => setKnowledgeBases(Array.isArray(rows) ? rows : []))
+      .catch(() => setKnowledgeBases([]))
+  }, [])
+
+  useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [session?.messages.length, sending])
 
   const draft = session?.draft_state
   const summaryItems = useMemo(() => {
     if (!draft) return []
+    const selectedKnowledgeBases = knowledgeBases.filter((kb) => draft.knowledge_base_ids?.includes(kb.id))
     return [
       { label: 'Modo', value: draft.mode === 'crew' ? 'Equipo de agentes' : draft.mode === 'single' ? 'Agente simple' : 'Pendiente' },
       { label: 'Nombre', value: draft.name || 'Pendiente' },
@@ -77,14 +86,20 @@ export function ChatWizard({ onComplete }: ChatWizardProps) {
       },
       {
         label: 'Conocimiento',
-        value: draft.rag?.enabled ? 'Usa bases de conocimiento' : 'Sin RAG',
+        value: draft.rag?.enabled
+          ? selectedKnowledgeBases.length
+            ? selectedKnowledgeBases.map((kb) => kb.name).join(', ')
+            : 'Necesita asociar una base'
+          : 'Sin RAG',
       },
       {
         label: 'Canales',
         value: draft.channels?.length ? draft.channels.join(', ') : 'Pendiente',
       },
     ]
-  }, [draft])
+  }, [draft, knowledgeBases])
+
+  const knowledgeMissing = Boolean(draft?.rag?.enabled && !(draft?.knowledge_base_ids?.length))
 
   const handleSend = async () => {
     const message = input.trim()
@@ -215,7 +230,7 @@ export function ChatWizard({ onComplete }: ChatWizardProps) {
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                disabled={!session?.ready_to_create}
+                disabled={!session?.ready_to_create || knowledgeMissing}
                 onClick={() => session && onComplete(session.draft_state)}
                 className="rounded-full border border-violet-200 bg-violet-50 px-5 py-2.5 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -231,6 +246,11 @@ export function ChatWizard({ onComplete }: ChatWizardProps) {
               </button>
             </div>
           </div>
+          {knowledgeMissing && (
+            <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              Este agente necesita al menos una base de conocimiento asociada antes de crearse.
+            </div>
+          )}
         </div>
       </section>
 
@@ -247,6 +267,56 @@ export function ChatWizard({ onComplete }: ChatWizardProps) {
             ))}
           </div>
         </section>
+
+        {draft?.rag?.enabled && (
+          <section className="rounded-[30px] border border-violet-200 bg-violet-50/80 p-5 shadow-[0_18px_50px_rgba(124,58,237,0.12)]">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-violet-500">Bases de conocimiento</p>
+            <h3 className="mt-2 text-lg font-semibold text-slate-950">Asociacion requerida</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Como el agente va a usar conocimiento interno, necesita al menos una base asociada antes de crearse.
+            </p>
+
+            <div className="mt-4 space-y-2">
+              {knowledgeBases.length === 0 ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  No hay bases disponibles. Crea una en Libreria -&gt; Conocimiento.
+                </div>
+              ) : (
+                knowledgeBases.map((kb) => {
+                  const selected = draft.knowledge_base_ids?.includes(kb.id)
+                  return (
+                    <button
+                      key={kb.id}
+                      type="button"
+                      onClick={() => setSession((prev) => prev ? ({
+                        ...prev,
+                        draft_state: {
+                          ...prev.draft_state,
+                          knowledge_base_ids: selected
+                            ? prev.draft_state.knowledge_base_ids.filter((id) => id !== kb.id)
+                            : [...prev.draft_state.knowledge_base_ids, kb.id],
+                        },
+                      }) : prev)}
+                      className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                        selected ? 'border-violet-400 bg-white shadow-sm' : 'border-violet-200 bg-white/70 hover:border-violet-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-900">{kb.name}</div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {kb.access_mode === 'global' ? 'Global' : 'Asignada'} · Estado: {kb.status}
+                          </div>
+                        </div>
+                        {selected && <span className="text-sm font-semibold text-violet-600">OK</span>}
+                      </div>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </section>
+        )}
 
         <section className="rounded-[30px] border border-violet-200 bg-violet-50/80 p-5 text-sm leading-6 text-violet-900 shadow-[0_18px_50px_rgba(124,58,237,0.12)]">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-violet-500">Como funciona</p>

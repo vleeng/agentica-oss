@@ -45,6 +45,7 @@ WIZARD_CHAT_DEFAULTS: dict[str, Any] = {
     },
     "constraints": [],
     "autonomy_level": "reactive",
+    "knowledge_base_ids": [],
     "agents": [],
     "process": "sequential",
 }
@@ -91,8 +92,9 @@ class WizardChatService:
         draft_state["model_params"] = await self._resolve_initial_model_params(tenant_id)
         session = WizardChatSession(session_id=session_id, draft_state=draft_state)
         assistant = (
-            "Te ayudo a crear el agente por chat. Contame que queres construir, "
-            "si pensas en un agente simple o un equipo, y cual es el objetivo principal."
+            "Te ayudo a crear el agente por chat. Contame que queres resolver, "
+            "si va a responder solo por chat o tambien usar herramientas y datos, "
+            "y cual es el objetivo principal."
         )
         session.messages.append(WizardChatMessage(role="assistant", content=assistant))
         self._sessions[session_id] = session
@@ -303,9 +305,9 @@ Contexto:
         if mode:
             updates["mode"] = mode
 
-        if any(token in lower for token in ("react", "herramient", "tools", "buscar", "consultar")):
+        if any(token in lower for token in ("react", "herramient", "tools", "buscar", "consultar", "web", "datos externos", "documentos", "base de conocimiento", "rag", "calcular", "ejecutar")):
             updates["single_agent_mode"] = "react"
-        elif any(token in lower for token in ("directo", "inmediata", "sin tools", "sin herramientas")):
+        elif any(token in lower for token in ("directo", "inmediata", "sin tools", "sin herramientas", "solo responda", "solo responder", "solo chat", "solo contestar")):
             updates["single_agent_mode"] = "direct"
 
         detected_channels = [
@@ -442,8 +444,8 @@ Contexto:
 
         if next_focus == "intro":
             return (
-                "Perfecto. Ahora contame el objetivo con un poco mas de detalle y decime "
-                "si preferis un agente simple o un equipo de agentes."
+                "Perfecto. Ahora contame mejor el objetivo y decime si esto lo resuelve "
+                "un solo agente o si necesitas varios roles colaborando."
             )
         if next_focus == "name":
             return "Bien. Como queres llamarlo en Agentica? Podes usar un nombre operativo corto."
@@ -453,13 +455,13 @@ Contexto:
                     "Para el equipo, decime que roles queres. Por ejemplo: Researcher, Planner, Writer."
                 )
             return (
-                "Queres que este agente responda en modo inmediato o como agente ReAct con herramientas? "
-                "Si queres, tambien decime que tools deberia usar."
+                "Necesitas que solo responda, o tambien que use herramientas para buscar, consultar datos, "
+                "calcular o ejecutar acciones? Si queres, decime cuales."
             )
         if next_focus == "knowledge":
             return (
-                "Necesita usar bases de conocimiento o documentos internos para responder? "
-                "Decime si o no, y si queres tambien que tipo de material va a consultar."
+                "Va a consumir conocimiento propio, documentos internos o una base de conocimiento? "
+                "Si la respuesta es si, despues vas a tener que asociarle al menos una base."
             )
         if next_focus == "channels":
             return (

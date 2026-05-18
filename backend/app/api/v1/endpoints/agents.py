@@ -61,12 +61,27 @@ async def create_agent_from_spec(
         await plan_checker.check_can_use_crew(ctx.tenant_id)
     if spec.rag and spec.rag.enabled:
         await plan_checker.check_can_use_rag(ctx.tenant_id)
+        if not spec.knowledge_base_ids:
+            raise HTTPException(400, "Este agente necesita al menos una base de conocimiento asociada.")
     await get_rate_limiter().check(ctx.tenant_id, scope="spec")
+
+    if spec.knowledge_base_ids:
+        validated_kbs: list[str] = []
+        for kb_id in spec.knowledge_base_ids:
+            kb = await repo.get_knowledge_base(kb_id)
+            if not kb:
+                raise HTTPException(400, f"Knowledge base no encontrada: {kb_id}")
+            validated_kbs.append(kb_id)
+        spec.knowledge_base_ids = validated_kbs
 
     framework = await selector_svc.select(spec)
     design = await designer_svc.generate(spec, framework)
 
     await repo.create_agent(design)
+    for kb_id in spec.knowledge_base_ids:
+        kb = await repo.get_knowledge_base(kb_id)
+        if kb and (kb.get("access_mode") or "restricted") != "global":
+            await repo.assign_kb_to_agent(str(design.agent_id), kb_id)
     await get_runtime_store().save_design(str(design.agent_id), design)
 
     return design
