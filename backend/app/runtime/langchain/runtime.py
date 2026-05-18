@@ -366,7 +366,7 @@ class LangChainRuntime(AgentRuntime):
             if not node:
                 break
 
-            node_type = str(node.get("type") or "agent")
+            node_type = _normalize_node_type(node.get("type") or "agent")
             label = str(node.get("label") or current_id)
             logger.warning(
                 "[LangChainGraph] agent_id=%s iter=%s node_id=%s node_type=%s label=%s next_candidates=%s",
@@ -893,7 +893,7 @@ class LangChainRuntime(AgentRuntime):
         blueprint = self._graph_blueprint if isinstance(self._graph_blueprint, dict) else {}
         nodes = blueprint.get("nodes", []) or []
         for node in nodes:
-            if str(node.get("type") or "").strip().lower() != "tool":
+            if _normalize_node_type(node.get("type")) != "tool":
                 continue
             data = node.get("data") or {}
             tool_name = str(data.get("tool_name") or "").strip().lower()
@@ -989,6 +989,16 @@ def _extract_tool_query(value: Any) -> str:
                 return candidate
         return ""
     return str(value or "").strip()
+
+
+def _normalize_node_type(value: Any) -> str:
+    if value is None:
+        return ""
+    raw = getattr(value, "value", value)
+    text = str(raw).strip()
+    if "." in text:
+        text = text.split(".")[-1]
+    return text.lower()
 
 
 def _summarize_query(query: str, max_length: int = 72) -> str:

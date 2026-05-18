@@ -198,7 +198,7 @@ class LangChainAgentBuilder:
         if not nodes:
             return False
 
-        agent_nodes = [node for node in nodes if node.get("type") == "agent"]
+        agent_nodes = [node for node in nodes if self._normalize_node_type(node.get("type")) == "agent"]
         edge_count_by_source: dict[str, int] = {}
         branching = False
         for edge in edges:
@@ -224,7 +224,7 @@ class LangChainAgentBuilder:
         if not normalized_target:
             return False
         for node in nodes:
-            if str(node.get("type") or "").strip().lower() != "tool":
+            if self._normalize_node_type(node.get("type")) != "tool":
                 continue
             data = node.get("data") or {}
             candidate = str(data.get("tool_name") or "").strip().lower()
@@ -234,6 +234,16 @@ class LangChainAgentBuilder:
             if normalized_target == "knowledge_base" and label in {"knowledge_base", "base_de_conocimientos"}:
                 return True
         return False
+
+    @staticmethod
+    def _normalize_node_type(value: object) -> str:
+        if value is None:
+            return ""
+        raw = getattr(value, "value", value)
+        text = str(raw).strip()
+        if "." in text:
+            text = text.split(".")[-1]
+        return text.lower()
 
     @staticmethod
     def _escape_prompt(system_prompt: str) -> str:
