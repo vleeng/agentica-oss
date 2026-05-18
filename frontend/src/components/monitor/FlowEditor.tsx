@@ -234,6 +234,10 @@ function sortIssues(issues: GraphValidationIssue[]) {
   })
 }
 
+function graphSignature(graph: GraphBlueprint) {
+  return JSON.stringify(graph)
+}
+
 export function FlowEditor({ design, onSaved }: Props) {
   const { push } = useToast()
   const [draft, setDraft] = useState<GraphBlueprint>(cloneGraph(design.graph_blueprint))
@@ -246,6 +250,8 @@ export function FlowEditor({ design, onSaved }: Props) {
   const [pendingConnectionFrom, setPendingConnectionFrom] = useState<string | null>(null)
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const viewportResetRef = useRef(false)
+  const validationRequestRef = useRef(0)
+  const autoValidateTimerRef = useRef<number | null>(null)
   const dragRef = useRef<{
     nodeId: string
     offsetX: number
@@ -262,6 +268,36 @@ export function FlowEditor({ design, onSaved }: Props) {
     setPendingConnectionFrom(null)
   }, [design])
 
+  const scrollNodeIntoView = (nodeId: string | null) => {
+    if (!nodeId || !canvasRef.current) return
+    const node = draft.nodes.find((item) => item.id === nodeId)
+    if (!node?.position) return
+
+    const viewport = canvasRef.current
+    const margin = 48
+    const left = node.position.x
+    const top = node.position.y
+    const right = left + NODE_WIDTH
+    const bottom = top + NODE_HEIGHT
+    const visibleLeft = viewport.scrollLeft
+    const visibleTop = viewport.scrollTop
+    const visibleRight = visibleLeft + viewport.clientWidth
+    const visibleBottom = visibleTop + viewport.clientHeight
+
+    let nextLeft = visibleLeft
+    let nextTop = visibleTop
+
+    if (left - margin < visibleLeft) nextLeft = Math.max(0, left - margin)
+    else if (right + margin > visibleRight) nextLeft = Math.max(0, right + margin - viewport.clientWidth)
+
+    if (top - margin < visibleTop) nextTop = Math.max(0, top - margin)
+    else if (bottom + margin > visibleBottom) nextTop = Math.max(0, bottom + margin - viewport.clientHeight)
+
+    if (nextLeft !== visibleLeft || nextTop !== visibleTop) {
+      viewport.scrollTo({ left: nextLeft, top: nextTop, behavior: 'smooth' })
+    }
+  }
+
   useEffect(() => {
     if (!viewportResetRef.current || !canvasRef.current) return
     viewportResetRef.current = false
@@ -269,6 +305,13 @@ export function FlowEditor({ design, onSaved }: Props) {
       canvasRef.current?.scrollTo({ left: 0, top: 0, behavior: 'smooth' })
     })
   }, [draft.nodes])
+
+  useEffect(() => {
+    if (!selectedNodeId) return
+    window.requestAnimationFrame(() => {
+      scrollNodeIntoView(selectedNodeId)
+    })
+  }, [selectedNodeId, draft.nodes])
 
   useEffect(() => {
     const handleMove = (event: MouseEvent) => {
@@ -337,6 +380,10 @@ export function FlowEditor({ design, onSaved }: Props) {
   const selectedEdge = selectedEdgeId ? draft.edges.find((edge) => edge.id === selectedEdgeId) ?? null : null
   const selectedNodeIssues = selectedNode ? issuesForId(allIssues, 'node', selectedNode.id) : []
   const selectedEdgeIssues = selectedEdge ? issuesForId(allIssues, 'edge', selectedEdge.id) : []
+  const selectedNodeOutgoingEdges = useMemo(
+    () => (selectedNode ? draft.edges.filter((edge) => edge.from === selectedNode.id) : []),
+    [draft.edges, selectedNode],
+  )
 
   const getNodeDisplayName = (nodeId: string) => {
     const node = nodesById.get(nodeId)
@@ -374,6 +421,28 @@ export function FlowEditor({ design, onSaved }: Props) {
     }))
   }
 
+  const createEdge = (from: string, to: string, condition: string | null = null) => {
+    const existingEdge = draft.edges.find((edge) => edge.from === from && edge.to === to)
+    if (existingEdge) {
+      setSelectedEdgeId(existingEdge.id)
+      setSelectedNodeId(null)
+      return
+    }
+    const edgeId = `edge_${draft.edges.length + 1}`
+    const nextEdge: FlowEdge = {
+      id: edgeId,
+      from,
+      to,
+      condition,
+    }
+    setDraft((prev) => ({
+      ...prev,
+      edges: [...prev.edges, nextEdge],
+    }))
+    setSelectedEdgeId(edgeId)
+    setSelectedNodeId(null)
+  }
+
   const renameEdge = (edgeId: string, nextIdRaw: string) => {
     const nextId = nextIdRaw.trim()
     if (!nextId || nextId === edgeId || draft.edges.some((edge) => edge.id === nextId)) return
@@ -392,6 +461,35 @@ export function FlowEditor({ design, onSaved }: Props) {
     }))
     setSelectedNodeId(nextNode.id)
     setSelectedEdgeId(null)
+  }
+
+  const handleAddDecisionBranch = (nodeId: string) => {
+    const candidate = draft.nodes.find((node) => node.id !== nodeId && node.type !== 'start')
+    if (!candidate) {
+      push({
+        tone: 'info',
+        title: 'No hay destino disponible',
+        description: 'Agrega otro nodo antes de crear una nueva rama para esta decision.',
+      })
+      return
+    }
+    const existingEdge = draft.edges.find((edge) => edge.from === nodeId && edge.to === candidate.id)
+    if (existingEdge) {
+      setSelectedEdgeId(existingEdge.id)
+      return
+    }
+    const edgeId = `edge_${draft.edges.length + 1}`
+    const nextEdge: FlowEdge = {
+      id: edgeId,
+      from: nodeId,
+      to: candidate.id,
+      condition: null,
+    }
+    setDraft((prev) => ({
+      ...prev,
+      edges: [...prev.edges, nextEdge],
+    }))
+    setSelectedEdgeId(edgeId)
   }
 
   const handleDeleteNode = (nodeId: string) => {
@@ -421,27 +519,8 @@ export function FlowEditor({ design, onSaved }: Props) {
 
   const handleCompleteConnection = (targetId: string) => {
     if (!pendingConnectionFrom || pendingConnectionFrom === targetId) return
-    const existingEdge = draft.edges.find((edge) => edge.from === pendingConnectionFrom && edge.to === targetId)
-    if (existingEdge) {
-      setPendingConnectionFrom(null)
-      setSelectedEdgeId(existingEdge.id)
-      setSelectedNodeId(null)
-      return
-    }
-    const edgeId = `edge_${draft.edges.length + 1}`
-    const nextEdge: FlowEdge = {
-      id: edgeId,
-      from: pendingConnectionFrom,
-      to: targetId,
-      condition: null,
-    }
-    setDraft((prev) => ({
-      ...prev,
-      edges: [...prev.edges, nextEdge],
-    }))
+    createEdge(pendingConnectionFrom, targetId)
     setPendingConnectionFrom(null)
-    setSelectedEdgeId(edgeId)
-    setSelectedNodeId(null)
   }
 
   const handleNodeCanvasClick = (nodeId: string) => {
@@ -488,31 +567,63 @@ export function FlowEditor({ design, onSaved }: Props) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedEdgeId, selectedNodeId])
 
-  const handleValidate = async () => {
-    setValidating(true)
-    setErrorMsg('')
+  const runValidation = async (graphBlueprint: GraphBlueprint, announce = false) => {
+    const requestId = ++validationRequestRef.current
+    if (announce) {
+      setValidating(true)
+      setErrorMsg('')
+    }
+
     try {
-      const report = normalizeValidationReport(await agentsApi.validateGraph(design.agent_id, draft)) ?? {
+      const report = normalizeValidationReport(await agentsApi.validateGraph(design.agent_id, graphBlueprint)) ?? {
         ok: false,
         errors: [],
         warnings: [],
       }
+      if (requestId !== validationRequestRef.current) return
       setValidation(report)
-      push({
-        tone: report.ok ? 'success' : 'info',
-        title: report.ok ? 'Flujo valido' : 'Hay observaciones en el flujo',
-        description: report.ok
-          ? 'La estructura del proceso quedo lista para guardar.'
-          : `${report.errors.length} errores y ${report.warnings.length} warnings para revisar.`,
-      })
+      if (announce) {
+        push({
+          tone: report.ok ? 'success' : 'info',
+          title: report.ok ? 'Flujo valido' : 'Hay observaciones en el flujo',
+          description: report.ok
+            ? 'La estructura del proceso quedo lista para guardar.'
+            : `${report.errors.length} errores y ${report.warnings.length} warnings para revisar.`,
+        })
+      }
     } catch (e: any) {
+      if (requestId !== validationRequestRef.current) return
       const detail = e?.response?.data?.detail ?? e?.response?.data
       const report = normalizeValidationReport(detail)
-      if (report) setValidation(report)
-      setErrorMsg(asErrorMessage(detail, 'No se pudo validar el flujo.'))
+      if (report) {
+        setValidation(report)
+        if (announce) setErrorMsg('El flujo tiene errores de validacion. Revisalos antes de guardar.')
+      } else if (announce) {
+        setErrorMsg(asErrorMessage(detail, 'No se pudo validar el flujo.'))
+      }
     } finally {
-      setValidating(false)
+      if (announce && requestId === validationRequestRef.current) {
+        setValidating(false)
+      }
     }
+  }
+
+  useEffect(() => {
+    if (autoValidateTimerRef.current) {
+      window.clearTimeout(autoValidateTimerRef.current)
+    }
+    autoValidateTimerRef.current = window.setTimeout(() => {
+      runValidation(draft, false)
+    }, 450)
+    return () => {
+      if (autoValidateTimerRef.current) {
+        window.clearTimeout(autoValidateTimerRef.current)
+      }
+    }
+  }, [design.agent_id, graphSignature(draft)])
+
+  const handleValidate = async () => {
+    await runValidation(draft, true)
   }
 
   const handleSave = async () => {
@@ -589,9 +700,10 @@ export function FlowEditor({ design, onSaved }: Props) {
               {design.spec.mode === 'crew' ? 'CrewAI' : 'LangChain'}
             </Badge>
             <Badge tone={validation?.ok ? 'green' : validation ? 'amber' : 'slate'}>
-              {validation ? (validation.ok ? 'Valido' : 'Con observaciones') : 'Sin validar'}
+              {validating ? 'Validando...' : validation ? (validation.ok ? 'Valido' : 'Con observaciones') : 'Autovalidando'}
             </Badge>
             {isDirty && <span>Cambios sin guardar</span>}
+            <span>Autovalidacion activa</span>
             {pendingConnectionFrom && (
               <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-sky-700">
                 Conectando desde {pendingConnectionFrom}. Hace click en el nodo destino o en su entrada.
@@ -955,6 +1067,86 @@ export function FlowEditor({ design, onSaved }: Props) {
                         ))}
                       </select>
                     </Field>
+                  )}
+
+                  {selectedNode.type === 'decision' && (
+                    <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-medium text-slate-900">Ramas de la decision</div>
+                          <div className="text-xs text-slate-500">
+                            Edita condiciones y destinos sin tener que ir una por una a cada conexion.
+                          </div>
+                        </div>
+                        <Button variant="secondary" onClick={() => handleAddDecisionBranch(selectedNode.id)}>
+                          <GitBranch className="h-4 w-4" />
+                          Agregar rama
+                        </Button>
+                      </div>
+                      {selectedNodeOutgoingEdges.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-amber-200 bg-white px-3 py-4 text-xs text-slate-500">
+                          Esta decision todavia no tiene salidas. Crea al menos una rama para continuar el flujo.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {selectedNodeOutgoingEdges.map((edge) => (
+                            <div key={edge.id} className="rounded-lg border border-white/80 bg-white px-3 py-3 shadow-sm">
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <button
+                                  type="button"
+                                  className="text-left text-xs font-medium text-slate-700 hover:text-violet-700"
+                                  onClick={() => {
+                                    setSelectedEdgeId(edge.id)
+                                    setSelectedNodeId(null)
+                                  }}
+                                >
+                                  {edge.id}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-md p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                  onClick={() => handleDeleteEdge(edge.id)}
+                                  title="Borrar rama"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                              <div className="grid gap-3 md:grid-cols-2">
+                                <Field label="Condicion">
+                                  <Input
+                                    value={edge.condition ?? ''}
+                                    onChange={(event) =>
+                                      updateEdge(edge.id, (current) => ({
+                                        ...current,
+                                        condition: event.target.value || null,
+                                      }))
+                                    }
+                                    placeholder="Ej: si necesita datos externos"
+                                  />
+                                </Field>
+                                <Field label="Destino">
+                                  <select
+                                    value={edge.to}
+                                    onChange={(event) =>
+                                      updateEdge(edge.id, (current) => ({ ...current, to: event.target.value }))
+                                    }
+                                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                  >
+                                    {draft.nodes
+                                      .filter((node) => node.id !== selectedNode.id)
+                                      .map((node) => (
+                                        <option key={node.id} value={node.id}>
+                                          {node.label} ({node.id})
+                                        </option>
+                                      ))}
+                                  </select>
+                                </Field>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {selectedNodeIssues.length > 0 && (
