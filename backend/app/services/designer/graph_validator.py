@@ -16,6 +16,9 @@ from app.schemas.agent import (
 def normalize_graph_blueprint(design: AgentDesign, blueprint: GraphBlueprint) -> GraphBlueprint:
     normalized_nodes: list[FlowNode] = []
     seen_node_ids: set[str] = set()
+    available_tool_names = {tool.name for tool in design.spec.tools}
+    if design.spec.mode.value == "single" and design.spec.rag.enabled:
+        available_tool_names.add("knowledge_base")
 
     for index, node in enumerate(blueprint.nodes):
         node_id = (node.id or "").strip()
@@ -33,6 +36,13 @@ def normalize_graph_blueprint(design: AgentDesign, blueprint: GraphBlueprint) ->
         position = node.position or FlowNodePosition(x=120 + (index % 3) * 240, y=120 + (index // 3) * 140)
         data = node.data.model_copy(deep=True)
         data.description = (data.description or description or "").strip() or None
+        if node.type.value == "tool":
+            inferred_tool_name = _resolve_tool_name(
+                data.tool_name,
+                label,
+                available_tool_names=available_tool_names,
+            )
+            data.tool_name = inferred_tool_name or data.tool_name
         if design.spec.mode.value == "crew" and not data.assigned_agent and node.type.value == "agent" and design.spec.agents:
             matching_agent = next(
                 (role.name for role in design.spec.agents if role.name == label or role.role == label),
@@ -82,6 +92,7 @@ def normalize_graph_blueprint(design: AgentDesign, blueprint: GraphBlueprint) ->
 
     meta = blueprint.meta.model_copy(update={"version": max(1, blueprint.meta.version)})
     normalized = GraphBlueprint(nodes=normalized_nodes, edges=normalized_edges, meta=meta)
+    normalized = _strip_top_level_react_rag_nodes(design, normalized)
     return _ensure_rag_knowledge_node(design, normalized)
 
 
@@ -273,7 +284,11 @@ def _reachable_nodes(start_id: str, outgoing: dict[str, list]) -> set[str]:
 
 
 def _ensure_rag_knowledge_node(design: AgentDesign, blueprint: GraphBlueprint) -> GraphBlueprint:
-    if design.spec.mode.value != "single" or not design.spec.rag.enabled:
+    if (
+        design.spec.mode.value != "single"
+        or not design.spec.rag.enabled
+        or getattr(design.spec.single_agent_mode, "value", design.spec.single_agent_mode) == "react"
+    ):
         return blueprint
 
     start_node = next((node for node in blueprint.nodes if node.type.value == "start"), None)
@@ -285,7 +300,7 @@ def _ensure_rag_knowledge_node(design: AgentDesign, blueprint: GraphBlueprint) -
     existing_rag = next(
         (
             node for node in blueprint.nodes
-            if node.type.value == "tool" and (node.data.tool_name or "").strip() == "knowledge_base"
+            if node.type.value == "tool" and _is_knowledge_base_node(node)
         ),
         None,
     )
@@ -384,3 +399,99 @@ def _next_edge_id(existing_ids: set[str], base_id: str) -> str:
         candidate = f"{base_id}_{suffix}"
         suffix += 1
     return candidate
+
+
+def _normalize_tool_text(value: str | None) -> str:
+    return (value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _resolve_tool_name(current: str | None, label: str | None, *, available_tool_names: set[str]) -> str | None:
+    aliases = {
+        "base_de_conocimientos": "knowledge_base",
+        "knowledge_base": "knowledge_base",
+        "web_search": "web_search",
+        "busqueda_web": "web_search",
+        "búsqueda_web": "web_search",
+        "send_email": "send_email",
+        "enviar_email": "send_email",
+        "email": "send_email",
+        "calculator": "calculator",
+        "calculadora": "calculator",
+    }
+
+    for candidate in (current, label):
+        normalized = _normalize_tool_text(candidate)
+        if not normalized:
+            continue
+        aliased = aliases.get(normalized, normalized)
+        if aliased in available_tool_names:
+            return aliased
+        for tool_name in available_tool_names:
+            if _normalize_tool_text(tool_name) == aliased:
+                return tool_name
+    return None
+
+
+def _is_knowledge_base_node(node: FlowNode) -> bool:
+    return _normalize_tool_text(node.data.tool_name) == "knowledge_base" or _normalize_tool_text(node.label) in {
+        "knowledge_base",
+        "base_de_conocimientos",
+    }
+
+
+def _strip_top_level_react_rag_nodes(design: AgentDesign, blueprint: GraphBlueprint) -> GraphBlueprint:
+    if (
+        design.spec.mode.value != "single"
+        or getattr(design.spec.single_agent_mode, "value", design.spec.single_agent_mode) != "react"
+    ):
+        return blueprint
+
+    start_node = next((node for node in blueprint.nodes if node.type.value == "start"), None)
+    if start_node is None:
+        return blueprint
+
+    outgoing: dict[str, list[FlowEdge]] = defaultdict(list)
+    incoming: dict[str, list[FlowEdge]] = defaultdict(list)
+    for edge in blueprint.edges:
+        outgoing[edge.from_].append(edge)
+        incoming[edge.to].append(edge)
+
+    top_level_rag_nodes = [
+        node
+        for node in blueprint.nodes
+        if _is_knowledge_base_node(node)
+        and len(incoming.get(node.id, [])) == 1
+        and incoming[node.id][0].from_ == start_node.id
+    ]
+    if not top_level_rag_nodes:
+        return blueprint
+
+    nodes = [node for node in blueprint.nodes if node.id not in {node.id for node in top_level_rag_nodes}]
+    edges = [edge for edge in blueprint.edges if edge.to not in {node.id for node in top_level_rag_nodes}]
+    existing_edge_ids = {edge.id for edge in edges if edge.id}
+
+    for rag_node in top_level_rag_nodes:
+        start_edges = [edge for edge in edges if edge.from_ == start_node.id and edge.to == rag_node.id]
+        rag_outgoing = [edge for edge in blueprint.edges if edge.from_ == rag_node.id]
+        edges = [edge for edge in edges if edge.from_ != rag_node.id and edge.to != rag_node.id]
+
+        for edge in start_edges:
+            if edge in edges:
+                edges.remove(edge)
+
+        start_targets = {(edge.to, (edge.condition or "").strip()) for edge in edges if edge.from_ == start_node.id}
+        for edge in rag_outgoing:
+            key = (edge.to, (edge.condition or "").strip())
+            if key in start_targets:
+                continue
+            next_edge = {
+                "id": _next_edge_id(existing_edge_ids, edge.id or f"{start_node.id}_{edge.to}"),
+                "from": start_node.id,
+                "to": edge.to,
+                "condition": edge.condition,
+            }
+            existing_edge_ids.add(next_edge["id"])
+            edges.append(FlowEdge.model_validate(next_edge))
+            start_targets.add(key)
+
+    return GraphBlueprint(nodes=nodes, edges=edges, meta=blueprint.meta)

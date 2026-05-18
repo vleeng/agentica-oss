@@ -103,8 +103,11 @@ HERRAMIENTAS: {[t.name for t in spec.tools]}
 AGENTES/ROLES: {[a.role for a in spec.agents] if spec.agents else []}
 PROCESO: {framework.process.value if framework.process else 'N/A'}
 RAG HABILITADO: {"si" if spec.rag.enabled else "no"}
+MODO AGENTE SIMPLE: {getattr(spec.single_agent_mode, "value", spec.single_agent_mode)}
 
-{"Si RAG esta habilitado, inclui explicitamente un nodo tool de base de conocimientos al inicio del flujo para consultar documentos del agente antes de responder." if spec.rag.enabled else ""}
+{"Si RAG esta habilitado y el agente simple es ReAct, NO agregues un nodo explicito de base de conocimientos al inicio. Deja que el agente use knowledge_base como tool cuando la necesite para evaluar el plan y responder." if spec.rag.enabled and getattr(spec.single_agent_mode, "value", spec.single_agent_mode) == "react" else ""}
+{"Si RAG esta habilitado y el agente NO es ReAct, inclui explicitamente un nodo tool de base de conocimientos al inicio del flujo para consultar documentos antes de responder." if spec.rag.enabled and getattr(spec.single_agent_mode, "value", spec.single_agent_mode) != "react" else ""}
+{"Para cada nodo tool, completa siempre data.tool_name con el nombre tecnico exacto de la herramienta, por ejemplo knowledge_base, web_search o send_email." if spec.mode.value == "single" else ""}
 
 Respondé SOLO con el JSON válido, sin markdown, sin explicaciones."""
 
@@ -113,7 +116,7 @@ Respondé SOLO con el JSON válido, sin markdown, sin explicaciones."""
             return json.loads(content)
         except json.JSONDecodeError:
             # Fallback a blueprint mínimo si el LLM no devuelve JSON válido
-            if spec.rag.enabled:
+            if spec.rag.enabled and getattr(spec.single_agent_mode, "value", spec.single_agent_mode) != "react":
                 return {
                     "nodes": [
                         {"id": "start", "type": "start", "label": "Inicio", "description": ""},
