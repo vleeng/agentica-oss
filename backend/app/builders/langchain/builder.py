@@ -31,6 +31,7 @@ class LangChainAgentBuilder:
     async def build(self, design: AgentDesign, api_key: str = "", llm_config: LLMConfig | None = None) -> LangChainRuntime:
         spec = design.spec
         fw = design.framework
+        graph_uses_knowledge_base = self._graph_uses_tool(design, "knowledge_base")
 
         llm_config = llm_config or LLMConfig(provider="anthropic", api_key=api_key)
         llm = create_chat_llm(spec.model_params, llm_config)
@@ -84,7 +85,7 @@ class LangChainAgentBuilder:
                 )
             tools.append(tool)
 
-        if spec.rag.enabled:
+        if spec.rag.enabled or graph_uses_knowledge_base:
             from app.components.rag.rag_tool import RAGTool
 
             tools.append(
@@ -191,6 +192,25 @@ class LangChainAgentBuilder:
             or any(node.get("type") in {"tool", "decision"} for node in nodes)
             or branching
         )
+
+    @staticmethod
+    def _graph_uses_tool(design: AgentDesign, tool_name: str) -> bool:
+        blueprint = design.graph_blueprint or {}
+        nodes = blueprint.get("nodes", []) if isinstance(blueprint, dict) else []
+        normalized_target = str(tool_name or "").strip().lower()
+        if not normalized_target:
+            return False
+        for node in nodes:
+            if str(node.get("type") or "").strip().lower() != "tool":
+                continue
+            data = node.get("data") or {}
+            candidate = str(data.get("tool_name") or "").strip().lower()
+            if candidate == normalized_target:
+                return True
+            label = str(node.get("label") or "").strip().lower().replace(" ", "_")
+            if normalized_target == "knowledge_base" and label in {"knowledge_base", "base_de_conocimientos"}:
+                return True
+        return False
 
     @staticmethod
     def _escape_prompt(system_prompt: str) -> str:

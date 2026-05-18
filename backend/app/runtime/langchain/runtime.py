@@ -795,7 +795,7 @@ class LangChainRuntime(AgentRuntime):
         return "\n".join(part for part in parts if part).strip()
 
     async def _get_graph_rag_context(self, *, state: dict[str, Any], query: str) -> str:
-        if not getattr(self.spec, "rag", None) or not self.spec.rag.enabled or not self._agent_id:
+        if not self._rag_available() or not self._agent_id:
             return ""
 
         normalized_query = query.strip()
@@ -824,6 +824,24 @@ class LangChainRuntime(AgentRuntime):
 
         cache[normalized_query] = context or ""
         return cache[normalized_query]
+
+    def _rag_available(self) -> bool:
+        rag = getattr(self.spec, "rag", None)
+        if rag and getattr(rag, "enabled", False):
+            return True
+        blueprint = self._graph_blueprint if isinstance(self._graph_blueprint, dict) else {}
+        nodes = blueprint.get("nodes", []) or []
+        for node in nodes:
+            if str(node.get("type") or "").strip().lower() != "tool":
+                continue
+            data = node.get("data") or {}
+            tool_name = str(data.get("tool_name") or "").strip().lower()
+            if tool_name == "knowledge_base":
+                return True
+            label = str(node.get("label") or "").strip().lower().replace(" ", "_")
+            if label in {"knowledge_base", "base_de_conocimientos"}:
+                return True
+        return False
 
     async def _assigned_kb_ids(self, state: dict[str, Any]) -> list[str]:
         cached = state.get("assigned_kb_ids")
