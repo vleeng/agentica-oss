@@ -1,11 +1,33 @@
 import type { ReactNode } from 'react'
 
 function normalizeRichTextContent(content: string): string {
-  return String(content || '')
+  let normalized = String(content || '')
     .replace(/\r\n/g, '\n')
     .replace(/([^\n])\s+(#{1,3}\s+)/g, '$1\n\n$2')
     .replace(/([.!?])\s+(\d+\.\s+)/g, '$1\n$2')
     .replace(/([^\n])\s+([-*]\s+)/g, '$1\n$2')
+
+  const commonHeadings = [
+    'Ingredientes',
+    'Preparacion',
+    'Preparación',
+    'Consejos',
+    'Consejos utiles',
+    'Consejos útiles',
+    'Tips',
+    'Tiempo total',
+    'Tiempo aproximado',
+    'Para la masa',
+    'Para el relleno',
+    'Para servir',
+  ]
+
+  for (const heading of commonHeadings) {
+    const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    normalized = normalized.replace(new RegExp(`([^\\n])\\s+(${escaped}:)`, 'g'), '$1\n\n$2')
+  }
+
+  return normalized
 }
 
 // ── Inline rendering (bold, italic, inline-code) ──────────────────────────────

@@ -212,6 +212,7 @@ class LangChainRuntime(AgentRuntime):
                         tool_output = str(event.get("data", {}).get("output") or "").strip()
                         if tool_name == "knowledge_base":
                             titles = _extract_rag_titles(tool_output)
+                            snippets = _extract_rag_snippets(tool_output)
                             await self._emit_progress(
                                 "status",
                                 _summarize_rag_result(titles, tool_output),
@@ -219,6 +220,13 @@ class LangChainRuntime(AgentRuntime):
                                 kind="rag_result",
                                 titles=titles,
                             )
+                            if snippets:
+                                await self._emit_progress(
+                                    "status",
+                                    f"Hallazgos: {' | '.join(snippets[:3])}",
+                                    actor=tool_name,
+                                    kind="rag_preview",
+                                )
                         await self._emit_progress("status", "Armando la respuesta final", kind="answer")
 
                     elif kind == "on_chat_model_stream":
@@ -889,6 +897,29 @@ class LangChainRuntime(AgentRuntime):
             and normalized_query.startswith(user_input)
         ):
             cache[normalized_query] = cached_tool_context
+            await self._emit_progress(
+                "status",
+                f"Buscando en conocimientos{_summarize_query(cached_tool_query or user_input)}",
+                actor="knowledge_base",
+                kind="tool",
+                query=cached_tool_query or user_input,
+            )
+            titles = _extract_rag_titles(cached_tool_context)
+            snippets = _extract_rag_snippets(cached_tool_context)
+            await self._emit_progress(
+                "status",
+                _summarize_rag_result(titles, cached_tool_context),
+                actor="knowledge_base",
+                kind="rag_result",
+                titles=titles,
+            )
+            if snippets:
+                await self._emit_progress(
+                    "status",
+                    f"Hallazgos: {' | '.join(snippets[:3])}",
+                    actor="knowledge_base",
+                    kind="rag_preview",
+                )
             return cached_tool_context
 
         try:
@@ -896,6 +927,13 @@ class LangChainRuntime(AgentRuntime):
 
             kb = KnowledgeBuilderService()
             accessible_kb_ids = await self._assigned_kb_ids(state)
+            await self._emit_progress(
+                "status",
+                f"Buscando en conocimientos{_summarize_query(normalized_query)}",
+                actor="knowledge_base",
+                kind="tool",
+                query=normalized_query,
+            )
             logger.debug(
                 "[LangChainGraph] agent_id=%s retrieving rag query=%s assigned_kbs=%s include_agent_source=%s",
                 self._agent_id,
@@ -922,6 +960,22 @@ class LangChainRuntime(AgentRuntime):
             self._agent_id,
             len(context or ""),
         )
+        titles = _extract_rag_titles(context)
+        snippets = _extract_rag_snippets(context)
+        await self._emit_progress(
+            "status",
+            _summarize_rag_result(titles, context),
+            actor="knowledge_base",
+            kind="rag_result",
+            titles=titles,
+        )
+        if snippets:
+            await self._emit_progress(
+                "status",
+                f"Hallazgos: {' | '.join(snippets[:3])}",
+                actor="knowledge_base",
+                kind="rag_preview",
+            )
         cache[normalized_query] = context or ""
         return cache[normalized_query]
 
