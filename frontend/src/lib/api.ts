@@ -14,6 +14,7 @@ import type {
   ToolReadinessStatus,
   WizardAdvisorRequest,
   WizardAdvisorResponse,
+  WizardChatSession,
   WizardState,
 } from '../types/agent'
 import { clearStoredToken, getAuthToken } from '../stores/auth'
@@ -325,6 +326,15 @@ export const agentsApi = {
 export const wizardAdvisorApi = {
   analyze: (payload: WizardAdvisorRequest): Promise<WizardAdvisorResponse> =>
     api.post('/wizard/advisor/analyze', payload).then((r) => r.data),
+}
+
+export const wizardChatApi = {
+  start: (payload?: { initial_mode?: 'single' | 'crew' }): Promise<WizardChatSession> =>
+    api.post('/wizard/chat/start', payload || {}).then((r) => r.data),
+  get: (sessionId: string): Promise<WizardChatSession> =>
+    api.get(`/wizard/chat/${sessionId}`).then((r) => r.data),
+  message: (sessionId: string, message: string): Promise<WizardChatSession> =>
+    api.post(`/wizard/chat/${sessionId}/message`, { message }).then((r) => r.data),
 }
 
 export type WSMessage =

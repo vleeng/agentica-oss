@@ -9,9 +9,9 @@ import {
   useParams,
 } from 'react-router-dom'
 
-import { Login } from './components/auth/Login'
 import { AccountPanel } from './components/account/AccountPanel'
 import { AccessPanel } from './components/admin/AccessPanel'
+import { Login } from './components/auth/Login'
 import { AgentDashboard } from './components/builder/AgentDashboard'
 import { APIKeysPanel } from './components/builder/APIKeysPanel'
 import { CustomToolsPanel } from './components/builder/CustomToolsPanel'
@@ -23,6 +23,7 @@ import { AppShell } from './components/layout/AppShell'
 import { AgentMonitor } from './components/monitor/AgentMonitor'
 import { StandaloneChat } from './components/monitor/StandaloneChat'
 import { UsageDashboard } from './components/monitor/UsageDashboard'
+import { ChatWizard } from './components/wizard/ChatWizard'
 import { RequirementWizard } from './components/wizard/RequirementWizard'
 import { agentsApi, authApi, wizardStateToSpec } from './lib/api'
 import { getAuthRole, useAuthStore } from './stores/auth'
@@ -104,6 +105,7 @@ function WizardRoute() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [wizardVariant, setWizardVariant] = useState<'classic' | 'chat'>('classic')
 
   const handleWizardComplete = async (state: WizardState) => {
     setLoading(true)
@@ -114,7 +116,7 @@ function WizardRoute() {
       const design = await agentsApi.createFromSpec(spec)
       navigate(`/agents/${design.agent_id}`, { state: { design } })
     } catch (e: any) {
-      setError(e.response?.data?.detail || e.message || 'No se pudo generar el diseño del agente.')
+      setError(e.response?.data?.detail || e.message || 'No se pudo generar el diseno del agente.')
     } finally {
       setLoading(false)
     }
@@ -129,10 +131,51 @@ function WizardRoute() {
       )}
       {loading && (
         <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-700">
-          Generando el diseño del agente. Esto puede tardar unos segundos.
+          Generando el diseno del agente. Esto puede tardar unos segundos.
         </div>
       )}
-      <RequirementWizard onComplete={handleWizardComplete} />
+
+      <div className="rounded-[32px] border border-white/60 bg-white/88 p-5 shadow-[0_28px_80px_rgba(15,23,42,0.08)]">
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-violet-500">Modo de creacion</p>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setWizardVariant('classic')}
+            className={`rounded-[28px] border px-5 py-5 text-left transition ${
+              wizardVariant === 'classic'
+                ? 'border-violet-300 bg-violet-50 shadow-[0_16px_45px_rgba(124,58,237,0.12)]'
+                : 'border-slate-200 bg-white hover:border-slate-300'
+            }`}
+          >
+            <div className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-500">Wizard clasico</div>
+            <h3 className="mt-2 text-xl font-semibold text-slate-950">Formulario paso a paso</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Ideal si ya sabes que queres definir y preferis controlar cada seccion del spec manualmente.
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setWizardVariant('chat')}
+            className={`rounded-[28px] border px-5 py-5 text-left transition ${
+              wizardVariant === 'chat'
+                ? 'border-violet-300 bg-violet-50 shadow-[0_16px_45px_rgba(124,58,237,0.12)]'
+                : 'border-slate-200 bg-white hover:border-slate-300'
+            }`}
+          >
+            <div className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-500">Wizard asistido por chat</div>
+            <h3 className="mt-2 text-xl font-semibold text-slate-950">Conversacion guiada</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Agentica te hace preguntas, arma el borrador estructurado y te deja crear el agente cuando quede listo.
+            </p>
+          </button>
+        </div>
+      </div>
+
+      {wizardVariant === 'classic' ? (
+        <RequirementWizard onComplete={handleWizardComplete} />
+      ) : (
+        <ChatWizard onComplete={handleWizardComplete} />
+      )}
     </div>
   )
 }
@@ -156,7 +199,7 @@ function MonitorRoute() {
         setError('')
       })
       .catch(() => {
-        setError('No pudimos cargar el diseño del agente. Puede que todavía no esté listo o que necesite recrearse.')
+        setError('No pudimos cargar el diseno del agente. Puede que todavia no este listo o que necesite recrearse.')
       })
       .finally(() => setLoading(false))
   }, [agentId, design?.agent_id])
@@ -174,8 +217,8 @@ function MonitorRoute() {
   if (error || !design) {
     return (
       <div className="mx-auto max-w-2xl rounded-2xl border border-amber-200 bg-amber-50 px-6 py-6 text-amber-900">
-        <h2 className="text-lg font-semibold">El monitor todavía no está disponible</h2>
-        <p className="mt-2 text-sm text-amber-800">{error || 'No encontramos el diseño del agente.'}</p>
+        <h2 className="text-lg font-semibold">El monitor todavia no esta disponible</h2>
+        <p className="mt-2 text-sm text-amber-800">{error || 'No encontramos el diseno del agente.'}</p>
         <button
           onClick={() => navigate('/wizard')}
           className="mt-5 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
@@ -200,7 +243,7 @@ function PanelPage({ title, children }: { title: string; children: ReactNode }) 
     <div className="space-y-4">
       <div>
         <h2 className="text-2xl font-semibold text-slate-950">{title}</h2>
-        <p className="mt-1 text-sm text-slate-500">Configuración avanzada y catálogo operativo.</p>
+        <p className="mt-1 text-sm text-slate-500">Configuracion avanzada y catalogo operativo.</p>
       </div>
       {children}
     </div>

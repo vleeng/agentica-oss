@@ -228,6 +228,20 @@ export interface WizardAdvisorResponse {
   source: 'ai' | 'rules'
 }
 
+export interface WizardChatMessage {
+  role: 'assistant' | 'user'
+  content: string
+}
+
+export interface WizardChatSession {
+  session_id: string
+  messages: WizardChatMessage[]
+  draft_state: WizardState
+  ready_to_create: boolean
+  completion: number
+  next_focus?: string | null
+}
+
 export const WIZARD_DEFAULTS: WizardState = {
   step: 0,
   name: '',
