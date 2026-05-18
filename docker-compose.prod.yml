@@ -66,6 +66,9 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY:    ${OPENAI_API_KEY:-}
       TAVILY_API_KEY:    ${TAVILY_API_KEY:-}
+      APP_GIT_SHA:       ${APP_GIT_SHA:-unknown}
+      APP_GIT_REF:       ${APP_GIT_REF:-main}
+      APP_BUILD_TIME:    ${APP_BUILD_TIME:-unknown}
       JWT_SECRET:        ${JWT_SECRET}
       ADMIN_PASSWORD:    ${ADMIN_PASSWORD}
       EMAIL_RETURN_TOKENS_IN_RESPONSE: ${EMAIL_RETURN_TOKENS_IN_RESPONSE:-false}
@@ -128,6 +131,9 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY:    ${OPENAI_API_KEY:-}
       TAVILY_API_KEY:    ${TAVILY_API_KEY:-}
+      APP_GIT_SHA:       ${APP_GIT_SHA:-unknown}
+      APP_GIT_REF:       ${APP_GIT_REF:-main}
+      APP_BUILD_TIME:    ${APP_BUILD_TIME:-unknown}
       ENCRYPTION_KEY:    ${ENCRYPTION_KEY}
       ENVIRONMENT:       production
       SMTP_HOST:         ${SMTP_HOST:-}

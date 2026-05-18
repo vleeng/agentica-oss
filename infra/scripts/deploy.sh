@@ -1,17 +1,14 @@
 #!/bin/bash
-# deploy.sh — Deploy de AGENTICA en VPS Axenova
-# Compatible con el stack Docker+Traefik existente de Axenova
+# deploy.sh - Deploy de AGENTICA en VPS
 #
 # Uso:
 #   ./deploy.sh                    # deploy completo
 #   ./deploy.sh --ref main         # deploy de una rama, tag o commit especifico
 #   ./deploy.sh --only backend     # solo backend
 #   ./deploy.sh --only frontend    # solo frontend
-#   ./deploy.sh --rollback         # rollback al tag anterior
+#   ./deploy.sh --rollback         # rollback al commit anterior
 
 set -euo pipefail
-
-# ── Configuración ─────────────────────────────────────────────────────────────
 
 DEPLOY_DIR="/opt/agentica"
 COMPOSE_FILE="$DEPLOY_DIR/docker-compose.prod.yml"
@@ -20,7 +17,6 @@ BACKUP_DIR="/opt/agentica-backups"
 LOG_FILE="/var/log/agentica-deploy.log"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# Colores
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -30,11 +26,12 @@ log()  { echo -e "${GREEN}[$(date +%H:%M:%S)]${NC} $*" | tee -a "$LOG_FILE"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*" | tee -a "$LOG_FILE"; }
 err()  { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$LOG_FILE"; exit 1; }
 
-# ── Parseo de argumentos ──────────────────────────────────────────────────────
-
 ONLY=""
 ROLLBACK=false
 DEPLOY_REF="main"
+DEPLOY_GIT_SHA=""
+DEPLOY_GIT_REF=""
+DEPLOY_BUILD_TIME=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -48,29 +45,31 @@ while [[ $# -gt 0 ]]; do
             ONLY="$2"
             shift 2
             ;;
-        --rollback) ROLLBACK=true; shift ;;
-        *)          err "Argumento desconocido: $1" ;;
+        --rollback)
+            ROLLBACK=true
+            shift
+            ;;
+        *)
+            err "Argumento desconocido: $1"
+            ;;
     esac
 done
 
-# ── Funciones ─────────────────────────────────────────────────────────────────
-
 check_requirements() {
     log "Verificando requisitos..."
-    command -v docker    >/dev/null 2>&1 || err "Docker no instalado"
-    command -v git       >/dev/null 2>&1 || err "Git no instalado"
-    [[ -f "$ENV_FILE" ]]                 || err "Archivo .env no encontrado en $DEPLOY_DIR"
-    [[ -f "$COMPOSE_FILE" ]]             || err "docker-compose.prod.yml no encontrado en $DEPLOY_DIR"
+    command -v docker >/dev/null 2>&1 || err "Docker no instalado"
+    command -v git >/dev/null 2>&1 || err "Git no instalado"
+    [[ -f "$ENV_FILE" ]] || err "Archivo .env no encontrado en $DEPLOY_DIR"
+    [[ -f "$COMPOSE_FILE" ]] || err "docker-compose.prod.yml no encontrado en $DEPLOY_DIR"
 
-    # Verificar variables críticas
     source "$ENV_FILE"
     [[ -n "${ANTHROPIC_API_KEY:-}" || -n "${OPENROUTER_API_KEY:-}" || -n "${OPENAI_API_KEY:-}" || -n "${BUILDER_API_KEY:-}" ]] \
         || err "No hay ninguna API key LLM definida en .env (ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY o BUILDER_API_KEY)"
-    [[ -n "${JWT_SECRET:-}" ]]        || err "JWT_SECRET no definida en .env"
+    [[ -n "${JWT_SECRET:-}" ]] || err "JWT_SECRET no definida en .env"
     [[ -n "${POSTGRES_PASSWORD:-}" ]] || err "POSTGRES_PASSWORD no definida en .env"
-    [[ -n "${REDIS_PASSWORD:-}" ]]    || err "REDIS_PASSWORD no definida en .env"
-    [[ -n "${ADMIN_PASSWORD:-}" ]]    || err "ADMIN_PASSWORD no definida en .env"
-    [[ -n "${ENCRYPTION_KEY:-}" ]]    || err "ENCRYPTION_KEY no definida en .env"
+    [[ -n "${REDIS_PASSWORD:-}" ]] || err "REDIS_PASSWORD no definida en .env"
+    [[ -n "${ADMIN_PASSWORD:-}" ]] || err "ADMIN_PASSWORD no definida en .env"
+    [[ -n "${ENCRYPTION_KEY:-}" ]] || err "ENCRYPTION_KEY no definida en .env"
     log "Requisitos OK"
 }
 
@@ -85,8 +84,22 @@ backup_database() {
         && log "Backup guardado: $BACKUP_FILE" \
         || warn "No se pudo hacer backup (¿primera vez?)"
 
-    # Mantener solo los últimos 7 backups
     ls -t "$BACKUP_DIR"/*.sql.gz 2>/dev/null | tail -n +8 | xargs rm -f || true
+}
+
+resolve_deploy_metadata() {
+    DEPLOY_GIT_SHA=$(git rev-parse --short HEAD)
+    if git symbolic-ref --quiet --short HEAD >/dev/null 2>&1; then
+        DEPLOY_GIT_REF=$(git symbolic-ref --quiet --short HEAD)
+    elif git describe --tags --exact-match >/dev/null 2>&1; then
+        DEPLOY_GIT_REF=$(git describe --tags --exact-match)
+    else
+        DEPLOY_GIT_REF="$DEPLOY_REF"
+    fi
+    DEPLOY_BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    export APP_GIT_SHA="$DEPLOY_GIT_SHA"
+    export APP_GIT_REF="$DEPLOY_GIT_REF"
+    export APP_BUILD_TIME="$DEPLOY_BUILD_TIME"
 }
 
 pull_latest() {
@@ -100,9 +113,11 @@ pull_latest() {
     elif git rev-parse --verify --quiet "$DEPLOY_REF^{commit}" >/dev/null; then
         git checkout --detach "$DEPLOY_REF"
     else
-        err "No se encontro la ref '$DEPLOY_REF' como rama remota, tag o commit."
+        err "No se encontró la ref '$DEPLOY_REF' como rama remota, tag o commit."
     fi
-    log "Código actualizado a $(git rev-parse --short HEAD)"
+
+    resolve_deploy_metadata
+    log "Código actualizado a $DEPLOY_GIT_SHA ($DEPLOY_GIT_REF)"
 }
 
 build_images() {
@@ -174,6 +189,7 @@ rollback() {
     cd "$DEPLOY_DIR"
     PREV_COMMIT=$(git log --oneline -2 | tail -1 | awk '{print $1}')
     git reset --hard "$PREV_COMMIT"
+    resolve_deploy_metadata
     build_images
     deploy_services
     health_check
@@ -184,11 +200,11 @@ show_status() {
     log "Estado del stack:"
     docker compose -f "$COMPOSE_FILE" ps
     echo ""
+    log "Version desplegada: ref=${DEPLOY_GIT_REF:-desconocida} commit=${DEPLOY_GIT_SHA:-desconocido} build_time=${DEPLOY_BUILD_TIME:-desconocido}"
+    echo ""
     log "Logs recientes del backend:"
     docker compose -f "$COMPOSE_FILE" logs --tail=20 backend
 }
-
-# ── Main ──────────────────────────────────────────────────────────────────────
 
 mkdir -p "$(dirname "$LOG_FILE")"
 log "=== Deploy AGENTICA $TIMESTAMP ==="
@@ -201,7 +217,6 @@ fi
 check_requirements
 
 if [[ -z "$ONLY" ]]; then
-    # Deploy completo
     backup_database
     pull_latest
     build_images
@@ -211,10 +226,10 @@ if [[ -z "$ONLY" ]]; then
     show_status
     log "=== Deploy completado ✓ ==="
 else
-    # Deploy parcial
     pull_latest
     build_images "$ONLY"
     deploy_services "$ONLY"
     [[ "$ONLY" == "backend" ]] && health_check
+    show_status
     log "=== Deploy de $ONLY completado ✓ ==="
 fi

@@ -25,6 +25,16 @@ from app.api.v1.endpoints import (
 settings = get_settings()
 _redis_client = None
 logger = logging.getLogger(__name__)
+APP_VERSION = "1.0.0"
+
+
+def _build_version_payload() -> dict[str, object]:
+    return {
+        "version": APP_VERSION,
+        "git_sha": (os.getenv("APP_GIT_SHA", "unknown").strip() or "unknown"),
+        "git_ref": (os.getenv("APP_GIT_REF", "main").strip() or "main"),
+        "build_time": (os.getenv("APP_BUILD_TIME", "unknown").strip() or "unknown"),
+    }
 
 
 @asynccontextmanager
@@ -171,7 +181,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="AGENTICA API",
     description="Plataforma de construcción y despliegue automático de agentes IA",
-    version="1.0.0",
+    version=APP_VERSION,
     lifespan=lifespan,
     docs_url="/docs" if not settings.is_production else None,
     redoc_url="/redoc" if not settings.is_production else None,
@@ -235,8 +245,18 @@ app.include_router(wizard.router,         prefix="/api/v1",               tags=[
 
 @app.get("/health")
 async def health():
+    version_info = _build_version_payload()
     return {
         "status":  "ok",
-        "version": "1.0.0",
+        "version": version_info["version"],
         "redis":   _redis_client is not None,
+        "deploy": version_info,
+    }
+
+
+@app.get("/health/version")
+async def health_version():
+    return {
+        "status": "ok",
+        "deploy": _build_version_payload(),
     }

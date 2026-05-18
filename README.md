@@ -13,6 +13,7 @@ Plataforma de construcción, prueba y despliegue automático de agentes IA.
 
 - [Baseline funcional 2026-05-14](docs/version-agentica-2026-05-14.md)
 - [Implementar baseline 2026-05-14 en otro server](docs/implementar-version-2026-05-14.md)
+- [Operacion de ramas y deploy](docs/operacion-ramas-deploy.md)
 - [Manual de usuario](docs/manual-usuario-agentica.md)
 - [Matriz de operatividad de tools](docs/matriz-operatividad-tools.md)
 - [Plan de desarrollo de tools](docs/plan-desarrollo-tools.md)
@@ -77,6 +78,7 @@ sudo bash infra/scripts/deploy.sh
 # Deploy de una rama, tag o commit especifico
 sudo bash infra/scripts/deploy.sh --ref codex-wizard-ai-advisor
 sudo bash infra/scripts/deploy.sh --ref 893ac1a
+sudo bash infra/scripts/deploy.sh --ref agentica-2026-05-14-baseline
 
 # Solo backend
 sudo bash infra/scripts/deploy.sh --only backend
@@ -86,6 +88,9 @@ sudo bash infra/scripts/deploy.sh --only frontend
 
 # Rollback
 sudo bash infra/scripts/deploy.sh --rollback
+
+# Verificar version desplegada
+curl -s https://axenova.com/agentica/api/health/version
 ```
 
 ## Estructura del proyecto
