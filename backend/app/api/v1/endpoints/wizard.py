@@ -34,7 +34,7 @@ async def start_wizard_chat(
 ) -> WizardChatSessionResponse:
     ctx.require_human_user()
     ctx.require_developer()
-    return await chat_svc.start(initial_mode=body.initial_mode)
+    return await chat_svc.start(tenant_id=ctx.tenant_id, initial_mode=body.initial_mode)
 
 
 @router.get("/wizard/chat/{session_id}", response_model=WizardChatSessionResponse)

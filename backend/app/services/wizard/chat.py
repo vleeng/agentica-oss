@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from sqlalchemy import text
+
+from app.db.session import PublicSessionFactory
+from app.services.model_catalog import normalize_provider_models
 from app.schemas.wizard_chat import WizardChatMessage, WizardChatSessionResponse
 from app.services.llm_client import TextGenerationClient
 
@@ -79,11 +83,12 @@ class WizardChatService:
         self._client = client or TextGenerationClient()
         self._sessions: dict[str, WizardChatSession] = {}
 
-    async def start(self, *, initial_mode: str | None = None) -> WizardChatSessionResponse:
+    async def start(self, *, tenant_id: str, initial_mode: str | None = None) -> WizardChatSessionResponse:
         session_id = str(uuid4())
         draft_state = deepcopy(WIZARD_CHAT_DEFAULTS)
         if initial_mode in {"single", "crew"}:
             draft_state["mode"] = initial_mode
+        draft_state["model_params"] = await self._resolve_initial_model_params(tenant_id)
         session = WizardChatSession(session_id=session_id, draft_state=draft_state)
         assistant = (
             "Te ayudo a crear el agente por chat. Contame que queres construir, "
@@ -130,6 +135,56 @@ class WizardChatService:
             completion=completion,
             next_focus=next_focus,
         )
+
+    async def _resolve_initial_model_params(self, tenant_id: str) -> dict[str, Any]:
+        params = deepcopy(WIZARD_CHAT_DEFAULTS["model_params"])
+        async with PublicSessionFactory() as db:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT id, provider, models
+                    FROM llm_provider_keys
+                    WHERE tenant_id = CAST(:tid AS uuid) AND is_default = TRUE
+                    ORDER BY created_at ASC
+                    """
+                ),
+                {"tid": tenant_id},
+            )
+            rows = result.fetchall()
+
+        if not rows:
+            return params
+
+        row = None
+        selected_model_id = ""
+        for candidate in rows:
+            models = normalize_provider_models(candidate.models)
+            if models:
+                row = candidate
+                selected_model_id = models[0].id
+                break
+
+        if row is None:
+            row = rows[0]
+            selected_model_id = self._fallback_model_for_provider(str(row.provider or "").strip().lower())
+
+        params["provider"] = row.provider
+        params["llm_key_id"] = str(row.id)
+        if selected_model_id:
+            params["model"] = selected_model_id
+        return params
+
+    def _fallback_model_for_provider(self, provider: str) -> str:
+        return {
+            "anthropic": "claude-sonnet-4-5",
+            "openai": "gpt-4o-mini",
+            "openrouter": "openai/gpt-4o-mini",
+            "google": "google/gemini-2.0-flash-001",
+            "deepseek": "deepseek-chat",
+            "qwen": "qwen-plus",
+            "moonshot": "moonshot-v1-8k",
+            "zhipu": "glm-4-plus",
+        }.get(provider, WIZARD_CHAT_DEFAULTS["model_params"]["model"])
 
     async def _extract_updates(self, session: WizardChatSession, user_message: str) -> dict[str, Any]:
         fallback = self._rule_based_extract(session.draft_state, session.current_focus, user_message)
