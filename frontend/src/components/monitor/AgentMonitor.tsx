@@ -388,19 +388,19 @@ export function AgentMonitor({ design, onOptimized }: Props) {
                         </div>
                       ) : (
                         <>
-                          {message.content ? <RichText content={message.content} /> : message.streaming && <span className="animate-pulse">●</span>}
                           {Array.isArray(message.progress) && message.progress.length > 0 && (
-                            <div className="mt-3 space-y-1 border-t border-slate-100 pt-2">
+                            <div className={`space-y-1 text-xs ${message.content || message.streaming ? 'mb-3 border-b border-slate-100 pb-2' : ''}`}>
                               {message.progress.map((entry, index) => (
                                 <div
                                   key={`${message.id}_progress_${index}`}
-                                  className={`text-xs ${message.streaming && message.status === entry ? 'font-medium text-violet-600' : 'text-slate-500'}`}
+                                  className={`${message.streaming && message.status === entry ? 'font-medium text-violet-600' : 'text-slate-500'}`}
                                 >
                                   {index + 1}. {entry}
                                 </div>
                               ))}
                             </div>
                           )}
+                          {message.content ? <RichText content={message.content} /> : message.streaming && <span className="animate-pulse">●</span>}
                         </>
                       )}
                     </div>

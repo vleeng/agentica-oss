@@ -226,6 +226,18 @@ export function StandaloneChat({ agentId }: Props) {
                 ? 'bg-violet-600 text-white rounded-br-sm'
                 : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
             }`}>
+              {msg.role === 'assistant' && Array.isArray(msg.progress) && msg.progress.length > 0 && (
+                <div className={`space-y-1 text-xs ${msg.content || msg.streaming ? 'mb-3 border-b border-slate-100 pb-2' : ''}`}>
+                  {msg.progress.map((entry, index) => (
+                    <div
+                      key={`${msg.id}_progress_${index}`}
+                      className={`${msg.streaming && msg.status === entry ? 'font-medium text-violet-600' : 'text-slate-500'}`}
+                    >
+                      {index + 1}. {entry}
+                    </div>
+                  ))}
+                </div>
+              )}
               {msg.role === 'user'
                 ? <p className="whitespace-pre-wrap">{msg.content}</p>
                 : msg.content
@@ -234,18 +246,6 @@ export function StandaloneChat({ agentId }: Props) {
                   ? <span className="animate-pulse">●</span>
                   : null
               }
-              {msg.role === 'assistant' && Array.isArray(msg.progress) && msg.progress.length > 0 && (
-                <div className="mt-3 space-y-1 border-t border-slate-100 pt-2">
-                  {msg.progress.map((entry, index) => (
-                    <div
-                      key={`${msg.id}_progress_${index}`}
-                      className={`text-xs ${msg.streaming && msg.status === entry ? 'font-medium text-violet-600' : 'text-slate-500'}`}
-                    >
-                      {index + 1}. {entry}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         ))}
