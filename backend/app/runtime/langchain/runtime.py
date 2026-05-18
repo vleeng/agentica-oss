@@ -327,6 +327,7 @@ class LangChainRuntime(AgentRuntime):
         nodes = blueprint.get("nodes", []) or []
         edges = blueprint.get("edges", []) or []
         if not nodes:
+            logger.warning("[LangChainGraph] agent_id=%s graph enabled but blueprint is empty", self._agent_id)
             return await self._invoke_standard(input, chat_history)
 
         nodes_by_id = {str(node.get("id")): node for node in nodes if node.get("id")}
@@ -339,6 +340,14 @@ class LangChainRuntime(AgentRuntime):
 
         start_node = next((node for node in nodes if node.get("type") == "start"), nodes[0])
         current_id = str(start_node.get("id"))
+        logger.info(
+            "[LangChainGraph] agent_id=%s start_node=%s outgoing_from_start=%s node_count=%s edge_count=%s",
+            self._agent_id,
+            current_id,
+            [str(edge.get("to") or "").strip() for edge in outgoing.get(current_id, [])],
+            len(nodes),
+            len(edges),
+        )
         steps: list[dict[str, Any]] = []
         current_output = ""
         state: dict[str, Any] = {
@@ -359,6 +368,15 @@ class LangChainRuntime(AgentRuntime):
 
             node_type = str(node.get("type") or "agent")
             label = str(node.get("label") or current_id)
+            logger.info(
+                "[LangChainGraph] agent_id=%s iter=%s node_id=%s node_type=%s label=%s next_candidates=%s",
+                self._agent_id,
+                iterations,
+                current_id,
+                node_type,
+                label,
+                [str(edge.get("to") or "").strip() for edge in outgoing.get(current_id, [])],
+            )
             await self._emit_progress("trace", label, actor="LangChain Flow", kind=node_type)
 
             if node_type == "start":
@@ -444,6 +462,12 @@ class LangChainRuntime(AgentRuntime):
             state=state,
             query=self._build_rag_query(node=node, state=state),
         )
+        logger.info(
+            "[LangChainGraph] agent_id=%s agent_node=%s rag_context=%s chars",
+            self._agent_id,
+            str(node.get("id") or node.get("label") or "agent"),
+            len(rag_context or ""),
+        )
         prompt = "\n\n".join(
             [
                 self._system_prompt.strip(),
@@ -477,9 +501,22 @@ class LangChainRuntime(AgentRuntime):
         tool_name = self._resolve_tool_name(node)
         tool = self._tools_by_name.get(tool_name)
         if not tool:
+            logger.warning(
+                "[LangChainGraph] agent_id=%s tool node missing runtime tool tool_name=%s label=%s available=%s",
+                self._agent_id,
+                tool_name,
+                str(node.get("label") or ""),
+                sorted(self._tools_by_name.keys()),
+            )
             return f"[tool no disponible: {tool_name or 'sin tool_name'}]"
 
         payload = await self._build_tool_payload(tool=tool, node=node, state=state)
+        logger.info(
+            "[LangChainGraph] agent_id=%s running tool=%s payload=%s",
+            self._agent_id,
+            tool_name,
+            _trim_trace(str(payload)),
+        )
         query = _extract_tool_query(payload)
         if tool_name == "knowledge_base":
             message = f"Buscando en conocimientos{_summarize_query(query)}"
@@ -503,6 +540,12 @@ class LangChainRuntime(AgentRuntime):
             return f"[error de tool {tool_name}: {exc}]"
 
         output = str(result or "").strip()
+        logger.info(
+            "[LangChainGraph] agent_id=%s tool=%s output_chars=%s",
+            self._agent_id,
+            tool_name,
+            len(output),
+        )
         if tool_name == "knowledge_base":
             titles = _extract_rag_titles(output)
             snippets = _extract_rag_snippets(output)
@@ -796,6 +839,12 @@ class LangChainRuntime(AgentRuntime):
 
     async def _get_graph_rag_context(self, *, state: dict[str, Any], query: str) -> str:
         if not self._rag_available() or not self._agent_id:
+            logger.info(
+                "[LangChainGraph] agent_id=%s rag skipped available=%s query_present=%s",
+                self._agent_id,
+                self._rag_available(),
+                bool(query.strip()),
+            )
             return ""
 
         normalized_query = query.strip()
@@ -811,6 +860,13 @@ class LangChainRuntime(AgentRuntime):
 
             kb = KnowledgeBuilderService()
             accessible_kb_ids = await self._assigned_kb_ids(state)
+            logger.info(
+                "[LangChainGraph] agent_id=%s retrieving rag query=%s assigned_kbs=%s include_agent_source=%s",
+                self._agent_id,
+                _trim_trace(normalized_query),
+                accessible_kb_ids,
+                not accessible_kb_ids,
+            )
             context = await kb.retrieve_as_context(
                 self._agent_id,
                 normalized_query,
@@ -822,6 +878,11 @@ class LangChainRuntime(AgentRuntime):
             logger.warning("[LangChainGraph] RAG context unavailable for agent %s: %s", self._agent_id, exc)
             context = ""
 
+        logger.info(
+            "[LangChainGraph] agent_id=%s rag retrieved chars=%s",
+            self._agent_id,
+            len(context or ""),
+        )
         cache[normalized_query] = context or ""
         return cache[normalized_query]
 

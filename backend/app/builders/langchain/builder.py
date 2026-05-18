@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from langchain.agents import AgentExecutor, create_react_agent, create_tool_calling_agent
 from langchain.tools import BaseTool
 from langchain_core.output_parsers import StrOutputParser
@@ -16,6 +18,8 @@ from app.components.tools.observability import instrument_tool
 from app.runtime.langchain.runtime import LangChainRuntime
 from app.runtime.llm import LLMConfig, create_chat_llm
 from app.schemas.agent import AgentDesign, MemoryType
+
+logger = logging.getLogger(__name__)
 
 
 class LangChainAgentBuilder:
@@ -108,8 +112,23 @@ class LangChainAgentBuilder:
             )
 
         tools_by_name = {tool.name: tool for tool in tools}
+        logger.info(
+            "[LangChainBuilder] agent_id=%s mode=%s selected_mode=%s agent_type=%s rag_enabled=%s graph_uses_kb=%s graph_nodes=%s tools=%s",
+            design.agent_id,
+            spec.mode.value,
+            selected_mode_value,
+            agent_type,
+            getattr(spec.rag, "enabled", False),
+            graph_uses_knowledge_base,
+            len((design.graph_blueprint or {}).get("nodes", []) if isinstance(design.graph_blueprint, dict) else []),
+            sorted(tools_by_name.keys()),
+        )
 
         if self._should_use_graph_runtime(design):
+            logger.info(
+                "[LangChainBuilder] agent_id=%s using graph runtime",
+                design.agent_id,
+            )
             return LangChainRuntime(
                 executor=None,
                 memory_adapter=memory,
@@ -124,6 +143,10 @@ class LangChainAgentBuilder:
             )
 
         if not tools:
+            logger.info(
+                "[LangChainBuilder] agent_id=%s falling back to simple chain without tools",
+                design.agent_id,
+            )
             prompt = ChatPromptTemplate.from_messages([
                 ("system", self._escape_prompt(design.system_prompt)),
                 MessagesPlaceholder("chat_history"),
