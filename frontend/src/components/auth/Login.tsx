@@ -1,5 +1,5 @@
-import { Bot, Building2, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { Building2, LockKeyhole, Sparkles } from 'lucide-react'
+import { useState } from 'react'
 
 import vleengLogo from '../../assets/vleeng-logo.png'
 import { authApi } from '../../lib/api'
@@ -181,15 +181,6 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
               Diseñá agentes, conectalos a herramientas, evaluá resultados y desplegá con una interfaz más clara y
               centrada en operación real.
             </p>
-          </div>
-
-          <div className="relative z-10 mt-auto grid gap-4">
-            <MetricCard icon={<ShieldCheck className="h-5 w-5" />} title="Credenciales cifradas">
-              Bóveda por proveedor, defaults operativos y trazabilidad.
-            </MetricCard>
-            <MetricCard icon={<Bot className="h-5 w-5" />} title="Monitor en vivo">
-              Chat sandbox, evaluación, optimización y fuentes de conocimiento.
-            </MetricCard>
           </div>
         </div>
 
@@ -460,26 +451,6 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-function MetricCard({
-  icon,
-  title,
-  children,
-}: {
-  icon: ReactNode
-  title: string
-  children: ReactNode
-}) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
-      <div className="flex items-center gap-3 text-violet-200">
-        {icon}
-        <span className="font-medium text-white">{title}</span>
-      </div>
-      <p className="mt-3 text-sm leading-6 text-slate-300">{children}</p>
     </div>
   )
 }
