@@ -865,14 +865,17 @@ class LangChainRuntime(AgentRuntime):
                 self._agent_id,
                 _trim_trace(normalized_query),
                 accessible_kb_ids,
-                not accessible_kb_ids,
+                False,
             )
+            if not accessible_kb_ids:
+                cache[normalized_query] = ""
+                return ""
             context = await kb.retrieve_as_context(
                 self._agent_id,
                 normalized_query,
                 self.spec.rag.top_k,
                 extra_owner_ids=accessible_kb_ids,
-                include_agent_source=not accessible_kb_ids,
+                include_agent_source=False,
             )
         except Exception as exc:
             logger.warning("[LangChainGraph] RAG context unavailable for agent %s: %s", self._agent_id, exc)

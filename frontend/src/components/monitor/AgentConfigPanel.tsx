@@ -274,11 +274,14 @@ export function AgentConfigPanel({ agentId }: Props) {
       </Section>
 
       {/* ── Knowledge Bases ── */}
-      <Section title="Bases de Conocimiento" badge={`${assignedKbs.length} disponibles`}>
+      <Section title="Bases de Conocimiento" badge={`${assignedKbs.length} accesibles`}>
         {allKbs.length === 0 ? (
           <p className="text-xs text-gray-400">Sin bases disponibles en este tenant. Si acabás de crear o editar una, usá <strong>Actualizar configuración</strong>.</p>
         ) : (
           <div className="space-y-2">
+            <p className="text-xs text-gray-500">
+              El agente consulta únicamente las bases globales o las que estén asignadas acá.
+            </p>
             {allKbs.map(kb => {
               const assigned = assignedKbs.some(k => k.id === kb.id)
               const isGlobal = kb.access_mode === 'global'

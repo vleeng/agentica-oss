@@ -275,7 +275,7 @@ class KnowledgeBuilderService:
         query: str,
         top_k: int = 4,
         extra_owner_ids: list[str] | None = None,
-        include_agent_source: bool = True,
+        include_agent_source: bool = False,
     ) -> str:
         """Retorna los fragmentos formateados como contexto para el LLM."""
         owner_ids = ([agent_id] if include_agent_source else []) + list(extra_owner_ids or [])

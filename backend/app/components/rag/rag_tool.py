@@ -34,13 +34,15 @@ class RAGTool(BaseTool):
         try:
             from app.components.rag.knowledge_builder import KnowledgeBuilderService
             kb = KnowledgeBuilderService()
-            extra_owner_ids = await self._accessible_kb_ids()
+            kb_ids = await self._accessible_kb_ids()
+            if not kb_ids:
+                return "No hay bases de conocimiento compartidas asignadas a este agente."
             context = await kb.retrieve_as_context(
                 self.agent_id,
                 query,
                 self.top_k,
-                extra_owner_ids=extra_owner_ids,
-                include_agent_source=not extra_owner_ids,
+                extra_owner_ids=kb_ids,
+                include_agent_source=False,
             )
             return context or "No se encontró información relevante en la base de conocimiento."
         except ValueError as e:

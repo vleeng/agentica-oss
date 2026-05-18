@@ -463,28 +463,6 @@ export const usageApi = {
   agents: (): Promise<AgentUsage[]> => api.get('/usage/agents').then((r) => r.data),
 }
 
-export const knowledgeApi = {
-  getSources: (agentId: string) => api.get(`/knowledge/${agentId}/sources`).then((r) => r.data),
-  deleteSource: (agentId: string, source: string) =>
-    api.delete(`/knowledge/${agentId}/source`, { data: { source } }).then((r) => r.data),
-  ingestJson: (agentId: string, sources: string[], chunk_size = 500, chunk_overlap = 50) =>
-    api
-      .post(`/knowledge/${agentId}/ingest`, { agent_id: agentId, rag_spec: { sources, chunk_size, chunk_overlap } })
-      .then((r) => r.data),
-  ingestFile: (agentId: string, file: File, chunk_size = 500, chunk_overlap = 50) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('chunk_size', chunk_size.toString())
-    formData.append('chunk_overlap', chunk_overlap.toString())
-    return api
-      .post(`/knowledge/${agentId}/ingest/file`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
-      .then((r) => r.data)
-  },
-  getStats: (agentId: string) => api.get(`/knowledge/${agentId}/stats`).then((r) => r.data),
-  retrieve: (agentId: string, query: string, top_k = 4) =>
-    api.post(`/knowledge/${agentId}/retrieve`, { query, top_k }).then((r) => r.data),
-}
-
 export const apiKeysApi = {
   list: () => api.get('/keys/').then((r) => r.data as APIKey[]),
   create: (name: string, agentId: string, scopes = ['invoke']) =>
