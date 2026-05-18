@@ -29,6 +29,13 @@ export function summarizeAgentProgress(event: ProgressEvent): string | null {
   const message = String(event.message || '').trim()
   const lowered = message.toLowerCase()
 
+  const isGenericFlowStep = (
+    lowered.includes('preparando flujo langchain')
+    || lowered.includes('entrando al flujo langchain')
+    || lowered.includes('resolviendo decision')
+    || lowered.includes('ejecutando paso')
+  )
+
   if (kind === 'rag_result') {
     if (titles.length > 0) {
       const preview = titles.slice(0, 3).join(', ')
@@ -78,6 +85,9 @@ export function summarizeAgentProgress(event: ProgressEvent): string | null {
   }
 
   if (phase === 'preparing') {
+    if (isGenericFlowStep) {
+      return null
+    }
     return message || 'Pensando'
   }
 
@@ -100,11 +110,12 @@ export function summarizeAgentProgress(event: ProgressEvent): string | null {
 
   if (
     lowered.includes('pensando')
-    || lowered.includes('resolviendo decision')
-    || lowered.includes('ejecutando paso')
-    || lowered.includes('entrando al flujo')
   ) {
     return message || 'Pensando'
+  }
+
+  if (isGenericFlowStep) {
+    return null
   }
 
   if (lowered.includes('armando la respuesta') || lowered.includes('redactando la respuesta')) {
