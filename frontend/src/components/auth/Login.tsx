@@ -1,6 +1,7 @@
 import { Bot, Building2, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
+import vleengLogo from '../../assets/vleeng-logo.png'
 import { authApi } from '../../lib/api'
 import { formatApiError } from '../../lib/errors'
 import { useAuthStore } from '../../stores/auth'
@@ -155,8 +156,17 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#ede9fe,transparent_28%),radial-gradient(circle_at_bottom_right,#dbeafe,transparent_24%),linear-gradient(180deg,#0f172a_0%,#111827_40%,#e2e8f0_40%,#f8fafc_100%)] p-4 md:p-8">
-      <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-6xl overflow-hidden rounded-[28px] border border-white/40 bg-white shadow-[0_20px_80px_rgba(15,23,42,0.18)] md:grid-cols-[1.1fr_0.9fr]">
-        <div className="relative hidden overflow-hidden bg-slate-950 p-10 text-white md:flex md:flex-col">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4">
+        <div className="flex justify-center">
+          <img
+            src={vleengLogo}
+            alt="Vleeng"
+            className="h-auto w-[220px] select-none md:w-[280px]"
+          />
+        </div>
+
+        <div className="grid min-h-[calc(100vh-2rem-72px)] overflow-hidden rounded-[28px] border border-white/40 bg-white shadow-[0_20px_80px_rgba(15,23,42,0.18)] md:grid-cols-[1.1fr_0.9fr]">
+          <div className="relative hidden overflow-hidden bg-slate-950 p-10 text-white md:flex md:flex-col">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#8b5cf6_0%,transparent_38%)] opacity-40" />
           <div className="relative z-10 flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/20 text-violet-200">
@@ -451,6 +461,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
               Infraestructura privada, llaves cifradas y operación bajo tu control.
             </p>
           </div>
+        </div>
         </div>
       </div>
     </div>
