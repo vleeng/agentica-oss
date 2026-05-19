@@ -692,7 +692,7 @@ class LangChainRuntime(AgentRuntime):
     async def _build_tool_payload(self, *, tool: BaseTool, node: dict[str, Any], state: dict[str, Any]) -> Any:
         args_schema = getattr(tool, "args_schema", None)
         context_text = _render_graph_context(state)
-        fallback_query = _default_tool_input(state)
+        fallback_query = _tool_default_input(tool.name, state)
 
         if not args_schema:
             return fallback_query
@@ -1101,6 +1101,13 @@ def _default_tool_input(state: dict[str, Any]) -> str:
         if output:
             return output
     return str(state.get("user_input") or "").strip()
+
+
+def _tool_default_input(tool_name: str, state: dict[str, Any]) -> str:
+    user_input = str(state.get("user_input") or "").strip()
+    if tool_name in {"web_search", "knowledge_base"} and user_input:
+        return user_input
+    return _default_tool_input(state)
 
 
 def _extract_tool_query(value: Any) -> str:
