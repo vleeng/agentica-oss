@@ -2,11 +2,9 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   AgentMode, WizardState, WIZARD_DEFAULTS,
-  applyToolReadiness, AVAILABLE_TOOLS, AVAILABLE_MODELS, ChannelType, KnowledgeBase, SingleAgentMode, ToolReadinessStatus, ToolRef,
-  WizardAdvisorResponse,
+  applyToolReadiness, AVAILABLE_TOOLS, ChannelType, KnowledgeBase, SingleAgentMode, ToolReadinessStatus, ToolRef,
 } from '../../types/agent'
 import { StepCrew } from './StepCrew'
-import { WizardAdvisorPanel } from './WizardAdvisorPanel'
 
 // Wizard steps
 const STEPS_SINGLE = [
@@ -50,10 +48,6 @@ export function RequirementWizard({ onComplete }: Props) {
   const [toolReadiness, setToolReadiness] = useState<Record<string, ToolReadinessStatus>>({})
   const [toolReadinessRows, setToolReadinessRows] = useState<ToolReadinessStatus[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
-  const [aiAssistEnabled, setAiAssistEnabled] = useState(false)
-  const [advisorLoading, setAdvisorLoading] = useState(false)
-  const [advisorError, setAdvisorError] = useState('')
-  const [advisorResult, setAdvisorResult] = useState<WizardAdvisorResponse | null>(null)
 
   const STEPS = state.mode === 'crew' ? STEPS_CREW : getSingleSteps(state.single_agent_mode)
   const toolsCatalog = AVAILABLE_TOOLS.map(tool => applyToolReadiness(tool, toolReadiness))
@@ -67,33 +61,6 @@ export function RequirementWizard({ onComplete }: Props) {
   const handleSubmit = async () => {
     setGenerating(true)
     onComplete(state)
-  }
-
-  const analyzeWithAdvisor = async (finalReview = false) => {
-    setAdvisorLoading(true)
-    setAdvisorError('')
-    try {
-      const { wizardAdvisorApi } = await import('../../lib/api')
-      const result = await wizardAdvisorApi.analyze({
-        step: state.step,
-        step_key: getStepKey(STEPS[state.step]?.title || ''),
-        final_review: finalReview,
-        wizard_state: state,
-        available_tools: toolsCatalog,
-        tool_readiness: toolReadinessRows,
-        available_models: AVAILABLE_MODELS,
-      })
-      setAdvisorResult(result)
-    } catch (e: any) {
-      setAdvisorError(e.response?.data?.detail || 'No se pudo analizar el diseno con IA.')
-    } finally {
-      setAdvisorLoading(false)
-    }
-  }
-
-  const applyAdvisorPatch = (patch: Partial<WizardState>) => {
-    update(patch)
-    setAdvisorResult(null)
   }
 
   useEffect(() => {
@@ -122,7 +89,7 @@ export function RequirementWizard({ onComplete }: Props) {
   }, [])
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 lg:grid-cols-[minmax(0,42rem)_20rem]">
+    <div className="mx-auto max-w-4xl px-4 py-8">
       <div>
       {/* Stepper */}
       <div className="flex items-center gap-1 mb-10">
@@ -205,16 +172,6 @@ export function RequirementWizard({ onComplete }: Props) {
         )}
       </div>
       </div>
-
-      <WizardAdvisorPanel
-        enabled={aiAssistEnabled}
-        loading={advisorLoading}
-        result={advisorResult}
-        error={advisorError}
-        onToggle={setAiAssistEnabled}
-        onAnalyze={analyzeWithAdvisor}
-        onApplyPatch={applyAdvisorPatch}
-      />
     </div>
   )
 }
@@ -876,15 +833,6 @@ function normalizeWizardState(state: WizardState): WizardState {
   }
 
   return state
-}
-
-function getStepKey(title: string): string {
-  return title
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '') || 'unknown'
 }
 
 
