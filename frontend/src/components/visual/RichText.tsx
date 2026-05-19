@@ -17,6 +17,9 @@ function normalizeRichTextContent(content: string): string {
     'Tips',
     'Tiempo total',
     'Tiempo aproximado',
+    'Tiempo estimado',
+    'Porciones',
+    'Nombre de la receta',
     'Para la masa',
     'Para el relleno',
     'Para servir',
@@ -25,35 +28,39 @@ function normalizeRichTextContent(content: string): string {
   for (const heading of commonHeadings) {
     const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     normalized = normalized.replace(new RegExp(`([^\\n])\\s+(${escaped}:)`, 'g'), '$1\n\n$2')
+    normalized = normalized.replace(new RegExp(`(^|\\n)(${escaped}:)`, 'g'), '$1### $2')
   }
 
   return normalized
 }
 
-// ── Inline rendering (bold, italic, inline-code) ──────────────────────────────
 function renderInline(text: string): ReactNode[] {
-  // Split on inline-code first, then bold, then italic
   const segments = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g)
   return segments.map((seg, i) => {
-    if (seg.startsWith('`') && seg.endsWith('`'))
-      return <code key={i} className="rounded bg-slate-900/90 px-1.5 py-0.5 text-[0.85em] text-white font-mono">{seg.slice(1, -1)}</code>
-    if (seg.startsWith('**') && seg.endsWith('**'))
+    if (seg.startsWith('`') && seg.endsWith('`')) {
+      return (
+        <code key={i} className="rounded bg-slate-900/90 px-1.5 py-0.5 text-[0.85em] font-mono text-white">
+          {seg.slice(1, -1)}
+        </code>
+      )
+    }
+    if (seg.startsWith('**') && seg.endsWith('**')) {
       return <strong key={i}>{seg.slice(2, -2)}</strong>
-    if (seg.startsWith('*') && seg.endsWith('*'))
+    }
+    if (seg.startsWith('*') && seg.endsWith('*')) {
       return <em key={i}>{seg.slice(1, -1)}</em>
+    }
     return <span key={i}>{seg}</span>
   })
 }
 
-// ── Table parser ─────────────────────────────────────────────────────────────
 function parseTable(lines: string[]): ReactNode {
-  const rows = lines.map(l =>
-    l.replace(/^\||\|$/g, '').split('|').map(c => c.trim())
+  const rows = lines.map((line) =>
+    line.replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim()),
   )
-  // Second row is separator (---|---); remove it
   const [header, , ...body] = rows
   return (
-    <div key={Math.random()} className="overflow-x-auto my-3">
+    <div key={Math.random()} className="my-3 overflow-x-auto">
       <table className="min-w-full border-collapse text-sm">
         <thead>
           <tr className="bg-slate-100">
@@ -80,7 +87,6 @@ function parseTable(lines: string[]): ReactNode {
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
 export function RichText({ content }: { content: string }) {
   const lines = normalizeRichTextContent(content).split('\n')
   const nodes: ReactNode[] = []
@@ -93,9 +99,13 @@ export function RichText({ content }: { content: string }) {
   const flushBullet = () => {
     if (!bulletItems.length) return
     nodes.push(
-      <ul key={key++} className="list-disc space-y-1 pl-5 my-2">
-        {bulletItems.map((item, i) => <li key={i} className="text-sm leading-7">{renderInline(item)}</li>)}
-      </ul>
+      <ul key={key++} className="my-2 list-disc space-y-1 pl-5">
+        {bulletItems.map((item, i) => (
+          <li key={i} className="text-sm leading-7">
+            {renderInline(item)}
+          </li>
+        ))}
+      </ul>,
     )
     bulletItems = []
   }
@@ -103,67 +113,85 @@ export function RichText({ content }: { content: string }) {
   const flushOrdered = () => {
     if (!orderedItems.length) return
     nodes.push(
-      <ol key={key++} className="list-decimal space-y-1 pl-5 my-2">
-        {orderedItems.map((item, i) => <li key={i} className="text-sm leading-7">{renderInline(item)}</li>)}
-      </ol>
+      <ol key={key++} className="my-2 list-decimal space-y-1 pl-5">
+        {orderedItems.map((item, i) => (
+          <li key={i} className="text-sm leading-7">
+            {renderInline(item)}
+          </li>
+        ))}
+      </ol>,
     )
     orderedItems = []
   }
 
   const flushTable = () => {
-    if (tableLines.length < 3) { tableLines = []; return }
+    if (tableLines.length < 3) {
+      tableLines = []
+      return
+    }
     nodes.push(parseTable(tableLines))
     tableLines = []
   }
 
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = 0; i < lines.length; i += 1) {
     const raw = lines[i]
     const line = raw.trimEnd()
 
-    // ── Table row ──
     if (line.startsWith('|')) {
-      flushBullet(); flushOrdered()
+      flushBullet()
+      flushOrdered()
       tableLines.push(line)
       continue
-    } else {
-      flushTable()
     }
+    flushTable()
 
-    // ── Horizontal rule ──
     if (/^[-*_]{3,}$/.test(line.trim())) {
-      flushBullet(); flushOrdered()
+      flushBullet()
+      flushOrdered()
       nodes.push(<hr key={key++} className="my-3 border-slate-200" />)
       continue
     }
 
-    // ── Headings ──
     const h3 = line.match(/^###\s+(.+)/)
     const h2 = line.match(/^##\s+(.+)/)
     const h1 = line.match(/^#\s+(.+)/)
     if (h3) {
-      flushBullet(); flushOrdered()
-      nodes.push(<h3 key={key++} className="text-sm font-semibold text-slate-800 mt-4 mb-1">{renderInline(h3[1])}</h3>)
+      flushBullet()
+      flushOrdered()
+      nodes.push(
+        <h3 key={key++} className="mb-1 mt-4 text-sm font-semibold text-slate-800">
+          {renderInline(h3[1])}
+        </h3>,
+      )
       continue
     }
     if (h2) {
-      flushBullet(); flushOrdered()
-      nodes.push(<h2 key={key++} className="text-base font-semibold text-slate-900 mt-4 mb-1">{renderInline(h2[1])}</h2>)
+      flushBullet()
+      flushOrdered()
+      nodes.push(
+        <h2 key={key++} className="mb-1 mt-4 text-base font-semibold text-slate-900">
+          {renderInline(h2[1])}
+        </h2>,
+      )
       continue
     }
     if (h1) {
-      flushBullet(); flushOrdered()
-      nodes.push(<h1 key={key++} className="text-lg font-bold text-slate-900 mt-4 mb-1">{renderInline(h1[1])}</h1>)
+      flushBullet()
+      flushOrdered()
+      nodes.push(
+        <h1 key={key++} className="mb-1 mt-4 text-lg font-bold text-slate-900">
+          {renderInline(h1[1])}
+        </h1>,
+      )
       continue
     }
 
-    // ── Bullet list ──
     if (line.startsWith('- ') || line.startsWith('* ')) {
       flushOrdered()
       bulletItems.push(line.slice(2))
       continue
     }
 
-    // ── Ordered list ──
     const orderedMatch = line.match(/^\d+\.\s+(.+)/)
     if (orderedMatch) {
       flushBullet()
@@ -171,18 +199,18 @@ export function RichText({ content }: { content: string }) {
       continue
     }
 
-    // ── Empty line ──
     if (!line.trim()) {
-      flushBullet(); flushOrdered()
+      flushBullet()
+      flushOrdered()
       continue
     }
 
-    // ── Regular paragraph ──
-    flushBullet(); flushOrdered()
+    flushBullet()
+    flushOrdered()
     nodes.push(
-      <p key={key++} className="text-sm leading-7 whitespace-pre-wrap">
+      <p key={key++} className="whitespace-pre-wrap text-sm leading-7">
         {renderInline(line)}
-      </p>
+      </p>,
     )
   }
 
