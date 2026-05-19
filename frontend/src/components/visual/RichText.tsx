@@ -87,6 +87,21 @@ function parseTable(lines: string[]): ReactNode {
   )
 }
 
+function renderLabeledParagraph(line: string): ReactNode | null {
+  const match = line.match(
+    /^(Nombre de la receta|Ingredientes|Preparacion|Preparación|Consejos|Consejos utiles|Consejos útiles|Tips|Tiempo total|Tiempo aproximado|Tiempo estimado|Porciones):\s*(.*)$/i,
+  )
+  if (!match) return null
+
+  const [, label, rest] = match
+  return (
+    <p className="whitespace-pre-wrap text-sm leading-7">
+      <strong>{label}:</strong>
+      {rest ? <> {renderInline(rest)}</> : null}
+    </p>
+  )
+}
+
 export function RichText({ content }: { content: string }) {
   const lines = normalizeRichTextContent(content).split('\n')
   const nodes: ReactNode[] = []
@@ -159,7 +174,7 @@ export function RichText({ content }: { content: string }) {
       flushBullet()
       flushOrdered()
       nodes.push(
-        <h3 key={key++} className="mb-1 mt-4 text-sm font-semibold text-slate-800">
+        <h3 key={key++} className="mb-2 mt-5 text-base font-bold text-slate-900">
           {renderInline(h3[1])}
         </h3>,
       )
@@ -207,6 +222,11 @@ export function RichText({ content }: { content: string }) {
 
     flushBullet()
     flushOrdered()
+    const labeled = renderLabeledParagraph(line)
+    if (labeled) {
+      nodes.push(<div key={key++}>{labeled}</div>)
+      continue
+    }
     nodes.push(
       <p key={key++} className="whitespace-pre-wrap text-sm leading-7">
         {renderInline(line)}
