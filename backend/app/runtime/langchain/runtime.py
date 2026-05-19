@@ -196,6 +196,10 @@ class LangChainRuntime(AgentRuntime):
                             query = _extract_tool_query(tool_input)
                             detail = _summarize_query(query)
                             message = f"Buscando en conocimientos{detail}"
+                        elif tool_name == "web_search":
+                            query = _extract_tool_query(tool_input)
+                            detail = _summarize_query(query, max_length=56)
+                            message = f"Buscando en web{detail}" if detail else "Buscando en web"
                         else:
                             message = f"Usando herramienta: {tool_name}"
                         await self._emit_progress(
@@ -226,6 +230,14 @@ class LangChainRuntime(AgentRuntime):
                                     f"Hallazgos: {' | '.join(snippets[:3])}",
                                     actor=tool_name,
                                     kind="rag_preview",
+                                )
+                        elif tool_name == "web_search":
+                            if _is_web_search_error(tool_output):
+                                await self._emit_progress(
+                                    "status",
+                                    _summarize_web_error(tool_output),
+                                    actor=tool_name,
+                                    kind="web_error",
                                 )
                         await self._emit_progress("status", "Armando la respuesta final", kind="answer")
 
@@ -574,6 +586,13 @@ class LangChainRuntime(AgentRuntime):
                     kind="rag_preview",
                 )
         elif tool_name == "web_search":
+            if _is_web_search_error(output):
+                await self._emit_progress(
+                    "status",
+                    _summarize_web_error(output),
+                    actor="web_search",
+                    kind="web_error",
+                )
             web_results = _extract_web_results(output)
             if web_results:
                 state["web_search_results"] = web_results
@@ -1087,11 +1106,11 @@ def _default_tool_input(state: dict[str, Any]) -> str:
 def _extract_tool_query(value: Any) -> str:
     if isinstance(value, dict):
         for key in ("query", "input", "text", "expression"):
-            candidate = str(value.get(key) or "").strip()
+            candidate = _sanitize_visible_tool_query(value.get(key))
             if candidate:
                 return candidate
         return ""
-    return str(value or "").strip()
+    return _sanitize_visible_tool_query(value)
 
 
 def _normalize_node_type(value: Any) -> str:
@@ -1111,6 +1130,20 @@ def _summarize_query(query: str, max_length: int = 72) -> str:
     if len(text) > max_length:
         text = text[: max_length - 3].rstrip() + "..."
     return f": {text}"
+
+
+def _sanitize_visible_tool_query(value: Any) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    if lowered.startswith(("si, me fijo", "sí, me fijo", "claro,", "perfecto,")):
+        return ""
+    if any(token in lowered for token in ("si quieres", "si queres", "si prefieres")) and any(marker in text for marker in ("1.", "2.")):
+        return ""
+    if len(text) > 180 and any(marker in text for marker in ("1.", "2.", "3.")):
+        return ""
+    return text
 
 
 def _extract_rag_titles(output: str) -> list[str]:
@@ -1208,6 +1241,18 @@ def _extract_web_results(output: str) -> list[dict[str, str]]:
 
     flush()
     return [result for result in results if result.get("title") or result.get("url")]
+
+
+def _is_web_search_error(output: str) -> bool:
+    lowered = str(output or "").strip().lower()
+    return lowered.startswith("[web_search error:") or lowered.startswith("[web_search no disponible:")
+
+
+def _summarize_web_error(output: str) -> str:
+    lowered = str(output or "").strip().lower()
+    if "no disponible" in lowered:
+        return "La busqueda web no esta disponible en este momento"
+    return "La busqueda web fallo y sigo con el conocimiento disponible"
 
 
 def _summarize_web_result(results: list[dict[str, str]]) -> str:

@@ -6,12 +6,53 @@ export function appendProgressEntry(entries: string[] | undefined, nextEntry: st
   const label = String(nextEntry || '').trim()
   const current = Array.isArray(entries) ? [...entries] : []
   if (!label) return current
-  if (current[current.length - 1] === label) return current
+  const last = current[current.length - 1]
+  if (last === label) return current
+
+  if (last === 'Pensando' && label.startsWith('Pensando:')) {
+    current[current.length - 1] = label
+    return current
+  }
+
+  if (last && areSimilarProgressEntries(last, label)) {
+    return current
+  }
+
   current.push(label)
   if (current.length > limit) {
     return current.slice(current.length - limit)
   }
   return current
+}
+
+function areSimilarProgressEntries(a: string, b: string): boolean {
+  const left = normalizeProgressEntry(a)
+  const right = normalizeProgressEntry(b)
+  if (!left || !right) return false
+  if (left === right) return true
+
+  const sameThinking = left.startsWith('pensando:') && right.startsWith('pensando:')
+  const sameWebSearch = left.startsWith('buscando en web') && right.startsWith('buscando en web')
+  if (!(sameThinking || sameWebSearch)) return false
+
+  const leftTokens = new Set(left.split(/\s+/).filter((token) => token.length > 3))
+  const rightTokens = new Set(right.split(/\s+/).filter((token) => token.length > 3))
+  if (!leftTokens.size || !rightTokens.size) return false
+
+  let overlap = 0
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) overlap += 1
+  }
+  const ratio = overlap / Math.max(leftTokens.size, rightTokens.size)
+  return ratio >= 0.65
+}
+
+function normalizeProgressEntry(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[.,;:!?()[\]"]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 export function summarizeAgentProgress(event: ProgressEvent): string | null {
@@ -54,6 +95,10 @@ export function summarizeAgentProgress(event: ProgressEvent): string | null {
 
   if (kind === 'web_sources') {
     return message || 'Revise las fuentes web encontradas'
+  }
+
+  if (kind === 'web_error') {
+    return message || 'La busqueda web fallo'
   }
 
   if (kind === 'tool') {
