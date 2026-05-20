@@ -1,35 +1,48 @@
 import type { ReactNode } from 'react'
 
+const COMMON_HEADINGS = [
+  'Nombre de la receta',
+  'Ingredientes',
+  'Preparacion',
+  'Preparación',
+  'Consejos',
+  'Consejos utiles',
+  'Consejos útiles',
+  'Tips',
+  'Tiempo total',
+  'Tiempo aproximado',
+  'Tiempo estimado',
+  'Porciones',
+  'Analisis nutricional',
+  'Análisis nutricional',
+  'Para la masa',
+  'Para el relleno',
+  'Para servir',
+]
+
 function normalizeRichTextContent(content: string): string {
   let normalized = String(content || '')
     .replace(/\r\n/g, '\n')
     .replace(/([^\n])\s+(#{1,3}\s+)/g, '$1\n\n$2')
     .replace(/([.!?])\s+(\d+\.\s+)/g, '$1\n$2')
+    .replace(/([.!?])\s+(\d+\)\s+)/g, '$1\n$2')
     .replace(/([^\n])\s+([-*]\s+)/g, '$1\n$2')
 
-  const commonHeadings = [
-    'Ingredientes',
-    'Preparacion',
-    'Preparación',
-    'Consejos',
-    'Consejos utiles',
-    'Consejos útiles',
-    'Tips',
-    'Tiempo total',
-    'Tiempo aproximado',
-    'Tiempo estimado',
-    'Porciones',
-    'Nombre de la receta',
-    'Para la masa',
-    'Para el relleno',
-    'Para servir',
-  ]
+  for (const heading of COMMON_HEADINGS) {
+    const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    normalized = normalized.replace(
+      new RegExp(`(^|\\n)(\\d+[\\.)]\\s+[^\\n:]{3,120}?)\\s+(${escaped}:)`, 'g'),
+      '$1## $2\n\n### $3',
+    )
+  }
 
-  for (const heading of commonHeadings) {
+  for (const heading of COMMON_HEADINGS) {
     const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     normalized = normalized.replace(new RegExp(`([^\\n])\\s+(${escaped}:)`, 'g'), '$1\n\n$2')
     normalized = normalized.replace(new RegExp(`(^|\\n)(${escaped}:)`, 'g'), '$1### $2')
   }
+
+  normalized = normalized.replace(/(^|\n)(\d+[\.)]\s+[^\n:#]{3,120})(?=\n### )/g, '$1## $2')
 
   return normalized
 }
@@ -89,7 +102,7 @@ function parseTable(lines: string[]): ReactNode {
 
 function renderLabeledParagraph(line: string): ReactNode | null {
   const match = line.match(
-    /^(Nombre de la receta|Ingredientes|Preparacion|Preparación|Consejos|Consejos utiles|Consejos útiles|Tips|Tiempo total|Tiempo aproximado|Tiempo estimado|Porciones):\s*(.*)$/i,
+    /^(Nombre de la receta|Ingredientes|Preparacion|Preparación|Consejos|Consejos utiles|Consejos útiles|Tips|Tiempo total|Tiempo aproximado|Tiempo estimado|Porciones|Analisis nutricional|Análisis nutricional):\s*(.*)$/i,
   )
   if (!match) return null
 
@@ -207,7 +220,7 @@ export function RichText({ content }: { content: string }) {
       continue
     }
 
-    const orderedMatch = line.match(/^\d+\.\s+(.+)/)
+    const orderedMatch = line.match(/^\d+[.)]\s+(.+)/)
     if (orderedMatch) {
       flushBullet()
       orderedItems.push(orderedMatch[1])
