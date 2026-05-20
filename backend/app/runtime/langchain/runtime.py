@@ -217,12 +217,14 @@ class LangChainRuntime(AgentRuntime):
                         if tool_name == "knowledge_base":
                             titles = _extract_rag_titles(tool_output)
                             snippets = _extract_rag_snippets(tool_output)
+                            result_count = len(titles) or len(snippets) or (1 if tool_output else 0)
                             await self._emit_progress(
                                 "status",
                                 _summarize_rag_result(titles, tool_output),
                                 actor=tool_name,
                                 kind="rag_result",
                                 titles=titles,
+                                result_count=result_count,
                             )
                             if snippets:
                                 await self._emit_progress(
@@ -569,6 +571,7 @@ class LangChainRuntime(AgentRuntime):
         if tool_name == "knowledge_base":
             titles = _extract_rag_titles(output)
             snippets = _extract_rag_snippets(output)
+            result_count = len(titles) or len(snippets) or (1 if output else 0)
             state["knowledge_base_context"] = output
             state["knowledge_base_query"] = query
             await self._emit_progress(
@@ -577,6 +580,7 @@ class LangChainRuntime(AgentRuntime):
                 actor="knowledge_base",
                 kind="rag_result",
                 titles=titles,
+                result_count=result_count,
             )
             if snippets:
                 await self._emit_progress(
@@ -603,6 +607,7 @@ class LangChainRuntime(AgentRuntime):
                     actor="web_search",
                     kind="web_result",
                     titles=titles,
+                    result_count=len(web_results),
                 )
                 previews = [result["url"] for result in web_results if result.get("url")]
                 if previews:
@@ -925,12 +930,14 @@ class LangChainRuntime(AgentRuntime):
             )
             titles = _extract_rag_titles(cached_tool_context)
             snippets = _extract_rag_snippets(cached_tool_context)
+            result_count = len(titles) or len(snippets) or (1 if cached_tool_context else 0)
             await self._emit_progress(
                 "status",
                 _summarize_rag_result(titles, cached_tool_context),
                 actor="knowledge_base",
                 kind="rag_result",
                 titles=titles,
+                result_count=result_count,
             )
             if snippets:
                 await self._emit_progress(
@@ -981,12 +988,14 @@ class LangChainRuntime(AgentRuntime):
         )
         titles = _extract_rag_titles(context)
         snippets = _extract_rag_snippets(context)
+        result_count = len(titles) or len(snippets) or (1 if context else 0)
         await self._emit_progress(
             "status",
             _summarize_rag_result(titles, context),
             actor="knowledge_base",
             kind="rag_result",
             titles=titles,
+            result_count=result_count,
         )
         if snippets:
             await self._emit_progress(

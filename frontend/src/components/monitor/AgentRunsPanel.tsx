@@ -353,10 +353,29 @@ function toneForEvent(event: AgentRunEvent): 'slate' | 'violet' | 'blue' | 'gree
 
 function renderEventPayload(event: AgentRunEvent) {
   const payload = event.payload || {}
+  const resultCount =
+    typeof payload.result_count === 'number'
+      ? payload.result_count
+      : typeof payload.result_count === 'string' && payload.result_count.trim()
+        ? Number(payload.result_count)
+        : null
+
   if (event.kind === 'rag_result' && Array.isArray(payload.titles) && payload.titles.length > 0) {
-    return <p className="mt-2 text-xs leading-5 text-slate-500">Titulos: {payload.titles.slice(0, 3).join(' | ')}</p>
+    return (
+      <>
+        {Number.isFinite(resultCount) && resultCount !== null ? (
+          <p className="mt-2 text-xs leading-5 text-slate-500">Resultados: {resultCount}</p>
+        ) : null}
+        <p className="mt-1 text-xs leading-5 text-slate-500">Titulos: {payload.titles.slice(0, 3).join(' | ')}</p>
+      </>
+    )
   }
-  if (event.kind === 'rag_preview' || event.kind === 'web_result') {
+  if (event.kind === 'web_result') {
+    return Number.isFinite(resultCount) && resultCount !== null ? (
+      <p className="mt-2 text-xs leading-5 text-slate-500">Resultados: {resultCount}</p>
+    ) : null
+  }
+  if (event.kind === 'rag_preview') {
     return null
   }
   if (event.kind === 'web_error' && typeof payload.raw_output === 'string' && payload.raw_output.trim()) {
