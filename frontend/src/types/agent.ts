@@ -184,11 +184,13 @@ export interface AgentRunSummary {
   conversation_id: string
   session_id: string
   channel: string
+  status: 'completed' | 'completed_with_issues' | 'failed' | 'in_progress'
   user_ref?: string | null
   created_at: string
   last_activity_at: string
   message_count: number
   event_count: number
+  error_events: number
   tool_events: number
   kb_events: number
   web_events: number

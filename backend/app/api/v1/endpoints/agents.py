@@ -136,11 +136,13 @@ class AgentRunSummary(BaseModel):
     conversation_id: str
     session_id: str
     channel: str
+    status: str
     user_ref: str | None = None
     created_at: str
     last_activity_at: str
     message_count: int
     event_count: int
+    error_events: int
     tool_events: int
     kb_events: int
     web_events: int
@@ -930,7 +932,7 @@ async def _persist_runtime_error_event(
             actor="runtime",
             kind="runtime_error",
             message=message,
-            payload={"channel": channel, "session_id": session_id},
+            payload={"channel": channel, "session_id": session_id, "error": message},
         )
 
     try:

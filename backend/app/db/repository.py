@@ -395,6 +395,10 @@ class AgentRepository:
                         ce.conversation_id,
                         COUNT(*) AS event_count,
                         COUNT(*) FILTER (
+                            WHERE ce.event_type = 'runtime_error'
+                               OR COALESCE(ce.kind, '') IN ('runtime_error', 'web_error')
+                        ) AS error_events,
+                        COUNT(*) FILTER (
                             WHERE ce.event_type = 'progress'
                               AND COALESCE(ce.actor, '') NOT IN ('knowledge_base', 'web_search')
                               AND COALESCE(ce.kind, '') = 'tool'
@@ -432,6 +436,7 @@ class AgentRepository:
                     ) AS last_activity_at,
                     COALESCE(mc.message_count, 0) AS message_count,
                     COALESCE(ec.event_count, 0) AS event_count,
+                    COALESCE(ec.error_events, 0) AS error_events,
                     COALESCE(ec.tool_events, 0) AS tool_events,
                     COALESCE(ec.kb_events, 0) AS kb_events,
                     COALESCE(ec.web_events, 0) AS web_events,
@@ -459,24 +464,39 @@ class AgentRepository:
             {"agent_id": agent_id, "limit": limit},
         )
         rows = result.fetchall()
-        return [
-            {
-                "conversation_id": str(r.id),
-                "session_id": r.session_id,
-                "channel": r.channel,
-                "user_ref": r.user_ref,
-                "created_at": r.created_at.isoformat(),
-                "last_activity_at": r.last_activity_at.isoformat() if r.last_activity_at else r.created_at.isoformat(),
-                "message_count": int(r.message_count or 0),
-                "event_count": int(r.event_count or 0),
-                "tool_events": int(r.tool_events or 0),
-                "kb_events": int(r.kb_events or 0),
-                "web_events": int(r.web_events or 0),
-                "last_user_message": r.last_user_message or "",
-                "last_assistant_message": r.last_assistant_message or "",
-            }
-            for r in rows
-        ]
+        runs: list[dict] = []
+        for r in rows:
+            has_response = bool((r.last_assistant_message or "").strip())
+            error_events = int(r.error_events or 0)
+            if error_events > 0 and has_response:
+                status = "completed_with_issues"
+            elif error_events > 0:
+                status = "failed"
+            elif has_response:
+                status = "completed"
+            else:
+                status = "in_progress"
+
+            runs.append(
+                {
+                    "conversation_id": str(r.id),
+                    "session_id": r.session_id,
+                    "channel": r.channel,
+                    "status": status,
+                    "user_ref": r.user_ref,
+                    "created_at": r.created_at.isoformat(),
+                    "last_activity_at": r.last_activity_at.isoformat() if r.last_activity_at else r.created_at.isoformat(),
+                    "message_count": int(r.message_count or 0),
+                    "event_count": int(r.event_count or 0),
+                    "error_events": error_events,
+                    "tool_events": int(r.tool_events or 0),
+                    "kb_events": int(r.kb_events or 0),
+                    "web_events": int(r.web_events or 0),
+                    "last_user_message": r.last_user_message or "",
+                    "last_assistant_message": r.last_assistant_message or "",
+                }
+            )
+        return runs
 
     async def get_run_summary(self, agent_id: str, conversation_id: str) -> Optional[dict]:
         result = await self._db.execute(
