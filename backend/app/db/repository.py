@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -355,6 +355,223 @@ class AgentRepository:
         return [
             {"role": r.role, "content": r.content, "created_at": r.created_at.isoformat()}
             for r in reversed(rows)
+        ]
+
+    async def save_conversation_event(
+        self,
+        conversation_id: str,
+        event_type: str,
+        *,
+        phase: str | None = None,
+        actor: str | None = None,
+        kind: str | None = None,
+        message: str = "",
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        await self._db.execute(
+            text("""
+                INSERT INTO conversation_events
+                    (id, conversation_id, event_type, phase, actor, kind, message, payload_json)
+                VALUES
+                    (gen_random_uuid(), CAST(:conversation_id AS uuid), :event_type, :phase, :actor, :kind, :message, CAST(:payload AS jsonb))
+            """),
+            {
+                "conversation_id": conversation_id,
+                "event_type": event_type,
+                "phase": phase,
+                "actor": actor,
+                "kind": kind,
+                "message": message,
+                "payload": json.dumps(payload or {}, default=str),
+            },
+        )
+        await self._db.commit()
+
+    async def list_agent_runs(self, agent_id: str, limit: int = 25) -> list[dict]:
+        result = await self._db.execute(
+            text("""
+                WITH event_counts AS (
+                    SELECT
+                        ce.conversation_id,
+                        COUNT(*) AS event_count,
+                        COUNT(*) FILTER (
+                            WHERE ce.event_type = 'progress'
+                              AND COALESCE(ce.actor, '') NOT IN ('knowledge_base', 'web_search')
+                              AND COALESCE(ce.kind, '') = 'tool'
+                        ) AS tool_events,
+                        COUNT(*) FILTER (
+                            WHERE COALESCE(ce.actor, '') = 'knowledge_base'
+                               OR COALESCE(ce.kind, '') IN ('rag_result', 'rag_preview')
+                        ) AS kb_events,
+                        COUNT(*) FILTER (
+                            WHERE COALESCE(ce.actor, '') = 'web_search'
+                               OR COALESCE(ce.kind, '') LIKE 'web_%'
+                        ) AS web_events,
+                        MAX(ce.created_at) AS last_event_at
+                    FROM conversation_events ce
+                    GROUP BY ce.conversation_id
+                ),
+                message_counts AS (
+                    SELECT
+                        m.conversation_id,
+                        COUNT(*) AS message_count,
+                        MAX(m.created_at) AS last_message_at
+                    FROM messages m
+                    GROUP BY m.conversation_id
+                )
+                SELECT
+                    c.id,
+                    c.session_id,
+                    c.channel,
+                    c.user_ref,
+                    c.created_at,
+                    GREATEST(
+                        c.created_at,
+                        COALESCE(mc.last_message_at, c.created_at),
+                        COALESCE(ec.last_event_at, c.created_at)
+                    ) AS last_activity_at,
+                    COALESCE(mc.message_count, 0) AS message_count,
+                    COALESCE(ec.event_count, 0) AS event_count,
+                    COALESCE(ec.tool_events, 0) AS tool_events,
+                    COALESCE(ec.kb_events, 0) AS kb_events,
+                    COALESCE(ec.web_events, 0) AS web_events,
+                    (
+                        SELECT m.content
+                        FROM messages m
+                        WHERE m.conversation_id = c.id AND m.role = 'user'
+                        ORDER BY m.created_at DESC
+                        LIMIT 1
+                    ) AS last_user_message,
+                    (
+                        SELECT m.content
+                        FROM messages m
+                        WHERE m.conversation_id = c.id AND m.role = 'assistant'
+                        ORDER BY m.created_at DESC
+                        LIMIT 1
+                    ) AS last_assistant_message
+                FROM conversations c
+                LEFT JOIN message_counts mc ON mc.conversation_id = c.id
+                LEFT JOIN event_counts ec ON ec.conversation_id = c.id
+                WHERE c.agent_id = CAST(:agent_id AS uuid)
+                ORDER BY last_activity_at DESC
+                LIMIT :limit
+            """),
+            {"agent_id": agent_id, "limit": limit},
+        )
+        rows = result.fetchall()
+        return [
+            {
+                "conversation_id": str(r.id),
+                "session_id": r.session_id,
+                "channel": r.channel,
+                "user_ref": r.user_ref,
+                "created_at": r.created_at.isoformat(),
+                "last_activity_at": r.last_activity_at.isoformat() if r.last_activity_at else r.created_at.isoformat(),
+                "message_count": int(r.message_count or 0),
+                "event_count": int(r.event_count or 0),
+                "tool_events": int(r.tool_events or 0),
+                "kb_events": int(r.kb_events or 0),
+                "web_events": int(r.web_events or 0),
+                "last_user_message": r.last_user_message or "",
+                "last_assistant_message": r.last_assistant_message or "",
+            }
+            for r in rows
+        ]
+
+    async def get_run_summary(self, agent_id: str, conversation_id: str) -> Optional[dict]:
+        result = await self._db.execute(
+            text("""
+                SELECT
+                    c.id,
+                    c.session_id,
+                    c.channel,
+                    c.user_ref,
+                    c.created_at,
+                    (
+                        SELECT MAX(created_at)
+                        FROM conversation_events ce
+                        WHERE ce.conversation_id = c.id
+                    ) AS last_event_at,
+                    (
+                        SELECT MAX(created_at)
+                        FROM messages m
+                        WHERE m.conversation_id = c.id
+                    ) AS last_message_at
+                FROM conversations c
+                WHERE c.agent_id = CAST(:agent_id AS uuid)
+                  AND c.id = CAST(:conversation_id AS uuid)
+            """),
+            {"agent_id": agent_id, "conversation_id": conversation_id},
+        )
+        row = result.fetchone()
+        if not row:
+            return None
+        last_activity = max(
+            [value for value in (row.created_at, row.last_event_at, row.last_message_at) if value is not None],
+            default=row.created_at,
+        )
+        return {
+            "conversation_id": str(row.id),
+            "session_id": row.session_id,
+            "channel": row.channel,
+            "user_ref": row.user_ref,
+            "created_at": row.created_at.isoformat(),
+            "last_activity_at": last_activity.isoformat() if last_activity else row.created_at.isoformat(),
+        }
+
+    async def get_run_events(self, conversation_id: str, limit: int = 500) -> list[dict]:
+        result = await self._db.execute(
+            text("""
+                SELECT id, event_type, phase, actor, kind, message, payload_json, created_at
+                FROM conversation_events
+                WHERE conversation_id = CAST(:conversation_id AS uuid)
+                ORDER BY created_at ASC
+                LIMIT :limit
+            """),
+            {"conversation_id": conversation_id, "limit": limit},
+        )
+        rows = result.fetchall()
+        events: list[dict] = []
+        for row in rows:
+            payload = row.payload_json
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = {}
+            events.append(
+                {
+                    "id": str(row.id),
+                    "event_type": row.event_type,
+                    "phase": row.phase,
+                    "actor": row.actor,
+                    "kind": row.kind,
+                    "message": row.message,
+                    "payload": payload or {},
+                    "created_at": row.created_at.isoformat(),
+                }
+            )
+        return events
+
+    async def get_run_messages(self, conversation_id: str, limit: int = 200) -> list[dict]:
+        result = await self._db.execute(
+            text("""
+                SELECT role, content, created_at
+                FROM messages
+                WHERE conversation_id = CAST(:conversation_id AS uuid)
+                ORDER BY created_at ASC
+                LIMIT :limit
+            """),
+            {"conversation_id": conversation_id, "limit": limit},
+        )
+        rows = result.fetchall()
+        return [
+            {
+                "role": row.role,
+                "content": row.content,
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in rows
         ]
 
     # ── Eval runs ─────────────────────────────────────────────────────────────

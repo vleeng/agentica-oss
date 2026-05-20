@@ -132,6 +132,44 @@ class InvokeRequest(BaseModel):
     session_id: str = Field(default="", max_length=100)
 
 
+class AgentRunSummary(BaseModel):
+    conversation_id: str
+    session_id: str
+    channel: str
+    user_ref: str | None = None
+    created_at: str
+    last_activity_at: str
+    message_count: int
+    event_count: int
+    tool_events: int
+    kb_events: int
+    web_events: int
+    last_user_message: str = ""
+    last_assistant_message: str = ""
+
+
+class AgentRunEvent(BaseModel):
+    id: str
+    event_type: str
+    phase: str | None = None
+    actor: str | None = None
+    kind: str | None = None
+    message: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class AgentRunTrace(BaseModel):
+    conversation_id: str
+    session_id: str
+    channel: str
+    user_ref: str | None = None
+    created_at: str
+    last_activity_at: str
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    events: list[AgentRunEvent] = Field(default_factory=list)
+
+
 @router.post("/{agent_id}/invoke", response_model=AgentResponse)
 async def invoke_agent(
     agent_id: str,
@@ -148,12 +186,40 @@ async def invoke_agent(
     await get_rate_limiter().check(ctx.tenant_id, scope="invoke")
     await plan_checker.check_can_invoke(ctx.tenant_id)
 
+    progress_events: list[dict[str, Any]] = []
+    runtime.set_progress_callback(_make_progress_collector(progress_events))
     try:
         response = await asyncio.wait_for(runtime.invoke(body.input, session_id), timeout=REST_INVOKE_TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
+        runtime.set_progress_callback(None)
+        await _persist_runtime_error_event(
+            repo=repo,
+            agent_id=agent_id,
+            ctx=ctx,
+            design=design,
+            session_id=session_id,
+            channel="rest_api",
+            user_input=body.input,
+            progress_events=progress_events,
+            message=f"Timeout - el agente tardo mas de {int(REST_INVOKE_TIMEOUT_SECONDS)}s",
+        )
         raise HTTPException(504, f"Timeout - el agente tardo mas de {int(REST_INVOKE_TIMEOUT_SECONDS)}s")
     except Exception as exc:
+        runtime.set_progress_callback(None)
+        await _persist_runtime_error_event(
+            repo=repo,
+            agent_id=agent_id,
+            ctx=ctx,
+            design=design,
+            session_id=session_id,
+            channel="rest_api",
+            user_input=body.input,
+            progress_events=progress_events,
+            message=_format_runtime_error(exc),
+        )
         raise HTTPException(500, _format_runtime_error(exc))
+    finally:
+        runtime.set_progress_callback(None)
 
     try:
         await _persist_usage_event(
@@ -167,6 +233,7 @@ async def invoke_agent(
             output=response.output,
             reported_tokens_in=response.tokens_in,
             reported_tokens_out=response.tokens_out,
+            progress_events=progress_events,
         )
     except Exception as exc:
         logger.warning("[INVOKE] Error al persistir conversacion: %s", exc)
@@ -219,8 +286,10 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
                 continue
 
             try:
+                progress_events: list[dict[str, Any]] = []
+
                 async def _do_stream() -> tuple[str, int, int]:
-                    runtime.set_progress_callback(_make_ws_progress_sender(websocket))
+                    runtime.set_progress_callback(_make_ws_progress_sender(websocket, progress_events))
                     collected: list[str] = []
                     try:
                         async for token in runtime.stream(user_input, session_id):
@@ -250,10 +319,22 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
                     output=output,
                     reported_tokens_in=reported_tokens_in,
                     reported_tokens_out=reported_tokens_out,
+                    progress_events=progress_events,
                 )
                 await websocket.send_json({"type": "done", "session_id": session_id})
             except asyncio.TimeoutError:
                 logger.warning("[WS] stream timed out after %ss for agent %s", int(WS_INVOKE_TIMEOUT_SECONDS), agent_id)
+                await _persist_runtime_error_event(
+                    repo=None,
+                    agent_id=agent_id,
+                    ctx=ctx,
+                    design=_design,
+                    session_id=session_id,
+                    channel="web_chat",
+                    user_input=user_input,
+                    progress_events=progress_events,
+                    message=f"Timeout - el agente tardo mas de {int(WS_INVOKE_TIMEOUT_SECONDS)}s",
+                )
                 await websocket.send_json({
                     "type": "error",
                     "message": (
@@ -264,6 +345,17 @@ async def agent_websocket(websocket: WebSocket, agent_id: str):
                 })
             except Exception as exc:
                 logger.exception("[WS] error during stream for agent %s: %s", agent_id, exc)
+                await _persist_runtime_error_event(
+                    repo=None,
+                    agent_id=agent_id,
+                    ctx=ctx,
+                    design=_design,
+                    session_id=session_id,
+                    channel="web_chat",
+                    user_input=user_input,
+                    progress_events=progress_events,
+                    message=_format_runtime_error(exc),
+                )
                 await websocket.send_json({"type": "error", "message": _format_runtime_error(exc)})
 
     except WebSocketDisconnect:
@@ -548,6 +640,40 @@ async def get_history(
     return await repo.get_conversation_history(agent_id, session_id)
 
 
+@router.get("/{agent_id}/runs", response_model=list[AgentRunSummary])
+async def get_runs(
+    agent_id: str,
+    ctx: CurrentContext,
+    repo: TenantRepo,
+    limit: int = 25,
+) -> list[AgentRunSummary]:
+    ctx.require_human_user()
+    await _assert_agent_access(agent_id, ctx, repo)
+    rows = await repo.list_agent_runs(agent_id, limit=limit)
+    return [AgentRunSummary(**row) for row in rows]
+
+
+@router.get("/{agent_id}/runs/{conversation_id}", response_model=AgentRunTrace)
+async def get_run_trace(
+    agent_id: str,
+    conversation_id: str,
+    ctx: CurrentContext,
+    repo: TenantRepo,
+) -> AgentRunTrace:
+    ctx.require_human_user()
+    await _assert_agent_access(agent_id, ctx, repo)
+    summary = await repo.get_run_summary(agent_id, conversation_id)
+    if not summary:
+        raise HTTPException(404, "Ejecucion no encontrada")
+    messages = await repo.get_run_messages(conversation_id)
+    events = await repo.get_run_events(conversation_id)
+    return AgentRunTrace(
+        **summary,
+        messages=messages,
+        events=[AgentRunEvent(**event) for event in events],
+    )
+
+
 @router.delete("/{agent_id}/session/{session_id}", status_code=204)
 async def reset_session(agent_id: str, session_id: str, ctx: CurrentContext, repo: TenantRepo) -> Response:
     ctx.require_human_user()
@@ -694,6 +820,7 @@ async def _persist_usage_event(
     output: str,
     reported_tokens_in: int,
     reported_tokens_out: int,
+    progress_events: list[dict[str, Any]] | None = None,
 ) -> None:
     async def _write_usage(usage_repo) -> None:
         tokens_in, tokens_out = estimate_usage_tokens(
@@ -706,7 +833,43 @@ async def _persist_usage_event(
         cost = calculate_model_cost(tokens_in, tokens_out, pricing)
         conv_id = await usage_repo.upsert_conversation(agent_id, session_id, channel, user_ref=ctx.user_id)
         await usage_repo.save_message(conv_id, "user", user_input)
+        await usage_repo.save_conversation_event(
+            conv_id,
+            "invoke_start",
+            phase="invoke",
+            actor="agent",
+            message="Inicio de ejecucion",
+            payload={
+                "channel": channel,
+                "session_id": session_id,
+                "agent_name": design.spec.name,
+                "framework": design.framework.framework,
+            },
+        )
+        await _persist_run_context_events(usage_repo, conv_id, agent_id, design)
+        for event in progress_events or []:
+            await usage_repo.save_conversation_event(
+                conv_id,
+                "progress",
+                phase=str(event.get("phase") or ""),
+                actor=str(event.get("actor") or "") or None,
+                kind=str(event.get("kind") or "") or None,
+                message=str(event.get("message") or ""),
+                payload=event,
+            )
         await usage_repo.save_message(conv_id, "assistant", output, tokens_in, tokens_out)
+        await usage_repo.save_conversation_event(
+            conv_id,
+            "response_final",
+            phase="completed",
+            actor="assistant",
+            message="Respuesta final generada",
+            payload={
+                "preview": (output or "")[:600],
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+            },
+        )
         await usage_repo.record_billing_event(agent_id, conv_id, tokens_in, tokens_out, cost)
 
     if repo is not None:
@@ -719,6 +882,107 @@ async def _persist_usage_event(
     session_factory = get_tenant_session_factory(ctx.tenant_id)
     async with session_factory() as session:
         await _write_usage(AgentRepository(session))
+
+
+async def _persist_runtime_error_event(
+    *,
+    repo,
+    agent_id: str,
+    ctx: RequestContext,
+    design: AgentDesign,
+    session_id: str,
+    channel: str,
+    user_input: str,
+    progress_events: list[dict[str, Any]] | None,
+    message: str,
+) -> None:
+    async def _write_error(usage_repo) -> None:
+        conv_id = await usage_repo.upsert_conversation(agent_id, session_id, channel, user_ref=ctx.user_id)
+        await usage_repo.save_message(conv_id, "user", user_input)
+        await usage_repo.save_conversation_event(
+            conv_id,
+            "invoke_start",
+            phase="invoke",
+            actor="agent",
+            message="Inicio de ejecucion",
+            payload={
+                "channel": channel,
+                "session_id": session_id,
+                "agent_name": design.spec.name,
+                "framework": design.framework.framework,
+            },
+        )
+        await _persist_run_context_events(usage_repo, conv_id, agent_id, design)
+        for event in progress_events or []:
+            await usage_repo.save_conversation_event(
+                conv_id,
+                "progress",
+                phase=str(event.get("phase") or ""),
+                actor=str(event.get("actor") or "") or None,
+                kind=str(event.get("kind") or "") or None,
+                message=str(event.get("message") or ""),
+                payload=event,
+            )
+        await usage_repo.save_conversation_event(
+            conv_id,
+            "runtime_error",
+            phase="error",
+            actor="runtime",
+            kind="runtime_error",
+            message=message,
+            payload={"channel": channel, "session_id": session_id},
+        )
+
+    try:
+        if repo is not None:
+            await _write_error(repo)
+            return
+
+        from app.db.repository import AgentRepository
+        from app.db.session import get_tenant_session_factory
+
+        session_factory = get_tenant_session_factory(ctx.tenant_id)
+        async with session_factory() as session:
+            await _write_error(AgentRepository(session))
+    except Exception as exc:
+        logger.warning("[Usage] Error al persistir runtime_error: %s", exc)
+
+
+async def _persist_run_context_events(usage_repo, conversation_id: str, agent_id: str, design: AgentDesign) -> None:
+    skill_names = [
+        str(name).strip()
+        for name in (getattr(design, "_applied_skills", None) or design.__dict__.get("_applied_skills", []))
+        if str(name).strip()
+    ]
+    if skill_names:
+        await usage_repo.save_conversation_event(
+            conversation_id,
+            "skill_context",
+            phase="context",
+            actor="skill",
+            kind="skill_context",
+            message=f"Skills en contexto: {', '.join(skill_names)}",
+            payload={"skills": skill_names},
+        )
+
+    kb_rows = await usage_repo.get_agent_knowledge_bases(agent_id)
+    kb_names = [str(row.get("name") or "").strip() for row in kb_rows if str(row.get("name") or "").strip()]
+    if kb_names:
+        await usage_repo.save_conversation_event(
+            conversation_id,
+            "knowledge_context",
+            phase="context",
+            actor="knowledge_base",
+            kind="kb_context",
+            message=f"KBs disponibles: {', '.join(kb_names)}",
+            payload={
+                "knowledge_bases": [
+                    {"id": str(row.get("id") or ""), "name": str(row.get("name") or "")}
+                    for row in kb_rows
+                    if str(row.get("id") or "").strip()
+                ]
+            },
+        )
 
 
 def _normalize_design_models(design: AgentDesign) -> bool:
@@ -772,8 +1036,17 @@ def _format_runtime_error(exc: Exception) -> str:
     return message
 
 
-def _make_ws_progress_sender(websocket: WebSocket):
+def _make_progress_collector(progress_events: list[dict[str, Any]]):
+    async def _collect(payload: dict) -> None:
+        progress_events.append(dict(payload))
+
+    return _collect
+
+
+def _make_ws_progress_sender(websocket: WebSocket, progress_events: list[dict[str, Any]] | None = None):
     async def _send(payload: dict) -> None:
+        if progress_events is not None:
+            progress_events.append(dict(payload))
         phase = str(payload.get("phase") or "").strip().lower()
         message_type = "trace" if phase == "trace" else "status"
         await websocket.send_json({"type": message_type, **payload})

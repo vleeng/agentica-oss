@@ -180,6 +180,48 @@ export interface AgentResponse {
   metadata?: Record<string, unknown>
 }
 
+export interface AgentRunSummary {
+  conversation_id: string
+  session_id: string
+  channel: string
+  user_ref?: string | null
+  created_at: string
+  last_activity_at: string
+  message_count: number
+  event_count: number
+  tool_events: number
+  kb_events: number
+  web_events: number
+  last_user_message: string
+  last_assistant_message: string
+}
+
+export interface AgentRunEvent {
+  id: string
+  event_type: string
+  phase?: string | null
+  actor?: string | null
+  kind?: string | null
+  message: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export interface AgentRunTrace {
+  conversation_id: string
+  session_id: string
+  channel: string
+  user_ref?: string | null
+  created_at: string
+  last_activity_at: string
+  messages: Array<{
+    role: string
+    content: string
+    created_at: string
+  }>
+  events: AgentRunEvent[]
+}
+
 
 // ── Wizard state (frontend) ───────────────────────────────────────────────────
 

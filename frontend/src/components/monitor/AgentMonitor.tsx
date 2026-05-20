@@ -6,6 +6,7 @@ import { agentsApi, authApi, createAgentWebSocket, normalizeAgentChatError, type
 import { appendProgressEntry, summarizeAgentProgress } from '../../lib/chatProgress'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { AgentEditPanel } from './AgentEditPanel'
+import { AgentRunsPanel } from './AgentRunsPanel'
 import { ChatContextHeader } from './ChatContextHeader'
 import { FlowEditor } from './FlowEditor'
 import { Badge } from '../ui/badge'
@@ -20,7 +21,7 @@ interface Props {
 }
 
 type Phase = 'idle' | 'building' | 'ready' | 'evaluating' | 'optimizing' | 'deploying'
-type TabId = 'sandbox' | 'eval' | 'design' | 'config' | 'edit'
+type TabId = 'sandbox' | 'eval' | 'design' | 'runs' | 'config' | 'edit'
 
 interface ChatMessage {
   id: string
@@ -224,6 +225,7 @@ export function AgentMonitor({ design, onOptimized }: Props) {
     { id: 'sandbox', label: 'Sandbox' },
     { id: 'eval', label: 'Evaluación' },
     { id: 'design', label: 'Diseño' },
+    { id: 'runs', label: 'Ejecuciones' },
     { id: 'config', label: 'Configurar' },
     { id: 'edit', label: 'Editar' },
   ]
@@ -504,6 +506,8 @@ export function AgentMonitor({ design, onOptimized }: Props) {
         </div>
       )}
 
+
+      {activeTab === 'runs' && <AgentRunsPanel agentId={String(currentDesign.agent_id)} />}
 
       {activeTab === 'config' && <AgentConfigPanel agentId={currentDesign.agent_id} />}
 

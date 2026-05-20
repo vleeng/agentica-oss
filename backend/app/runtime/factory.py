@@ -76,11 +76,15 @@ class RuntimeFactory:
 
                 # 1. Skills → inyectar tools + fragmentos de prompt
                 skills = await repo.get_agent_skills(agent_id)
+                applied_skill_names: list[str] = []
                 for skill in skills:
                     extra_tools, prompt_fragment = expand_skill(skill)
                     if tools_allowed:
                         design.spec.tools.extend(extra_tools)
                     design.system_prompt += f"\n{prompt_fragment}"
+                    applied_skill_names.append(str(skill.get("name") or "").strip())
+                if applied_skill_names:
+                    design.__dict__["_applied_skills"] = [name for name in applied_skill_names if name]
 
                 # 2. MCP servers → inyectar tools descubiertas (se pasan como _mcp_tools al builder)
                 mcp_servers = await repo.get_agent_mcp_servers(agent_id) if tools_allowed else []

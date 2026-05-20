@@ -138,6 +138,18 @@ CREATE TABLE IF NOT EXISTS {schema}.messages (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS {schema}.conversation_events (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id UUID NOT NULL REFERENCES {schema}.conversations(id) ON DELETE CASCADE,
+    event_type      TEXT NOT NULL,
+    phase           TEXT,
+    actor           TEXT,
+    kind            TEXT,
+    message         TEXT NOT NULL DEFAULT '',
+    payload_json    JSONB NOT NULL DEFAULT '{{}}',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS {schema}.memory_store (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent_id    UUID NOT NULL REFERENCES {schema}.agents(id) ON DELETE CASCADE,
@@ -279,6 +291,7 @@ CREATE TABLE IF NOT EXISTS {schema}.guardrail_rules (
 CREATE INDEX IF NOT EXISTS idx_agent_skills_agent    ON {schema}.agent_skills(agent_id);
 CREATE INDEX IF NOT EXISTS idx_agent_mcp_agent       ON {schema}.agent_mcp_servers(agent_id);
 CREATE INDEX IF NOT EXISTS idx_agent_kb_agent        ON {schema}.agent_knowledge_bases(agent_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_events_conversation ON {schema}.conversation_events(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_guardrails_agent      ON {schema}.guardrail_rules(agent_id);
 CREATE INDEX IF NOT EXISTS idx_behavior_policy_agent ON {schema}.behavior_policies(agent_id);
 """

@@ -1,6 +1,8 @@
 import axios, { type AxiosInstance } from 'axios'
 import type {
   AgentDesign,
+  AgentRunSummary,
+  AgentRunTrace,
   AgentResponse,
   AgentSpec,
   BehaviorPolicy,
@@ -321,6 +323,12 @@ export const agentsApi = {
 
   resetSession: (agentId: string, sessionId: string) =>
     api.delete(`/agents/${agentId}/session/${sessionId}`),
+
+  getRuns: (agentId: string, limit = 25): Promise<AgentRunSummary[]> =>
+    api.get(`/agents/${agentId}/runs`, { params: { limit } }).then((r) => r.data),
+
+  getRunTrace: (agentId: string, conversationId: string): Promise<AgentRunTrace> =>
+    api.get(`/agents/${agentId}/runs/${conversationId}`).then((r) => r.data),
 }
 
 export const wizardAdvisorApi = {
