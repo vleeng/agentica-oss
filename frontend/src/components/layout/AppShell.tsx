@@ -19,6 +19,7 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 
+import { useProductProfile } from '../../contexts/ProductProfileContext'
 import { getAuthRole, useAuthStore } from '../../stores/auth'
 import { Button } from '../ui/button'
 
@@ -45,17 +46,19 @@ export function AppShell() {
   const navigate = useNavigate()
   const location = useLocation()
   const role = getAuthRole()
+  const product = useProductProfile()
   const isViewer = role === 'viewer'
   const isOwner = role === 'owner'
 
   const visibleNavItems = useMemo(
     () =>
       navItems.filter((item) => {
+        if (item.to === '/usage' && !product.features.billing) return false
         if (isViewer) return ['/', '/usage', '/account'].includes(item.to)
         if (item.to === '/access') return isOwner
         return true
       }),
-    [isOwner, isViewer]
+    [isOwner, isViewer, product.features.billing]
   )
   const visibleLibraryItems = useMemo(() => (isViewer ? [] : libraryItems), [isViewer])
 
@@ -63,8 +66,8 @@ export function AppShell() {
     const match = [...visibleNavItems, ...visibleLibraryItems].find((item) => item.to === location.pathname)
     if (match) return match.label
     if (location.pathname.startsWith('/agents/')) return 'Monitor'
-    return 'Agentica'
-  }, [location.pathname, visibleLibraryItems, visibleNavItems])
+    return product.display_name
+  }, [location.pathname, product.display_name, visibleLibraryItems, visibleNavItems])
 
   const logout = () => {
     clearToken()
@@ -97,7 +100,7 @@ export function AppShell() {
               <BrainCircuit className="h-5 w-5 text-white" />
             </div>
             <div>
-              <div className="text-lg font-semibold tracking-tight">Agentica</div>
+              <div className="text-lg font-semibold tracking-tight">{product.display_name}</div>
               <div className="text-xs text-slate-400">Control de agentes IA</div>
             </div>
           </button>

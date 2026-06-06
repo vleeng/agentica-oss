@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import text
 
 from app.api.deps import TenantRepo
+from app.core.product_profile import get_product_profile_state
 from app.core.security import (
     CurrentContext,
     RequestContext,
@@ -23,10 +24,13 @@ logger = logging.getLogger(__name__)
 
 @router.post("/register", response_model=TokenOut, status_code=201)
 async def register_tenant(body: TenantCreate, user: UserCreate, request: Request) -> TokenOut:
+    caller_ctx = await _get_optional_context(request)
+    if not get_product_profile_state().features.signup and caller_ctx is None:
+        raise HTTPException(404, "El alta publica de tenants no esta disponible en este perfil.")
+
     from app.db.session import PublicSessionFactory
     import uuid
 
-    caller_ctx = await _get_optional_context(request)
     requested_plan = body.plan_id or "free"
 
     if caller_ctx is not None:
@@ -117,6 +121,8 @@ async def list_agents(ctx: CurrentContext, repo: TenantRepo) -> list[dict]:
 @router.get("/me/billing")
 async def billing_summary(ctx: CurrentContext, repo: TenantRepo) -> dict:
     ctx.require_human_user()
+    if not get_product_profile_state().features.billing:
+        raise HTTPException(404, "El billing no esta disponible en este perfil.")
     return await repo.get_billing_summary()
 
 

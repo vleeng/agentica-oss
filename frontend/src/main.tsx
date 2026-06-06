@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { ErrorBoundary } from './components/debug/ErrorBoundary'
 import { ToastProvider } from './components/ui/toast'
+import { ProductProfileProvider } from './contexts/ProductProfileContext'
 import './index.css'
 
 const routerBase = (() => {
@@ -33,11 +34,13 @@ window.addEventListener('unhandledrejection', (event) => {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter basename={routerBase}>
-      <ToastProvider>
-        <ErrorBoundary>
-          <App />
-        </ErrorBoundary>
-      </ToastProvider>
+      <ProductProfileProvider>
+        <ToastProvider>
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+        </ToastProvider>
+      </ProductProfileProvider>
     </BrowserRouter>
   </React.StrictMode>
 )

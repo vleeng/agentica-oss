@@ -2,6 +2,7 @@ import { ArrowRight, Bot, Cpu, Search, Sparkles, Trash2, Wallet } from 'lucide-r
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { agentsApi, type AgentSummary, type TenantBillingSummary, tenantsApi } from '../../lib/api'
+import { useProductProfile } from '../../contexts/ProductProfileContext'
 import { formatCurrency, formatNumber } from '../../lib/utils'
 import { getAuthRole } from '../../stores/auth'
 import { Badge } from '../ui/badge'
@@ -23,6 +24,7 @@ const STATUS_CONFIG: Record<string, { label: string; tone: 'slate' | 'blue' | 'a
 }
 
 export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
+  const product = useProductProfile()
   const role = getAuthRole()
   const isViewer = role === 'viewer'
   const [agents, setAgents] = useState<AgentSummary[]>([])
@@ -48,7 +50,10 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
 
   useEffect(() => {
     setLoading(true)
-    Promise.all([tenantsApi.listAgents(), tenantsApi.billing()])
+    Promise.all([
+      tenantsApi.listAgents(),
+      product.features.billing ? tenantsApi.billing() : Promise.resolve(null),
+    ])
       .then(([agentList, billingData]) => {
         setAgents(Array.isArray(agentList) ? agentList : [])
         setBilling(billingData)
@@ -56,7 +61,7 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
       })
       .catch(() => setError('No pudimos cargar el dashboard. Revisá el backend e intentá de nuevo.'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [product.features.billing])
 
   const filteredAgents = useMemo(() => {
     const term = query.trim().toLowerCase()
@@ -121,21 +126,25 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
               label="Desplegados"
               value={String(agents.filter((agent) => agent.status === 'deployed').length)}
             />
-            <MetricLine
-              icon={<Wallet className="h-4 w-4" />}
-              label="Costo acumulado"
-              value={formatCurrency(billing?.total_cost_usd)}
-            />
+            {product.features.billing && (
+              <MetricLine
+                icon={<Wallet className="h-4 w-4" />}
+                label="Costo acumulado"
+                value={formatCurrency(billing?.total_cost_usd)}
+              />
+            )}
           </CardContent>
         </Card>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <StatCard label="Invocaciones" value={formatNumber(billing?.calls)} />
-        <StatCard label="Tokens de entrada" value={formatNumber(billing?.total_tokens_in)} />
-        <StatCard label="Tokens de salida" value={formatNumber(billing?.total_tokens_out)} />
-        <StatCard label="Costo total" value={formatCurrency(billing?.total_cost_usd)} />
-      </section>
+      {product.features.billing && (
+        <section className="grid gap-4 md:grid-cols-4">
+          <StatCard label="Invocaciones" value={formatNumber(billing?.calls)} />
+          <StatCard label="Tokens de entrada" value={formatNumber(billing?.total_tokens_in)} />
+          <StatCard label="Tokens de salida" value={formatNumber(billing?.total_tokens_out)} />
+          <StatCard label="Costo total" value={formatCurrency(billing?.total_cost_usd)} />
+        </section>
+      )}
 
       <Card>
         <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">

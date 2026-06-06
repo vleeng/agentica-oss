@@ -25,11 +25,14 @@ import { StandaloneChat } from './components/monitor/StandaloneChat'
 import { UsageDashboard } from './components/monitor/UsageDashboard'
 import { ChatWizard } from './components/wizard/ChatWizard'
 import { RequirementWizard } from './components/wizard/RequirementWizard'
+import { useProductProfile } from './contexts/ProductProfileContext'
 import { agentsApi, authApi, wizardStateToSpec } from './lib/api'
 import { getAuthRole, useAuthStore } from './stores/auth'
 import type { AgentDesign, WizardState } from './types/agent'
 
 export default function App() {
+  const product = useProductProfile()
+
   return (
     <Routes>
       <Route path="login" element={<LoginRoute />} />
@@ -39,7 +42,7 @@ export default function App() {
           <Route index element={<DashboardRoute />} />
           <Route path="wizard" element={<DeveloperOnly><WizardRoute /></DeveloperOnly>} />
           <Route path="agents/:agentId" element={<MonitorRoute />} />
-          <Route path="usage" element={<UsageDashboard />} />
+          <Route path="usage" element={product.features.billing ? <UsageDashboard /> : <Navigate to="/" replace />} />
           <Route path="account" element={<AccountPanel />} />
           <Route path="access" element={<OwnerOnly><AccessPanel /></OwnerOnly>} />
           <Route path="providers" element={<DeveloperOnly><ProvidersPanel /></DeveloperOnly>} />

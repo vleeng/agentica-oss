@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy import text
 
+from app.core.product_profile import get_product_profile_state
 from app.db.session import PublicSessionFactory
 
 logger = logging.getLogger(__name__)
@@ -198,6 +199,8 @@ async def get_tenant_usage(tenant_id: str) -> dict:
 class PlanLimitsChecker:
     @staticmethod
     async def check_can_create_agent(tenant_id: str) -> None:
+        if not get_product_profile_state().features.usage_limits:
+            return
         plan = await get_tenant_plan(tenant_id)
         usage = await get_tenant_usage(tenant_id)
 
@@ -213,6 +216,8 @@ class PlanLimitsChecker:
 
     @staticmethod
     async def check_can_invoke(tenant_id: str) -> None:
+        if not get_product_profile_state().features.usage_limits:
+            return
         plan = await get_tenant_plan(tenant_id)
         usage = await get_tenant_usage(tenant_id)
 
@@ -228,6 +233,8 @@ class PlanLimitsChecker:
 
     @staticmethod
     async def check_can_use_rag(tenant_id: str) -> None:
+        if not get_product_profile_state().features.usage_limits:
+            return
         plan = await get_tenant_plan(tenant_id)
         if not plan["rag"]:
             raise HTTPException(
@@ -237,6 +244,8 @@ class PlanLimitsChecker:
 
     @staticmethod
     async def check_can_use_crew(tenant_id: str) -> None:
+        if not get_product_profile_state().features.usage_limits:
+            return
         plan = await get_tenant_plan(tenant_id)
         if not plan["crew"]:
             raise HTTPException(
@@ -246,6 +255,25 @@ class PlanLimitsChecker:
 
     @staticmethod
     async def get_usage_summary(tenant_id: str) -> dict:
+        if not get_product_profile_state().features.usage_limits:
+            usage = await get_tenant_usage(tenant_id)
+            return {
+                "plan_id": "unlimited",
+                "agents": {
+                    "used": usage["agent_count"],
+                    "limit": 0,
+                    "pct": 0,
+                },
+                "invocations": {
+                    "used": usage["invocations_month"],
+                    "limit": 0,
+                    "pct": 0,
+                },
+                "features": {
+                    "rag": True,
+                    "crew": True,
+                },
+            }
         plan = await get_tenant_plan(tenant_id)
         usage = await get_tenant_usage(tenant_id)
         return {

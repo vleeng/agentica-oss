@@ -2,21 +2,28 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import text
 
 from app.api.deps import TenantRepo
 from app.core.plan_limits import plan_checker
+from app.core.product_profile import get_product_profile_state
 from app.core.rate_limiter import get_rate_limiter
 from app.core.security import CurrentContext
 
 router = APIRouter()
 
 
+def _ensure_billing_enabled() -> None:
+    if not get_product_profile_state().features.billing:
+        raise HTTPException(status_code=404, detail="Observabilidad comercial no disponible en este perfil.")
+
+
 @router.get("/summary")
 async def get_usage_summary(ctx: CurrentContext) -> dict:
     """Plan, límites y uso actual del tenant — para el dashboard."""
     ctx.require_human_user()
+    _ensure_billing_enabled()
     return await plan_checker.get_usage_summary(ctx.tenant_id)
 
 
@@ -28,6 +35,7 @@ async def get_billing_detail(
 ) -> dict:
     """Detalle de billing de los últimos N días."""
     ctx.require_human_user()
+    _ensure_billing_enabled()
     since = datetime.now(timezone.utc) - timedelta(days=days)
 
     result = await repo._db.execute(
@@ -75,6 +83,7 @@ async def get_agents_usage(
 ) -> list[dict]:
     """Uso por agente — invocaciones y costo."""
     ctx.require_human_user()
+    _ensure_billing_enabled()
     result = await repo._db.execute(
         text("""
             SELECT
@@ -110,6 +119,7 @@ async def get_agents_usage(
 async def get_rate_limit_status(ctx: CurrentContext) -> dict:
     """Estado actual de los rate limits del tenant."""
     ctx.require_human_user()
+    _ensure_billing_enabled()
     rl = get_rate_limiter()
     scopes = ["invoke", "build", "spec", "eval", "global"]
     status = {}

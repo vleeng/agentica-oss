@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.mailer import MailerNotConfiguredError, is_mailer_configured, send_email
+from app.core.product_profile import get_product_profile_state
 from app.core.security import (
     CurrentContext,
     create_access_token,
@@ -87,6 +88,8 @@ def _slugify_company_name(value: str) -> str:
 
 @router.post("/register", response_model=TokenOut, status_code=201)
 async def register(body: UserCreate, request: Request) -> TokenOut:
+    if not get_product_profile_state().features.signup:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "El registro publico no esta disponible en este perfil.")
     from app.core.rate_limiter import get_rate_limiter
     client_ip = request.client.host if request.client else "unknown"
     await get_rate_limiter().check(
@@ -155,6 +158,8 @@ async def register(body: UserCreate, request: Request) -> TokenOut:
 
 @router.post("/free-request", response_model=FreeAccountRequestOut, status_code=201)
 async def request_free_account(body: FreeAccountRequestInput, request: Request) -> FreeAccountRequestOut:
+    if not get_product_profile_state().features.signup:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "La solicitud de cuentas publicas no esta disponible en este perfil.")
     from app.core.rate_limiter import get_rate_limiter
     import uuid
 

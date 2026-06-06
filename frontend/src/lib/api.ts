@@ -116,6 +116,22 @@ export interface UsageSummary {
   features: { rag: boolean; crew: boolean }
 }
 
+export interface ProductFeatures {
+  billing: boolean
+  plans: boolean
+  usage_limits: boolean
+  signup: boolean
+  enterprise_auth: boolean
+  white_label: boolean
+  community_theme: boolean
+}
+
+export interface ProductProfileInfo {
+  profile: 'saas' | 'platform' | 'oss'
+  display_name: string
+  features: ProductFeatures
+}
+
 export interface BillingDay {
   day: string
   calls: number
@@ -614,6 +630,10 @@ export const systemApi = {
   rejectFreeRequest: (requestId: string, body?: { notes?: string }): Promise<FreeAccountRequest> =>
     api.post(`/system/free-requests/${requestId}/reject`, body || {}).then(r => r.data),
   getOverview: (): Promise<TenantOverview[]> => api.get('/system/overview').then(r => r.data),
+}
+
+export const systemProfileApi = {
+  publicProfile: (): Promise<ProductProfileInfo> => api.get('/system/profile/public').then((r) => r.data),
 }
 
 export const guardrailsApi = {

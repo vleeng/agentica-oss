@@ -2,6 +2,7 @@ import { Building2, LockKeyhole, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 
 import vleengLogo from '../../assets/vleeng-logo.png'
+import { useProductProfile } from '../../contexts/ProductProfileContext'
 import { authApi } from '../../lib/api'
 import { formatApiError } from '../../lib/errors'
 import { useAuthStore } from '../../stores/auth'
@@ -12,6 +13,7 @@ import { Input } from '../ui/input'
 import { useToast } from '../ui/toast'
 
 export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
+  const product = useProductProfile()
   const sectors = [
     'Servicios financieros',
     'Tecnología',
@@ -344,17 +346,19 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                       <Button type="submit" className="w-full" size="lg" disabled={loading || !email || !password}>
                         {loading ? 'Validando acceso...' : 'Ingresar al workspace'}
                       </Button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setError('')
-                          setMode('request')
-                        }}
-                        className="flex w-full items-center justify-center gap-2 text-sm text-slate-600 hover:text-slate-800"
-                      >
-                        <Building2 className="h-4 w-4" />
-                        Pedir cuenta free
-                      </button>
+                      {product.features.signup && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setError('')
+                            setMode('request')
+                          }}
+                          className="flex w-full items-center justify-center gap-2 text-sm text-slate-600 hover:text-slate-800"
+                        >
+                          <Building2 className="h-4 w-4" />
+                          Pedir cuenta free
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -409,7 +413,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                     </>
                   )}
 
-                  {mode === 'request' && (
+                  {mode === 'request' && product.features.signup && (
                     <>
                       <Button
                         type="submit"

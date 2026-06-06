@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.mailer import send_email
 from app.core.mailer import is_mailer_configured
 from app.core.plan_limits import get_tenant_plan, get_tenant_usage, list_plans
+from app.core.product_profile import get_product_profile_state
 from app.core.security import CurrentContext
 from app.db.session import PublicSessionFactory, engine, provision_tenant
 
@@ -107,6 +108,32 @@ class ToolReadinessOut(BaseModel):
     state: str
     state_label: str
     setup_hint: str | None = None
+
+
+class ProductFeaturesOut(BaseModel):
+    billing: bool
+    plans: bool
+    usage_limits: bool
+    signup: bool
+    enterprise_auth: bool
+    white_label: bool
+    community_theme: bool
+
+
+class ProductProfileOut(BaseModel):
+    profile: str
+    display_name: str
+    features: ProductFeaturesOut
+
+
+@router.get("/system/profile/public", response_model=ProductProfileOut)
+async def get_public_product_profile() -> ProductProfileOut:
+    state = get_product_profile_state()
+    return ProductProfileOut(
+        profile=state.profile,
+        display_name=state.display_name,
+        features=ProductFeaturesOut(**state.features.to_dict()),
+    )
 
 
 async def _require_system_admin(ctx: CurrentContext) -> None:

@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
+from app.core.product_profile import get_product_profile_state
 from app.core.rate_limiter import init_rate_limiter
 from app.db.session import engine, Base
 from app.runtime.store import init_runtime_store
@@ -246,17 +247,21 @@ app.include_router(wizard.router,         prefix="/api/v1",               tags=[
 @app.get("/health")
 async def health():
     version_info = _build_version_payload()
+    product_state = get_product_profile_state()
     return {
         "status":  "ok",
         "version": version_info["version"],
         "redis":   _redis_client is not None,
         "deploy": version_info,
+        "product": product_state.to_dict(),
     }
 
 
 @app.get("/health/version")
 async def health_version():
+    product_state = get_product_profile_state()
     return {
         "status": "ok",
         "deploy": _build_version_payload(),
+        "product": product_state.to_dict(),
     }
