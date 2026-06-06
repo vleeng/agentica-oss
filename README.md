@@ -12,6 +12,7 @@ La documentacion historica del baseline de mayo 2026 sigue disponible, pero ya n
 - [Conocimiento y RAG 2026-06-06](docs/conocimiento-rag-2026-06-06.md)
 - [Version actual 2026-06-06](docs/version-actual-2026-06-06.md)
 - [Plan de separacion Platform / SaaS / OSS 2026-06-06](docs/plan-separacion-platform-saas-oss-2026-06-06.md)
+- [Matriz de implementacion del product profile 2026-06-06](docs/matriz-implementacion-product-profile-2026-06-06.md)
 
 ## Que es Agentica hoy
 
