@@ -16,6 +16,7 @@ from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.core.product_profile import get_product_profile_state
 from app.core.mailer import MailerNotConfiguredError, is_mailer_configured, send_email
 from app.components.tools.policies import (
     extract_search_payload,
@@ -301,6 +302,12 @@ TOOL_REGISTRY: dict[str, type[BaseTool]] = {
 def get_tool(name: str, config: dict, framework: str = "langchain") -> BaseTool:
     """Instancia una tool por nombre con su configuracion."""
     if name not in TOOL_REGISTRY:
+        if get_product_profile_state().features.moodle_integration:
+            from app.components.tools.moodle_tools import get_moodle_tool
+
+            moodle_tool = get_moodle_tool(name)
+            if moodle_tool:
+                return moodle_tool
         raise ValueError(f"Tool '{name}' no encontrada en la Component Library.")
 
     hydrated_config = dict(config or {})

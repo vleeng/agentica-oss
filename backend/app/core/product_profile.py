@@ -18,6 +18,7 @@ class ProductFeatureFlags:
     enterprise_auth: bool
     white_label: bool
     community_theme: bool
+    moodle_integration: bool
 
     def to_dict(self) -> dict[str, bool]:
         return asdict(self)
@@ -61,6 +62,7 @@ def build_product_profile_state(profile: ProductProfile) -> ProductProfileState:
                 enterprise_auth=False,
                 white_label=False,
                 community_theme=False,
+                moodle_integration=False,
             ),
         )
 
@@ -76,6 +78,7 @@ def build_product_profile_state(profile: ProductProfile) -> ProductProfileState:
                 enterprise_auth=False,
                 white_label=False,
                 community_theme=True,
+                moodle_integration=True,
             ),
         )
 
@@ -90,6 +93,7 @@ def build_product_profile_state(profile: ProductProfile) -> ProductProfileState:
             enterprise_auth=False,
             white_label=False,
             community_theme=False,
+            moodle_integration=False,
         ),
     )
 

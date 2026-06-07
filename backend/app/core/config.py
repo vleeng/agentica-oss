@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: Optional[str] = None
     tavily_api_key: Optional[str] = None
+    moodle_url: str = "http://localhost:8080"
+    moodle_api_key: str = "moodle-ai-query-secret-key-2026"
     builder_model: str = "claude-sonnet-4-5"        # modelo para generar diseño y código
     builder_provider: str = "anthropic"
     builder_base_url: Optional[str] = None

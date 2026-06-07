@@ -5,11 +5,12 @@ import json
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect, Request
 from pydantic import BaseModel, Field
 
 from app.api.deps import TenantRepo
 from app.core.security import CurrentContext, RequestContext, decode_access_token
+from app.core.product_profile import get_product_profile_state
 from app.runtime.factory import RuntimeFactory
 from app.runtime.llm import infer_provider, qualify_model_name
 from app.runtime.store import get_runtime_store
@@ -178,190 +179,218 @@ async def invoke_agent(
     body: InvokeRequest,
     ctx: CurrentContext,
     repo: TenantRepo,
+    request: Request,
 ) -> AgentResponse:
-    runtime, design = await _get_runtime(agent_id, ctx, repo)
-    session_id = body.session_id or f"{ctx.tenant_id}_{agent_id}_default"
-
-    from app.core.rate_limiter import get_rate_limiter
-    from app.core.plan_limits import plan_checker
-
-    await get_rate_limiter().check(ctx.tenant_id, scope="invoke")
-    await plan_checker.check_can_invoke(ctx.tenant_id)
-
-    progress_events: list[dict[str, Any]] = []
-    runtime.set_progress_callback(_make_progress_collector(progress_events))
+    moodle_token = None
     try:
-        response = await asyncio.wait_for(runtime.invoke(body.input, session_id), timeout=REST_INVOKE_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError:
-        runtime.set_progress_callback(None)
-        await _persist_runtime_error_event(
-            repo=repo,
-            agent_id=agent_id,
-            ctx=ctx,
-            design=design,
-            session_id=session_id,
-            channel="rest_api",
-            user_input=body.input,
-            progress_events=progress_events,
-            message=f"Timeout - el agente tardo mas de {int(REST_INVOKE_TIMEOUT_SECONDS)}s",
-        )
-        raise HTTPException(504, f"Timeout - el agente tardo mas de {int(REST_INVOKE_TIMEOUT_SECONDS)}s")
-    except Exception as exc:
-        runtime.set_progress_callback(None)
-        await _persist_runtime_error_event(
-            repo=repo,
-            agent_id=agent_id,
-            ctx=ctx,
-            design=design,
-            session_id=session_id,
-            channel="rest_api",
-            user_input=body.input,
-            progress_events=progress_events,
-            message=_format_runtime_error(exc),
-        )
-        raise HTTPException(500, _format_runtime_error(exc))
+        if get_product_profile_state().features.moodle_integration:
+            x_moodle_user_id = request.headers.get("x-moodle-user-id")
+            if x_moodle_user_id:
+                from app.components.tools.moodle_tools import moodle_user_context
+
+                moodle_token = moodle_user_context.set(x_moodle_user_id)
+
+        runtime, design = await _get_runtime(agent_id, ctx, repo)
+        session_id = body.session_id or f"{ctx.tenant_id}_{agent_id}_default"
+
+        from app.core.rate_limiter import get_rate_limiter
+        from app.core.plan_limits import plan_checker
+
+        await get_rate_limiter().check(ctx.tenant_id, scope="invoke")
+        await plan_checker.check_can_invoke(ctx.tenant_id)
+
+        progress_events: list[dict[str, Any]] = []
+        runtime.set_progress_callback(_make_progress_collector(progress_events))
+        try:
+            response = await asyncio.wait_for(runtime.invoke(body.input, session_id), timeout=REST_INVOKE_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            await _persist_runtime_error_event(
+                repo=repo,
+                agent_id=agent_id,
+                ctx=ctx,
+                design=design,
+                session_id=session_id,
+                channel="rest_api",
+                user_input=body.input,
+                progress_events=progress_events,
+                message=f"Timeout - el agente tardo mas de {int(REST_INVOKE_TIMEOUT_SECONDS)}s",
+            )
+            raise HTTPException(504, f"Timeout - el agente tardo mas de {int(REST_INVOKE_TIMEOUT_SECONDS)}s")
+        except Exception as exc:
+            await _persist_runtime_error_event(
+                repo=repo,
+                agent_id=agent_id,
+                ctx=ctx,
+                design=design,
+                session_id=session_id,
+                channel="rest_api",
+                user_input=body.input,
+                progress_events=progress_events,
+                message=_format_runtime_error(exc),
+            )
+            raise HTTPException(500, _format_runtime_error(exc))
+        finally:
+            runtime.set_progress_callback(None)
+
+        try:
+            await _persist_usage_event(
+                repo=repo,
+                agent_id=agent_id,
+                ctx=ctx,
+                design=design,
+                session_id=session_id,
+                channel="rest_api",
+                user_input=body.input,
+                output=response.output,
+                reported_tokens_in=response.tokens_in,
+                reported_tokens_out=response.tokens_out,
+                progress_events=progress_events,
+            )
+        except Exception as exc:
+            logger.warning("[INVOKE] Error al persistir conversacion: %s", exc)
+
+        return response
     finally:
-        runtime.set_progress_callback(None)
+        if moodle_token is not None:
+            from app.components.tools.moodle_tools import moodle_user_context
 
-    try:
-        await _persist_usage_event(
-            repo=repo,
-            agent_id=agent_id,
-            ctx=ctx,
-            design=design,
-            session_id=session_id,
-            channel="rest_api",
-            user_input=body.input,
-            output=response.output,
-            reported_tokens_in=response.tokens_in,
-            reported_tokens_out=response.tokens_out,
-            progress_events=progress_events,
-        )
-    except Exception as exc:
-        logger.warning("[INVOKE] Error al persistir conversacion: %s", exc)
-
-    return response
+            moodle_user_context.reset(moodle_token)
 
 
 @router.websocket("/{agent_id}/ws")
 async def agent_websocket(websocket: WebSocket, agent_id: str):
-    ctx = await _get_ws_context(websocket)
-    if ctx is None:
-        await websocket.close(code=1008, reason="Unauthorized")
-        return
-
-    await websocket.accept()
+    moodle_token = None
     try:
-        while True:
-            raw = await websocket.receive_text()
-            try:
-                data = json.loads(raw)
-            except json.JSONDecodeError:
-                await websocket.send_json({"type": "error", "message": "JSON invalido"})
-                continue
+        if get_product_profile_state().features.moodle_integration:
+            x_moodle_user_id = websocket.headers.get("x-moodle-user-id")
+            if x_moodle_user_id:
+                from app.components.tools.moodle_tools import moodle_user_context
 
-            user_input = data.get("input", "").strip()
-            session_id = data.get("session_id", f"ws_{agent_id}_{id(websocket)}")
+                moodle_token = moodle_user_context.set(x_moodle_user_id)
 
-            if not user_input:
-                await websocket.send_json({"type": "error", "message": "Input vacio"})
-                continue
+        ctx = await _get_ws_context(websocket)
+        if ctx is None:
+            await websocket.close(code=1008, reason="Unauthorized")
+            return
 
-            if len(user_input) > 8000:
-                await websocket.send_json({"type": "error", "message": "Mensaje demasiado largo (max 8000 caracteres)"})
-                continue
+        await websocket.accept()
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    await websocket.send_json({"type": "error", "message": "JSON invalido"})
+                    continue
 
-            try:
-                from app.core.rate_limiter import get_rate_limiter
-                from app.core.plan_limits import plan_checker
+                user_input = data.get("input", "").strip()
+                session_id = data.get("session_id", f"ws_{agent_id}_{id(websocket)}")
 
-                await get_rate_limiter().check(ctx.tenant_id, scope="invoke")
-                await plan_checker.check_can_invoke(ctx.tenant_id)
-            except HTTPException as exc:
-                await websocket.send_json({"type": "error", "message": str(exc.detail)})
-                continue
+                if not user_input:
+                    await websocket.send_json({"type": "error", "message": "Input vacio"})
+                    continue
 
-            try:
-                runtime, _design = await _get_runtime(agent_id, ctx)
-            except HTTPException as exc:
-                await websocket.send_json({"type": "error", "message": exc.detail})
-                continue
+                if len(user_input) > 8000:
+                    await websocket.send_json({"type": "error", "message": "Mensaje demasiado largo (max 8000 caracteres)"})
+                    continue
 
-            try:
-                progress_events: list[dict[str, Any]] = []
+                try:
+                    from app.core.rate_limiter import get_rate_limiter
+                    from app.core.plan_limits import plan_checker
 
-                async def _do_stream() -> tuple[str, int, int]:
-                    runtime.set_progress_callback(_make_ws_progress_sender(websocket, progress_events))
-                    collected: list[str] = []
-                    try:
-                        async for token in runtime.stream(user_input, session_id):
-                            await websocket.send_json({"type": "token", "content": token})
-                            collected.append(token)
+                    await get_rate_limiter().check(ctx.tenant_id, scope="invoke")
+                    await plan_checker.check_can_invoke(ctx.tenant_id)
+                except HTTPException as exc:
+                    await websocket.send_json({"type": "error", "message": str(exc.detail)})
+                    continue
 
-                        if collected:
-                            return "".join(collected).strip(), 0, 0
+                try:
+                    runtime, _design = await _get_runtime(agent_id, ctx)
+                except HTTPException as exc:
+                    await websocket.send_json({"type": "error", "message": exc.detail})
+                    continue
 
-                        logger.warning("[WS] stream yielded no tokens for agent %s - falling back to invoke", agent_id)
-                        response = await asyncio.wait_for(runtime.invoke(user_input, session_id), timeout=WS_INVOKE_TIMEOUT_SECONDS)
-                        if response.output:
-                            await websocket.send_json({"type": "token", "content": response.output})
-                        return response.output, response.tokens_in, response.tokens_out
-                    finally:
-                        runtime.set_progress_callback(None)
+                try:
+                    progress_events: list[dict[str, Any]] = []
 
-                output, reported_tokens_in, reported_tokens_out = await asyncio.wait_for(_do_stream(), timeout=WS_INVOKE_TIMEOUT_SECONDS)
-                await _persist_usage_event(
-                    repo=None,
-                    agent_id=agent_id,
-                    ctx=ctx,
-                    design=_design,
-                    session_id=session_id,
-                    channel="web_chat",
-                    user_input=user_input,
-                    output=output,
-                    reported_tokens_in=reported_tokens_in,
-                    reported_tokens_out=reported_tokens_out,
-                    progress_events=progress_events,
-                )
-                await websocket.send_json({"type": "done", "session_id": session_id})
-            except asyncio.TimeoutError:
-                logger.warning("[WS] stream timed out after %ss for agent %s", int(WS_INVOKE_TIMEOUT_SECONDS), agent_id)
-                await _persist_runtime_error_event(
-                    repo=None,
-                    agent_id=agent_id,
-                    ctx=ctx,
-                    design=_design,
-                    session_id=session_id,
-                    channel="web_chat",
-                    user_input=user_input,
-                    progress_events=progress_events,
-                    message=f"Timeout - el agente tardo mas de {int(WS_INVOKE_TIMEOUT_SECONDS)}s",
-                )
-                await websocket.send_json({
-                    "type": "error",
-                    "message": (
-                        f"El agente tardo demasiado en responder "
-                        f"(timeout {int(WS_INVOKE_TIMEOUT_SECONDS)}s). "
-                        "Probá con un modelo mas rapido o una consulta mas corta."
-                    ),
-                })
-            except Exception as exc:
-                logger.exception("[WS] error during stream for agent %s: %s", agent_id, exc)
-                await _persist_runtime_error_event(
-                    repo=None,
-                    agent_id=agent_id,
-                    ctx=ctx,
-                    design=_design,
-                    session_id=session_id,
-                    channel="web_chat",
-                    user_input=user_input,
-                    progress_events=progress_events,
-                    message=_format_runtime_error(exc),
-                )
-                await websocket.send_json({"type": "error", "message": _format_runtime_error(exc)})
+                    async def _do_stream() -> tuple[str, int, int]:
+                        runtime.set_progress_callback(_make_ws_progress_sender(websocket, progress_events))
+                        collected: list[str] = []
+                        try:
+                            async for token in runtime.stream(user_input, session_id):
+                                await websocket.send_json({"type": "token", "content": token})
+                                collected.append(token)
 
-    except WebSocketDisconnect:
-        pass
+                            if collected:
+                                return "".join(collected).strip(), 0, 0
+
+                            logger.warning("[WS] stream yielded no tokens for agent %s - falling back to invoke", agent_id)
+                            response = await asyncio.wait_for(runtime.invoke(user_input, session_id), timeout=WS_INVOKE_TIMEOUT_SECONDS)
+                            if response.output:
+                                await websocket.send_json({"type": "token", "content": response.output})
+                            return response.output, response.tokens_in, response.tokens_out
+                        finally:
+                            runtime.set_progress_callback(None)
+
+                    output, reported_tokens_in, reported_tokens_out = await asyncio.wait_for(_do_stream(), timeout=WS_INVOKE_TIMEOUT_SECONDS)
+                    await _persist_usage_event(
+                        repo=None,
+                        agent_id=agent_id,
+                        ctx=ctx,
+                        design=_design,
+                        session_id=session_id,
+                        channel="web_chat",
+                        user_input=user_input,
+                        output=output,
+                        reported_tokens_in=reported_tokens_in,
+                        reported_tokens_out=reported_tokens_out,
+                        progress_events=progress_events,
+                    )
+                    await websocket.send_json({"type": "done", "session_id": session_id})
+                except asyncio.TimeoutError:
+                    logger.warning("[WS] stream timed out after %ss for agent %s", int(WS_INVOKE_TIMEOUT_SECONDS), agent_id)
+                    await _persist_runtime_error_event(
+                        repo=None,
+                        agent_id=agent_id,
+                        ctx=ctx,
+                        design=_design,
+                        session_id=session_id,
+                        channel="web_chat",
+                        user_input=user_input,
+                        progress_events=progress_events,
+                        message=f"Timeout - el agente tardo mas de {int(WS_INVOKE_TIMEOUT_SECONDS)}s",
+                    )
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "message": (
+                                f"El agente tardo demasiado en responder "
+                                f"(timeout {int(WS_INVOKE_TIMEOUT_SECONDS)}s). "
+                                "Probá con un modelo mas rapido o una consulta mas corta."
+                            ),
+                        }
+                    )
+                except Exception as exc:
+                    logger.exception("[WS] error during stream for agent %s: %s", agent_id, exc)
+                    await _persist_runtime_error_event(
+                        repo=None,
+                        agent_id=agent_id,
+                        ctx=ctx,
+                        design=_design,
+                        session_id=session_id,
+                        channel="web_chat",
+                        user_input=user_input,
+                        progress_events=progress_events,
+                        message=_format_runtime_error(exc),
+                    )
+                    await websocket.send_json({"type": "error", "message": _format_runtime_error(exc)})
+        except WebSocketDisconnect:
+            pass
+    finally:
+        if moodle_token is not None:
+            from app.components.tools.moodle_tools import moodle_user_context
+
+            moodle_user_context.reset(moodle_token)
 
 
 @router.post("/{agent_id}/eval", response_model=EvalReport)
@@ -1054,3 +1083,4 @@ def _make_ws_progress_sender(websocket: WebSocket, progress_events: list[dict[st
         await websocket.send_json({"type": message_type, **payload})
 
     return _send
+
