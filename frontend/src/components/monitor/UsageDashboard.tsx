@@ -1,6 +1,7 @@
 import { BarChart3, Gauge, Layers3, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
+import { useProductProfile } from '../../contexts/ProductProfileContext'
 import { type AgentUsage, type BillingHistory, type UsageSummary, usageApi } from '../../lib/api'
 import { formatCurrency, formatNumber } from '../../lib/utils'
 import { Badge } from '../ui/badge'
@@ -15,6 +16,7 @@ const PLAN_TONES: Record<string, 'slate' | 'blue' | 'violet' | 'amber'> = {
 }
 
 export function UsageDashboard() {
+  const product = useProductProfile()
   const [summary, setSummary] = useState<UsageSummary | null>(null)
   const [billing, setBilling] = useState<BillingHistory | null>(null)
   const [agents, setAgents] = useState<AgentUsage[]>([])
@@ -22,6 +24,14 @@ export function UsageDashboard() {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    if (!product.features.billing) {
+      setSummary(null)
+      setBilling(null)
+      setAgents([])
+      setError('')
+      setLoading(false)
+      return
+    }
     setLoading(true)
     Promise.all([usageApi.summary(), usageApi.billing(), usageApi.agents()])
       .then(([summary, billing, agents]) => {
@@ -32,7 +42,7 @@ export function UsageDashboard() {
       })
       .catch(() => setError('No pudimos cargar métricas de uso en este momento.'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [product.features.billing])
 
   const chartBars = useMemo(() => {
     if (!billing?.daily?.length) return []
@@ -57,6 +67,19 @@ export function UsageDashboard() {
       <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
         {error}
       </div>
+    )
+  }
+
+  if (!product.features.billing) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Observabilidad comercial no disponible</CardTitle>
+          <CardDescription>
+            Este perfil no usa planes ni billing. El seguimiento operativo se resuelve desde agentes, ejecuciones y consola.
+          </CardDescription>
+        </CardHeader>
+      </Card>
     )
   }
 

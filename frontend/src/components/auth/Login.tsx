@@ -296,8 +296,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                         </Field>
                       </div>
                       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                        El admin general revisa la solicitud y, si la aprueba, crea el workspace con plan{' '}
-                        <span className="font-medium">free</span>.
+                        El admin general revisa la solicitud y, si la aprueba, crea el workspace inicial para tu equipo.
                       </div>
                     </>
                   )}
@@ -356,7 +355,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                           className="flex w-full items-center justify-center gap-2 text-sm text-slate-600 hover:text-slate-800"
                         >
                           <Building2 className="h-4 w-4" />
-                          Pedir cuenta free
+                          Solicitar acceso
                         </button>
                       )}
                       <button
@@ -431,7 +430,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                           !requestJobTitle
                         }
                       >
-                        {loading ? 'Enviando solicitud...' : 'Solicitar cuenta free'}
+                        {loading ? 'Enviando solicitud...' : 'Solicitar acceso'}
                       </Button>
                       <button
                         type="button"
