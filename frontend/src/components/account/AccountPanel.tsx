@@ -1,8 +1,10 @@
 import { KeyRound, ShieldCheck } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 
 import { authApi, type AuthMe } from '../../lib/api'
 import { formatApiError } from '../../lib/errors'
+import { getProductBranding } from '../../lib/productBranding'
+import { useProductProfile } from '../../contexts/ProductProfileContext'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
@@ -11,6 +13,8 @@ import { Input } from '../ui/input'
 import { useToast } from '../ui/toast'
 
 export function AccountPanel() {
+  const product = useProductProfile()
+  const branding = useMemo(() => getProductBranding(product), [product])
   const { push } = useToast()
   const [me, setMe] = useState<AuthMe | null>(null)
   const [loading, setLoading] = useState(true)
@@ -32,7 +36,7 @@ export function AccountPanel() {
     setError('')
 
     if (newPassword !== confirmPassword) {
-      setError('La confirmación no coincide con la nueva contraseña.')
+      setError('La confirmacion no coincide con la nueva contrasena.')
       return
     }
 
@@ -44,31 +48,36 @@ export function AccountPanel() {
       setConfirmPassword('')
       push({
         tone: 'success',
-        title: 'Contraseña actualizada',
-        description: 'Tu acceso quedó renovado correctamente.',
+        title: 'Contrasena actualizada',
+        description: 'Tu acceso quedo renovado correctamente.',
       })
     } catch (e: any) {
-      setError(formatApiError(e.response?.data?.detail, 'No pudimos actualizar la contraseña.'))
+      setError(formatApiError(e.response?.data?.detail, 'No pudimos actualizar la contrasena.'))
     } finally {
       setSubmitting(false)
     }
   }
+
+  const accountDescription =
+    product.profile === 'platform'
+      ? `Gestiona tu acceso personal y verifica que identidad esta activa dentro de ${branding.appName}.`
+      : product.profile === 'oss'
+        ? `Gestiona tu acceso personal y revisa que identidad esta activa en esta instalacion abierta de ${branding.appName}.`
+        : 'Gestiona tu acceso personal y verifica que identidad esta activa dentro del workspace.'
 
   return (
     <div className="space-y-6">
       <div>
         <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-violet-500">Cuenta</div>
         <h2 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">Seguridad personal</h2>
-        <p className="mt-2 max-w-3xl text-sm text-slate-500">
-          Cambiá tu contraseña de acceso y verificá qué identidad está activa dentro del workspace.
-        </p>
+        <p className="mt-2 max-w-3xl text-sm text-slate-500">{accountDescription}</p>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
         <Card className="border-slate-200/80">
           <CardHeader>
-            <CardTitle>Sesión actual</CardTitle>
-            <CardDescription>Referencia rápida de la identidad autenticada.</CardDescription>
+            <CardTitle>Sesion actual</CardTitle>
+            <CardDescription>Referencia rapida de la identidad autenticada.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
@@ -94,7 +103,7 @@ export function AccountPanel() {
                 <span className="font-medium text-slate-700">Usuario interno:</span> {loading ? 'Cargando...' : me?.user_id || 'Sin dato'}
               </div>
               <div className="mt-2">
-                <span className="font-medium text-slate-700">Recuperación:</span> si olvidás tu contraseña, pedí un token desde la pantalla de login.
+                <span className="font-medium text-slate-700">Recuperacion:</span> si olvidas tu contrasena, pide un token desde la pantalla de login.
               </div>
             </div>
           </CardContent>
@@ -107,14 +116,14 @@ export function AccountPanel() {
                 <KeyRound className="h-5 w-5" />
               </div>
               <div>
-                <CardTitle>Cambiar contraseña</CardTitle>
-                <CardDescription>La nueva contraseña debe tener al menos 8 caracteres.</CardDescription>
+                <CardTitle>Cambiar contrasena</CardTitle>
+                <CardDescription>La nueva contrasena debe tener al menos 8 caracteres.</CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={handleSubmit}>
-              <Field label="Contraseña actual" required>
+              <Field label="Contrasena actual" required>
                 <Input
                   type="password"
                   value={currentPassword}
@@ -124,7 +133,7 @@ export function AccountPanel() {
                 />
               </Field>
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Nueva contraseña" required>
+                <Field label="Nueva contrasena" required>
                   <Input
                     type="password"
                     value={newPassword}
@@ -134,7 +143,7 @@ export function AccountPanel() {
                     required
                   />
                 </Field>
-                <Field label="Confirmar nueva contraseña" required>
+                <Field label="Confirmar nueva contrasena" required>
                   <Input
                     type="password"
                     value={confirmPassword}
@@ -153,7 +162,7 @@ export function AccountPanel() {
               )}
 
               <Button type="submit" disabled={submitting || !currentPassword || !newPassword || !confirmPassword}>
-                {submitting ? 'Actualizando...' : 'Guardar nueva contraseña'}
+                {submitting ? 'Actualizando...' : 'Guardar nueva contrasena'}
               </Button>
             </form>
           </CardContent>

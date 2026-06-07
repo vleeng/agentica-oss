@@ -12,6 +12,7 @@ import {
   type TenantUser,
 } from '../../lib/api'
 import { useProductProfile } from '../../contexts/ProductProfileContext'
+import { getProductBranding } from '../../lib/productBranding'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
@@ -98,6 +99,7 @@ function shortId(value: string | null | undefined) {
 
 export function AccessPanel() {
   const product = useProductProfile()
+  const branding = useMemo(() => getProductBranding(product), [product])
   const toast = useToast()
   const [context, setContext] = useState<AccessContext | null>(null)
   const [users, setUsers] = useState<TenantUser[]>([])
@@ -505,7 +507,7 @@ export function AccessPanel() {
               <CardDescription>
                 {product.features.plans
                   ? 'Consola reservada al admin general para crear workspaces y asignarles plan inicial.'
-                  : 'Consola reservada al admin general para crear workspaces nuevos dentro de este perfil.'}
+                  : `Consola reservada al admin general para crear workspaces nuevos dentro de ${branding.appName}.`}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -610,7 +612,7 @@ export function AccessPanel() {
           {product.features.signup && (
             <Card className="border-slate-200/80">
             <CardHeader>
-              <CardTitle>Solicitudes de cuenta free</CardTitle>
+              <CardTitle>Solicitudes de acceso publico</CardTitle>
               <CardDescription>
                 Bandeja del admin general para aprobar o rechazar altas públicas antes de crear el tenant.
               </CardDescription>
@@ -690,7 +692,7 @@ export function AccessPanel() {
               <CardDescription>
                 {product.features.plans
                   ? 'Snapshot del parque actual: plan activo, equipo cargado y consumo operativo por tenant.'
-                  : 'Snapshot del parque actual: workspaces, equipo cargado y uso operativo por tenant.'}
+                  : `Snapshot del parque actual dentro de ${branding.appName}: workspaces, equipo cargado y uso operativo por tenant.`}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
