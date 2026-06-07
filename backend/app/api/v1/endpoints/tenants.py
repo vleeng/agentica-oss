@@ -31,7 +31,10 @@ async def register_tenant(body: TenantCreate, user: UserCreate, request: Request
     from app.db.session import PublicSessionFactory
     import uuid
 
-    requested_plan = body.plan_id or "free"
+    if get_product_profile_state().features.plans:
+        requested_plan = body.plan_id or "free"
+    else:
+        requested_plan = "enterprise"
 
     if caller_ctx is not None:
         caller_ctx.require_human_user()

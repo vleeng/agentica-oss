@@ -155,6 +155,16 @@ async def _require_system_admin(ctx: CurrentContext) -> None:
         raise HTTPException(status_code=403, detail="Se requiere admin general del sistema")
 
 
+def _ensure_plans_enabled() -> None:
+    if not get_product_profile_state().features.plans:
+        raise HTTPException(status_code=404, detail="La gestion de planes no esta disponible en este perfil.")
+
+
+def _ensure_signup_enabled() -> None:
+    if not get_product_profile_state().features.signup:
+        raise HTTPException(status_code=404, detail="Las solicitudes publicas no estan disponibles en este perfil.")
+
+
 def _map_free_request(row) -> FreeRequestOut:
     return FreeRequestOut(
         id=str(row.id),
@@ -317,6 +327,7 @@ async def set_builder_config(body: BuilderConfig, ctx: CurrentContext) -> Builde
 @router.get("/system/plans", response_model=list[PlanOut])
 async def get_plans(ctx: CurrentContext) -> list[PlanOut]:
     await _require_system_admin(ctx)
+    _ensure_plans_enabled()
     plans = [PlanOut(**plan) for plan in await list_plans()]
     logger.info("[Access] system_plans_list tenant_id=%s user_id=%s count=%s", ctx.tenant_id, ctx.user_id, len(plans))
     return plans
@@ -325,6 +336,7 @@ async def get_plans(ctx: CurrentContext) -> list[PlanOut]:
 @router.put("/system/plans/{plan_id}", response_model=PlanOut)
 async def update_plan(plan_id: str, body: PlanUpdate, ctx: CurrentContext) -> PlanOut:
     await _require_system_admin(ctx)
+    _ensure_plans_enabled()
     logger.info("[Access] system_plan_update_requested tenant_id=%s user_id=%s plan_id=%s", ctx.tenant_id, ctx.user_id, plan_id)
     async with PublicSessionFactory() as db:
         result = await db.execute(
@@ -367,6 +379,7 @@ async def update_plan(plan_id: str, body: PlanUpdate, ctx: CurrentContext) -> Pl
 @router.get("/system/free-requests", response_model=list[FreeRequestOut])
 async def list_free_requests(ctx: CurrentContext, status: str | None = None) -> list[FreeRequestOut]:
     await _require_system_admin(ctx)
+    _ensure_signup_enabled()
     query = """
         SELECT
             id,
@@ -404,6 +417,7 @@ async def list_free_requests(ctx: CurrentContext, status: str | None = None) -> 
 @router.post("/system/free-requests/{request_id}/approve", response_model=FreeRequestOut)
 async def approve_free_request(request_id: str, body: FreeRequestApprove, ctx: CurrentContext) -> FreeRequestOut:
     await _require_system_admin(ctx)
+    _ensure_signup_enabled()
     async with PublicSessionFactory() as db:
         result = await db.execute(
             text("""
@@ -549,6 +563,7 @@ async def approve_free_request(request_id: str, body: FreeRequestApprove, ctx: C
 @router.post("/system/free-requests/{request_id}/reject", response_model=FreeRequestOut)
 async def reject_free_request(request_id: str, body: FreeRequestDecision, ctx: CurrentContext) -> FreeRequestOut:
     await _require_system_admin(ctx)
+    _ensure_signup_enabled()
     async with PublicSessionFactory() as db:
         result = await db.execute(
             text("""

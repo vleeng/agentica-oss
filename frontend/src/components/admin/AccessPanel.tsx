@@ -11,6 +11,7 @@ import {
   type TenantOverview,
   type TenantUser,
 } from '../../lib/api'
+import { useProductProfile } from '../../contexts/ProductProfileContext'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
@@ -96,6 +97,7 @@ function shortId(value: string | null | undefined) {
 }
 
 export function AccessPanel() {
+  const product = useProductProfile()
   const toast = useToast()
   const [context, setContext] = useState<AccessContext | null>(null)
   const [users, setUsers] = useState<TenantUser[]>([])
@@ -106,6 +108,7 @@ export function AccessPanel() {
   const [userForm, setUserForm] = useState(emptyUserForm)
   const [tenantForm, setTenantForm] = useState(emptyTenantForm)
   const [plans, setPlans] = useState<PlanDefinition[]>([])
+  const [canManageTenants, setCanManageTenants] = useState(false)
   const [canManagePlans, setCanManagePlans] = useState(false)
   const [freeRequests, setFreeRequests] = useState<FreeAccountRequest[]>([])
   const [overview, setOverview] = useState<TenantOverview[]>([])
@@ -129,25 +132,29 @@ export function AccessPanel() {
       setContext(me)
       setUsers(tenantUsers)
       try {
-        const planCatalog = await systemApi.listPlans()
-        logAccess('load:plans', { count: planCatalog.length })
-        setPlans(planCatalog)
-        setCanManagePlans(true)
-        const [requests, tenantOverview] = await Promise.all([
-          systemApi.listFreeRequests(),
+        const [tenantOverview, planCatalog, requests] = await Promise.all([
           systemApi.getOverview(),
+          product.features.plans ? systemApi.listPlans() : Promise.resolve([] as PlanDefinition[]),
+          product.features.signup ? systemApi.listFreeRequests() : Promise.resolve([] as FreeAccountRequest[]),
         ])
+        logAccess('load:overview', { count: tenantOverview.length })
+        logAccess('load:plans', { count: planCatalog.length })
+        logAccess('load:free_requests', { count: requests.length })
+        setCanManageTenants(true)
+        setCanManagePlans(product.features.plans)
+        setPlans(planCatalog)
         setFreeRequests(requests)
         setOverview(tenantOverview)
       } catch (error: any) {
         if (error.response?.status === 403) {
-          logAccess('load:plans:forbidden')
+          logAccess('load:global_admin:forbidden')
+          setCanManageTenants(false)
           setCanManagePlans(false)
           setPlans([])
           setFreeRequests([])
           setOverview([])
         } else {
-          console.error('[Agentica][Access] load:plans:error', error)
+          console.error('[Agentica][Access] load:global_admin:error', error)
           throw error
         }
       }
@@ -203,7 +210,7 @@ export function AccessPanel() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [product.features.plans, product.features.signup])
 
   const counts = useMemo(
     () => ({
@@ -374,7 +381,7 @@ export function AccessPanel() {
         <MetricCard label="Viewers" value={String(counts.viewers)} icon={<ShieldCheck className="h-4 w-4" />} />
       </div>
 
-      <div className={`grid gap-6 ${canManagePlans ? 'xl:grid-cols-[1.1fr,0.9fr]' : ''}`}>
+      <div className={`grid gap-6 ${canManageTenants ? 'xl:grid-cols-[1.1fr,0.9fr]' : ''}`}>
         <Card className="border-slate-200/80">
           <CardHeader>
             <CardTitle>Equipo del tenant actual</CardTitle>
@@ -491,12 +498,14 @@ export function AccessPanel() {
           </CardContent>
         </Card>
 
-        {canManagePlans && (
+        {canManageTenants && (
           <Card className="border-slate-200/80">
             <CardHeader>
               <CardTitle>Alta de tenant nuevo</CardTitle>
               <CardDescription>
-                Consola reservada al admin general para crear workspaces y asignarles plan inicial.
+                {product.features.plans
+                  ? 'Consola reservada al admin general para crear workspaces y asignarles plan inicial.'
+                  : 'Consola reservada al admin general para crear workspaces nuevos dentro de este perfil.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -523,18 +532,20 @@ export function AccessPanel() {
                     required
                   />
                 </Field>
-                <Field label="Plan">
-                  <Select
-                    value={tenantForm.plan_id}
-                    onChange={(event) => setTenantForm((prev) => ({ ...prev, plan_id: event.target.value }))}
-                  >
-                    <option value="free">free</option>
-                    <option value="starter">starter</option>
-                    <option value="pro">pro</option>
-                    <option value="business">business</option>
-                    <option value="enterprise">enterprise</option>
-                  </Select>
-                </Field>
+                {product.features.plans && (
+                  <Field label="Plan">
+                    <Select
+                      value={tenantForm.plan_id}
+                      onChange={(event) => setTenantForm((prev) => ({ ...prev, plan_id: event.target.value }))}
+                    >
+                      <option value="free">free</option>
+                      <option value="starter">starter</option>
+                      <option value="pro">pro</option>
+                      <option value="business">business</option>
+                      <option value="enterprise">enterprise</option>
+                    </Select>
+                  </Field>
+                )}
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Owner email" required>
                     <Input
@@ -594,9 +605,10 @@ export function AccessPanel() {
         )}
       </div>
 
-      {canManagePlans && (
-        <div className="grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
-          <Card className="border-slate-200/80">
+      {canManageTenants && (
+        <div className={`grid gap-6 ${product.features.signup ? 'xl:grid-cols-[0.95fr,1.05fr]' : ''}`}>
+          {product.features.signup && (
+            <Card className="border-slate-200/80">
             <CardHeader>
               <CardTitle>Solicitudes de cuenta free</CardTitle>
               <CardDescription>
@@ -632,7 +644,7 @@ export function AccessPanel() {
                             >
                               {request.status}
                             </Badge>
-                            <Badge tone="slate">{request.requested_plan_id}</Badge>
+                              {product.features.plans && <Badge tone="slate">{request.requested_plan_id}</Badge>}
                           </div>
                           <div className="flex flex-wrap gap-3 text-xs text-slate-500">
                             <span>slug: <code className="rounded bg-slate-100 px-2 py-1">{request.slug}</code></span>
@@ -669,13 +681,16 @@ export function AccessPanel() {
                 </div>
               )}
             </CardContent>
-          </Card>
+            </Card>
+          )}
 
           <Card className="border-slate-200/80">
             <CardHeader>
               <CardTitle>Mapa global de tenants y uso</CardTitle>
               <CardDescription>
-                Snapshot del parque actual: plan activo, equipo cargado y consumo operativo por tenant.
+                {product.features.plans
+                  ? 'Snapshot del parque actual: plan activo, equipo cargado y consumo operativo por tenant.'
+                  : 'Snapshot del parque actual: workspaces, equipo cargado y uso operativo por tenant.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -690,7 +705,7 @@ export function AccessPanel() {
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-semibold text-slate-950">{tenant.name}</p>
-                          <Badge tone="violet">{tenant.plan_id}</Badge>
+                          {product.features.plans && <Badge tone="violet">{tenant.plan_id}</Badge>}
                           <code className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-600">{tenant.slug}</code>
                         </div>
                         <div className="flex flex-wrap gap-3 text-xs text-slate-500">
@@ -749,7 +764,7 @@ export function AccessPanel() {
         </div>
       )}
 
-      {canManagePlans && (
+      {canManagePlans && product.features.plans && (
         <Card className="border-slate-200/80">
           <CardHeader>
             <div className="flex items-center gap-3">
