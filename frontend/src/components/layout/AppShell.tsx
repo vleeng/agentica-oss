@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 
 import { useProductProfile } from '../../contexts/ProductProfileContext'
+import { getProductBranding } from '../../lib/productBranding'
 import { getAuthRole, useAuthStore } from '../../stores/auth'
 import { Button } from '../ui/button'
 
@@ -47,6 +48,7 @@ export function AppShell() {
   const location = useLocation()
   const role = getAuthRole()
   const product = useProductProfile()
+  const branding = useMemo(() => getProductBranding(product), [product])
   const isViewer = role === 'viewer'
   const isOwner = role === 'owner'
 
@@ -66,8 +68,8 @@ export function AppShell() {
     const match = [...visibleNavItems, ...visibleLibraryItems].find((item) => item.to === location.pathname)
     if (match) return match.label
     if (location.pathname.startsWith('/agents/')) return 'Monitor'
-    return product.display_name
-  }, [location.pathname, product.display_name, visibleLibraryItems, visibleNavItems])
+    return branding.appName
+  }, [branding.appName, location.pathname, visibleLibraryItems, visibleNavItems])
 
   const logout = () => {
     clearToken()
@@ -100,8 +102,8 @@ export function AppShell() {
               <BrainCircuit className="h-5 w-5 text-white" />
             </div>
             <div>
-              <div className="text-lg font-semibold tracking-tight">{product.display_name}</div>
-              <div className="text-xs text-slate-400">Control de agentes IA</div>
+              <div className="text-lg font-semibold tracking-tight">{branding.appName}</div>
+              <div className="text-xs text-slate-400">{branding.shellSubtitle}</div>
             </div>
           </button>
           {!isViewer && (
@@ -165,14 +167,14 @@ export function AppShell() {
               </button>
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-violet-500">
-                  Workspace
+                  {branding.workspaceLabel}
                 </div>
                 <h1 className="text-base font-semibold leading-tight text-slate-950">{pageTitle}</h1>
               </div>
             </div>
             <div className="hidden items-center gap-2 md:flex">
               <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-              <span className="text-xs text-slate-400">Consola operativa</span>
+              <span className="text-xs text-slate-400">{branding.consoleLabel}</span>
             </div>
           </div>
         </header>

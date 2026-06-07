@@ -21,6 +21,18 @@
     @apply bg-violet-200 text-slate-950;
   }
 
+  html[data-product-profile='platform'] body {
+    @apply bg-slate-100;
+  }
+
+  html[data-product-profile='oss'] body {
+    @apply bg-black text-slate-100;
+  }
+
+  html[data-product-profile='oss'] ::selection {
+    @apply bg-slate-200 text-black;
+  }
+
   /* Sidebar dark scrollbar */
   aside * {
     scrollbar-color: rgba(255,255,255,0.1) transparent;

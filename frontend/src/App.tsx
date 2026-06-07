@@ -27,6 +27,7 @@ import { ChatWizard } from './components/wizard/ChatWizard'
 import { RequirementWizard } from './components/wizard/RequirementWizard'
 import { useProductProfile } from './contexts/ProductProfileContext'
 import { agentsApi, authApi, wizardStateToSpec } from './lib/api'
+import { getProductBranding } from './lib/productBranding'
 import { getAuthRole, useAuthStore } from './stores/auth'
 import type { AgentDesign, WizardState } from './types/agent'
 
@@ -106,6 +107,8 @@ function DashboardRoute() {
 
 function WizardRoute() {
   const navigate = useNavigate()
+  const product = useProductProfile()
+  const branding = getProductBranding(product)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [wizardVariant, setWizardVariant] = useState<'classic' | 'chat'>('classic')
@@ -168,7 +171,7 @@ function WizardRoute() {
             <div className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-500">Wizard asistido por chat</div>
             <h3 className="mt-2 text-xl font-semibold text-slate-950">Conversacion guiada</h3>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              Agentica te hace preguntas, arma el borrador estructurado y te deja crear el agente cuando quede listo.
+              {branding.appName} te hace preguntas, arma el borrador estructurado y te deja crear el agente cuando quede listo.
             </p>
           </button>
         </div>

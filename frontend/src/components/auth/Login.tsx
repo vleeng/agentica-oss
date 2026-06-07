@@ -1,10 +1,11 @@
 import { Building2, LockKeyhole, Sparkles } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import vleengLogo from '../../assets/vleeng-logo.png'
 import { useProductProfile } from '../../contexts/ProductProfileContext'
 import { authApi } from '../../lib/api'
 import { formatApiError } from '../../lib/errors'
+import { getProductBranding } from '../../lib/productBranding'
 import { useAuthStore } from '../../stores/auth'
 import { Button } from '../ui/button'
 import { Card, CardContent } from '../ui/card'
@@ -14,16 +15,17 @@ import { useToast } from '../ui/toast'
 
 export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const product = useProductProfile()
+  const branding = useMemo(() => getProductBranding(product), [product])
   const sectors = [
     'Servicios financieros',
-    'Tecnología',
+    'Tecnologia',
     'Industria y manufactura',
     'Salud',
     'Retail y consumo',
-    'Logística y transporte',
-    'Energía',
-    'Educación',
-    'Consultoría profesional',
+    'Logistica y transporte',
+    'Energia',
+    'Educacion',
+    'Consultoria profesional',
     'Otro',
   ]
   const [mode, setMode] = useState<'login' | 'forgot' | 'reset' | 'request'>('login')
@@ -43,6 +45,20 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const setToken = useAuthStore((state) => state.setToken)
   const { push } = useToast()
 
+  const shellClassName =
+    product.profile === 'oss'
+      ? 'min-h-screen bg-[linear-gradient(180deg,#020617_0%,#020617_38%,#111827_38%,#0f172a_100%)] p-4 md:p-8'
+      : product.profile === 'platform'
+        ? 'min-h-screen bg-[radial-gradient(circle_at_top_left,#e2e8f0,transparent_28%),radial-gradient(circle_at_bottom_right,#dbeafe,transparent_24%),linear-gradient(180deg,#0f172a_0%,#111827_40%,#e5e7eb_40%,#f8fafc_100%)] p-4 md:p-8'
+        : 'min-h-screen bg-[radial-gradient(circle_at_top_left,#ede9fe,transparent_28%),radial-gradient(circle_at_bottom_right,#dbeafe,transparent_24%),linear-gradient(180deg,#0f172a_0%,#111827_40%,#e2e8f0_40%,#f8fafc_100%)] p-4 md:p-8'
+
+  const leftPanelClassName =
+    product.profile === 'oss'
+      ? 'relative hidden overflow-hidden bg-black p-10 text-white md:flex md:flex-col'
+      : product.profile === 'platform'
+        ? 'relative hidden overflow-hidden bg-slate-950 p-10 text-white md:flex md:flex-col'
+        : 'relative hidden overflow-hidden bg-slate-950 p-10 text-white md:flex md:flex-col'
+
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
@@ -51,11 +67,11 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       const data = await authApi.login(email, password)
       if (data.access_token) {
         setToken(data.access_token)
-        push({ tone: 'success', title: 'Sesión iniciada', description: 'Ya podés operar tus agentes.' })
+        push({ tone: 'success', title: 'Sesion iniciada', description: 'Ya puedes operar tus agentes.' })
         onLoginSuccess()
       }
     } catch (e: any) {
-      setError(formatApiError(e.response?.data?.detail, 'No se pudo iniciar sesión.'))
+      setError(formatApiError(e.response?.data?.detail, 'No se pudo iniciar sesion.'))
     } finally {
       setLoading(false)
     }
@@ -69,17 +85,17 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       const data = await authApi.forgotPassword(email)
       push({
         tone: 'info',
-        title: 'Recuperación iniciada',
+        title: 'Recuperacion iniciada',
         description: data.reset_token
           ? 'Te dejamos un token temporal para esta etapa de pruebas.'
-          : 'Si la cuenta existe, ya dejamos lista la recuperación.',
+          : 'Si la cuenta existe, ya dejamos lista la recuperacion.',
       })
       if (data.reset_token) {
         setResetToken(data.reset_token)
       }
       setMode('reset')
     } catch (e: any) {
-      setError(formatApiError(e.response?.data?.detail, 'No pudimos iniciar la recuperación.'))
+      setError(formatApiError(e.response?.data?.detail, 'No pudimos iniciar la recuperacion.'))
     } finally {
       setLoading(false)
     }
@@ -89,7 +105,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     event.preventDefault()
     setError('')
     if (resetPassword !== resetConfirm) {
-      setError('La confirmación no coincide con la nueva contraseña.')
+      setError('La confirmacion no coincide con la nueva contrasena.')
       return
     }
     setLoading(true)
@@ -97,15 +113,15 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       await authApi.resetPassword(resetToken, resetPassword)
       push({
         tone: 'success',
-        title: 'Contraseña renovada',
-        description: 'Ya podés volver a ingresar con tu nueva contraseña.',
+        title: 'Contrasena renovada',
+        description: 'Ya puedes volver a ingresar con tu nueva contrasena.',
       })
       setPassword('')
       setResetPassword('')
       setResetConfirm('')
       setMode('login')
     } catch (e: any) {
-      setError(formatApiError(e.response?.data?.detail, 'No pudimos completar la recuperación.'))
+      setError(formatApiError(e.response?.data?.detail, 'No pudimos completar la recuperacion.'))
     } finally {
       setLoading(false)
     }
@@ -115,7 +131,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     event.preventDefault()
     setError('')
     if (password !== requestPasswordConfirm) {
-      setError('Las dos contraseñas tienen que coincidir.')
+      setError('Las dos contrasenas tienen que coincidir.')
       return
     }
     setLoading(true)
@@ -132,7 +148,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       push({
         tone: 'success',
         title: 'Solicitud enviada',
-        description: `Dejamos ${request.tenant_name} en cola para aprobación del admin general.`,
+        description: `Dejamos ${request.tenant_name} en cola para aprobacion del admin general.`,
       })
       setRequestFirstName('')
       setRequestLastName('')
@@ -157,9 +173,9 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#ede9fe,transparent_28%),radial-gradient(circle_at_bottom_right,#dbeafe,transparent_24%),linear-gradient(180deg,#0f172a_0%,#111827_40%,#e2e8f0_40%,#f8fafc_100%)] p-4 md:p-8">
+    <div className={shellClassName}>
       <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-6xl overflow-hidden rounded-[28px] border border-white/40 bg-white shadow-[0_20px_80px_rgba(15,23,42,0.18)] md:grid-cols-[1.1fr_0.9fr]">
-        <div className="relative hidden overflow-hidden bg-slate-950 p-10 text-white md:flex md:flex-col">
+        <div className={leftPanelClassName}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#8b5cf6_0%,transparent_38%)] opacity-40" />
 
           <div className="relative z-10 space-y-5">
@@ -169,20 +185,15 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                 <Sparkles className="h-5 w-5" />
               </div>
               <div>
-                <div className="text-xl font-semibold">Agentica</div>
-                <div className="text-sm text-slate-400">Control room para agentes IA</div>
+                <div className="text-xl font-semibold">{branding.appName}</div>
+                <div className="text-sm text-slate-400">{branding.shellSubtitle}</div>
               </div>
             </div>
           </div>
 
           <div className="relative z-10 mt-16 max-w-lg">
-            <h1 className="text-4xl font-semibold leading-tight">
-              Tu stack operativo de agentes, monitoreo y conocimiento en una sola consola.
-            </h1>
-            <p className="mt-5 text-base leading-7 text-slate-300">
-              Diseñá agentes, conectalos a herramientas, evaluá resultados y desplegá con una interfaz más clara y
-              centrada en operación real.
-            </p>
+            <h1 className="text-4xl font-semibold leading-tight">{branding.loginHeroTitle}</h1>
+            <p className="mt-5 text-base leading-7 text-slate-300">{branding.loginHeroDescription}</p>
           </div>
         </div>
 
@@ -194,10 +205,8 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                 Acceso seguro
               </div>
               <div>
-                <h2 className="text-3xl font-semibold tracking-tight text-slate-950">Bienvenido de nuevo</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Entrá con tu usuario o correo para recuperar el workspace operativo.
-                </p>
+                <h2 className="text-3xl font-semibold tracking-tight text-slate-950">{branding.loginTitle}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">{branding.loginSubtitle}</p>
               </div>
             </div>
 
@@ -214,12 +223,12 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                   </Field>
 
                   {mode === 'login' && (
-                    <Field label="Contraseña" required>
+                    <Field label="Contrasena" required>
                       <Input
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
+                        placeholder="********"
                       />
                     </Field>
                   )}
@@ -244,7 +253,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                           />
                         </Field>
                       </div>
-                      <Field label="Empresa" required hint="El tenant y el slug se generan automáticamente a partir de este dato.">
+                      <Field label="Empresa" required hint="El tenant y el slug se generan automaticamente a partir de este dato.">
                         <Input
                           type="text"
                           value={requestCompanyName}
@@ -276,7 +285,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                         </Field>
                       </div>
                       <div className="grid gap-4 md:grid-cols-2">
-                        <Field label="Contraseña inicial" required hint="La va a usar la persona cuando el admin apruebe la cuenta.">
+                        <Field label="Contrasena inicial" required hint="La va a usar la persona cuando el admin apruebe la cuenta.">
                           <Input
                             type="password"
                             value={password}
@@ -285,7 +294,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                             minLength={8}
                           />
                         </Field>
-                        <Field label="Repetir contraseña" required>
+                        <Field label="Repetir contrasena" required>
                           <Input
                             type="password"
                             value={requestPasswordConfirm}
@@ -303,7 +312,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
 
                   {mode === 'reset' && (
                     <>
-                      <Field label="Token de recuperación" required hint="En esta etapa de pruebas lo mostramos al solicitar el reset.">
+                      <Field label="Token de recuperacion" required hint="En esta etapa de pruebas lo mostramos al solicitar el reset.">
                         <Input
                           type="text"
                           value={resetToken}
@@ -312,7 +321,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                         />
                       </Field>
                       <div className="grid gap-4 md:grid-cols-2">
-                        <Field label="Nueva contraseña" required>
+                        <Field label="Nueva contrasena" required>
                           <Input
                             type="password"
                             value={resetPassword}
@@ -321,7 +330,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                             minLength={8}
                           />
                         </Field>
-                        <Field label="Confirmar nueva contraseña" required>
+                        <Field label="Confirmar nueva contrasena" required>
                           <Input
                             type="password"
                             value={resetConfirm}
@@ -366,7 +375,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                         }}
                         className="w-full text-sm text-violet-700 hover:text-violet-800"
                       >
-                        Olvidé mi contraseña
+                        Olvide mi contrasena
                       </button>
                     </>
                   )}
@@ -374,7 +383,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                   {mode === 'forgot' && (
                     <>
                       <Button type="submit" className="w-full" size="lg" disabled={loading || !email}>
-                        {loading ? 'Generando recuperación...' : 'Generar token de recuperación'}
+                        {loading ? 'Generando recuperacion...' : 'Generar token de recuperacion'}
                       </Button>
                       <button
                         type="button"
@@ -397,7 +406,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                         size="lg"
                         disabled={loading || !email || !resetToken || !resetPassword || !resetConfirm}
                       >
-                        {loading ? 'Actualizando contraseña...' : 'Guardar nueva contraseña'}
+                        {loading ? 'Actualizando contrasena...' : 'Guardar nueva contrasena'}
                       </Button>
                       <button
                         type="button"
@@ -448,9 +457,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
               </CardContent>
             </Card>
 
-            <p className="text-center text-xs text-slate-400">
-              Infraestructura privada, llaves cifradas y operación bajo tu control.
-            </p>
+            <p className="text-center text-xs text-slate-400">{branding.loginFooter}</p>
           </div>
         </div>
       </div>

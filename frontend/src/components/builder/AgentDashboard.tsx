@@ -1,8 +1,9 @@
 import { ArrowRight, Bot, Cpu, Search, Sparkles, Trash2, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
-import { agentsApi, type AgentSummary, type TenantBillingSummary, tenantsApi } from '../../lib/api'
 import { useProductProfile } from '../../contexts/ProductProfileContext'
+import { agentsApi, type AgentSummary, type TenantBillingSummary, tenantsApi } from '../../lib/api'
+import { getProductBranding } from '../../lib/productBranding'
 import { formatCurrency, formatNumber } from '../../lib/utils'
 import { getAuthRole } from '../../stores/auth'
 import { Badge } from '../ui/badge'
@@ -25,6 +26,7 @@ const STATUS_CONFIG: Record<string, { label: string; tone: 'slate' | 'blue' | 'a
 
 export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
   const product = useProductProfile()
+  const branding = useMemo(() => getProductBranding(product), [product])
   const role = getAuthRole()
   const isViewer = role === 'viewer'
   const [agents, setAgents] = useState<AgentSummary[]>([])
@@ -36,7 +38,7 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
 
   const handleDelete = async (e: React.MouseEvent, agentId: string, name: string) => {
     e.stopPropagation()
-    if (!window.confirm(`¿Eliminar el agente "${name}"? Esta acción no se puede deshacer.`)) return
+    if (!window.confirm(`Eliminar el agente "${name}"? Esta accion no se puede deshacer.`)) return
     setDeletingId(agentId)
     try {
       await agentsApi.delete(agentId)
@@ -59,18 +61,16 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
         setBilling(billingData)
         setError('')
       })
-      .catch(() => setError('No pudimos cargar el dashboard. Revisá el backend e intentá de nuevo.'))
+      .catch(() => setError('No pudimos cargar el dashboard. Revisa el backend e intenta de nuevo.'))
       .finally(() => setLoading(false))
   }, [product.features.billing])
 
   const filteredAgents = useMemo(() => {
     const term = query.trim().toLowerCase()
     if (!term) return agents
-    return agents.filter((agent) => {
-      return [agent.name, agent.framework, agent.status, agent.mode].some((value) =>
-        value.toLowerCase().includes(term)
-      )
-    })
+    return agents.filter((agent) =>
+      [agent.name, agent.framework, agent.status, agent.mode].some((value) => value.toLowerCase().includes(term))
+    )
   }, [agents, query])
 
   if (loading) {
@@ -88,15 +88,13 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
           <CardContent className="flex h-full flex-col justify-between gap-6 p-8">
             <div className="space-y-4">
               <Badge className="w-fit border-none bg-white/10 text-violet-100" tone="slate">
-                Control room
+                {branding.dashboardBadge}
               </Badge>
               <div>
                 <h1 className="max-w-2xl text-3xl font-semibold tracking-tight md:text-4xl">
-                  Diseñá, operá y ajustá tus agentes desde una sola consola.
+                  {branding.dashboardTitle}
                 </h1>
-                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-200">
-                  Tenés una vista unificada de agentes, consumo y estado operativo, con un flujo listo para ir de idea a monitor sin perder contexto.
-                </p>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-200">{branding.dashboardDescription}</p>
               </div>
             </div>
 
@@ -116,8 +114,8 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
 
         <Card className="border-slate-200 bg-white/80">
           <CardHeader>
-            <CardTitle>Panorama rápido</CardTitle>
-            <CardDescription>Lectura operativa del workspace actual.</CardDescription>
+            <CardTitle>Panorama rapido</CardTitle>
+            <CardDescription>{branding.dashboardSummaryDescription}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <MetricLine icon={<Bot className="h-4 w-4" />} label="Agentes totales" value={String(agents.length)} />
@@ -150,7 +148,7 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
         <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <CardTitle>Agentes</CardTitle>
-            <CardDescription>Buscá, abrí y retomá cualquier agente del workspace.</CardDescription>
+            <CardDescription>Busca, abre y retoma cualquier agente del workspace.</CardDescription>
           </div>
           <div className="relative w-full md:max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -193,9 +191,9 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
                           <span>{agent.framework}</span>
-                          <span>•</span>
+                          <span>&bull;</span>
                           <span>{agent.mode === 'crew' ? 'Equipo de agentes' : 'Agente simple'}</span>
-                          <span>•</span>
+                          <span>&bull;</span>
                           <span>{new Date(agent.created_at).toLocaleDateString('es-AR')}</span>
                         </div>
                       </div>
@@ -274,12 +272,12 @@ function EmptyState({
         ◉
       </div>
       <h3 className="mt-5 text-lg font-semibold text-slate-900">
-        {filtered ? 'No encontramos agentes con ese criterio' : 'Todavía no creaste agentes'}
+        {filtered ? 'No encontramos agentes con ese criterio' : 'Todavia no creaste agentes'}
       </h3>
       <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
         {filtered
-          ? 'Probá otra búsqueda o limpiá el filtro para ver todo el workspace.'
-          : 'Arrancá desde el wizard y pasá de idea a monitor con un flujo guiado y listo para operar.'}
+          ? 'Prueba otra busqueda o limpia el filtro para ver todo el workspace.'
+          : 'Arranca desde el wizard y pasa de idea a monitor con un flujo guiado y listo para operar.'}
       </p>
       {!filtered && canCreate && (
         <Button onClick={onNew} className="mt-6">
