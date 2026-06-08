@@ -58,6 +58,7 @@ El fork OSS debe arrancar con:
 3. Verificar que Moodle no dependa de headers del cliente.
 4. Documentar instalacion local y en servidor.
 5. Definir licencia y politica de contribucion antes de abrir el repo.
+6. Seguir [oss-bootstrap-checklist.md](oss-bootstrap-checklist.md) para la secuencia exacta de apertura.
 
 ## Primer arranque sugerido
 

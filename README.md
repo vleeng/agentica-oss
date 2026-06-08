@@ -14,6 +14,7 @@ La documentacion historica del baseline de mayo 2026 sigue disponible, pero ya n
 - [Plan de separacion Platform / SaaS / OSS 2026-06-06](docs/plan-separacion-platform-saas-oss-2026-06-06.md)
 - [Matriz de implementacion del product profile 2026-06-06](docs/matriz-implementacion-product-profile-2026-06-06.md)
 - [Guia del fork OSS publico](docs/oss-fork-guide.md)
+- [OSS bootstrap checklist](docs/oss-bootstrap-checklist.md)
 
 ## Fork OSS publico
 
@@ -26,6 +27,7 @@ La rama publica para la UNICABA, Universidad de la Ciudad de Buenos Aires, se pr
 
 Para la publicacion inicial del fork, leer:
 
+- [OSS bootstrap checklist](docs/oss-bootstrap-checklist.md)
 - [Guia del fork OSS publico](docs/oss-fork-guide.md)
 - [Paquete de publicacion OSS](docs/oss-publication-package.md)
 - [Borrador de README publico OSS](docs/oss-public-readme-draft.md)

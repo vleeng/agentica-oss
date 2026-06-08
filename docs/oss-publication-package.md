@@ -21,6 +21,7 @@ Dejar listo un repositorio publico separado, basado en la linea `platform`, con:
 - `.env.example`
 - `docker-compose.yml`
 - `docker-compose.prod.yml`
+- `docs/oss-bootstrap-checklist.md`
 - `docs/oss-fork-guide.md`
 - `docs/oss-public-readme-draft.md`
 
@@ -36,12 +37,13 @@ Dejar listo un repositorio publico separado, basado en la linea `platform`, con:
 
 ## Bootstrap del fork
 
-1. Crear el repo publico en GitHub.
-2. Hacer push desde la rama base definida para OSS.
-3. Ajustar `README.md` para que sea la portada publica.
-4. Configurar secretos y variables de entorno del server universitario.
-5. Crear el tenant inicial y validar login.
-6. Publicar la primera version etiquetada.
+1. Seguir [oss-bootstrap-checklist.md](docs/oss-bootstrap-checklist.md).
+2. Crear el repo publico en GitHub.
+3. Hacer push desde la rama base definida para OSS.
+4. Ajustar `README.md` para que sea la portada publica.
+5. Configurar secretos y variables de entorno del server universitario.
+6. Crear el tenant inicial y validar login.
+7. Publicar la primera version etiquetada.
 
 ## Criterio de salida
 
