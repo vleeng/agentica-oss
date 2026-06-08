@@ -30,7 +30,7 @@ const navItems = [
   { to: '/usage', label: 'Observabilidad', icon: <BarChart3 className="h-4 w-4" /> },
   { to: '/account', label: 'Cuenta', icon: <CircleUserRound className="h-4 w-4" /> },
   { to: '/access', label: 'Accesos', icon: <Building2 className="h-4 w-4" /> },
-  { to: '/providers', label: 'Boveda IA', icon: <Shield className="h-4 w-4" /> },
+  { to: '/providers', label: 'Bóveda IA', icon: <Shield className="h-4 w-4" /> },
   { to: '/custom-tools', label: 'Mis tools', icon: <Code2 className="h-4 w-4" /> },
   { to: '/keys', label: 'API Keys', icon: <KeyRound className="h-4 w-4" /> },
 ]
@@ -124,7 +124,7 @@ export function AppShell() {
           {visibleLibraryItems.length > 0 && (
             <div className="mt-6">
               <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Libreria
+                Librería
               </p>
               <div className="space-y-0.5">
                 {visibleLibraryItems.map((item) => (
@@ -150,7 +150,7 @@ export function AppShell() {
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-slate-400 transition hover:bg-rose-900/40 hover:text-rose-300"
           >
             <LogOut className="h-4 w-4 shrink-0" />
-            Cerrar sesion
+            Cerrar sesión
           </button>
         </div>
       </aside>

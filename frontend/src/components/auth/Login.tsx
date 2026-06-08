@@ -71,7 +71,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
         onLoginSuccess()
       }
     } catch (e: any) {
-      setError(formatApiError(e.response?.data?.detail, 'No se pudo iniciar sesion.'))
+      setError(formatApiError(e.response?.data?.detail, 'No se pudo iniciar sesión.'))
     } finally {
       setLoading(false)
     }

@@ -26,8 +26,8 @@ const BRANDING: Record<ProductProfileInfo['profile'], ProductBranding> = {
     loginSubtitle: 'Entra con tu usuario o correo para recuperar el workspace operativo.',
     loginHeroTitle: 'Tu stack operativo de agentes, monitoreo y conocimiento en una sola consola.',
     loginHeroDescription:
-      'Disena agentes, conectalos a herramientas, evalua resultados y despliega con una interfaz mas clara y centrada en operacion real.',
-    loginFooter: 'Infraestructura privada, llaves cifradas y operacion bajo tu control.',
+      'Diseña agentes, conéctalos a herramientas, evalúa resultados y despliega con una interfaz más clara y centrada en operación real.',
+    loginFooter: 'Infraestructura privada, llaves cifradas y operación bajo tu control.',
     dashboardBadge: 'Control room',
     dashboardTitle: 'Disena, opera y ajusta tus agentes desde una sola consola.',
     dashboardDescription:
@@ -57,16 +57,16 @@ const BRANDING: Record<ProductProfileInfo['profile'], ProductBranding> = {
     workspaceLabel: 'Community',
     consoleLabel: 'Modo abierto',
     loginTitle: 'Acceso al entorno abierto',
-    loginSubtitle: 'Ingresa con tu usuario o correo para operar esta instalacion comunitaria.',
+    loginSubtitle: 'Ingresa con tu usuario o correo para operar esta instalación comunitaria.',
     loginHeroTitle: 'Una base abierta para construir agentes, conocimiento y automatizacion operativa.',
     loginHeroDescription:
-      'Levanta el sistema, extiendelo y adaptalo a tus propios casos de uso con una interfaz mas sobria y enfocada en operacion.',
+      'Levanta el sistema, extiéndelo y adáptalo a tus propios casos de uso con una interfaz más sobria y enfocada en operación.',
     loginFooter: 'Proyecto abierto, instalable y orientado a extension comunitaria.',
     dashboardBadge: 'Open core',
     dashboardTitle: 'Construye y opera agentes sobre una base abierta y extensible.',
     dashboardDescription:
-      'Explora agentes, flujos y conocimiento desde una instalacion pensada para aprender, extender y resolver casos propios.',
-    dashboardSummaryDescription: 'Lectura operativa de la instalacion comunitaria.',
+      'Explora agentes, flujos y conocimiento desde una instalación pensada para aprender, extender y resolver casos propios.',
+    dashboardSummaryDescription: 'Lectura operativa de la instalación comunitaria.',
   },
 }
 
