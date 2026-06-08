@@ -3,16 +3,16 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { systemProfileApi, type ProductProfileInfo } from '../lib/api'
 
 const DEFAULT_PRODUCT_PROFILE: ProductProfileInfo = {
-  profile: 'saas',
-  display_name: 'Agentica',
+  profile: 'oss',
+  display_name: 'Agentica OSS',
   features: {
-    billing: true,
-    plans: true,
-    usage_limits: true,
-    signup: true,
+    billing: false,
+    plans: false,
+    usage_limits: false,
+    signup: false,
     enterprise_auth: false,
     white_label: false,
-    community_theme: false,
+    community_theme: true,
   },
 }
 

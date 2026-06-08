@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     app_name: str = "AGENTICA"
     environment: str = "development"
     debug: bool = False
-    product_profile: str = "saas"
+    product_profile: str = "oss"
 
     # Database
     database_url: str = "postgresql+asyncpg://agentica:agentica_dev@localhost:5432/agentica"
