@@ -100,6 +100,7 @@ function shortId(value: string | null | undefined) {
 export function AccessPanel() {
   const product = useProductProfile()
   const branding = useMemo(() => getProductBranding(product), [product])
+  const scopeLabel = product.profile === 'platform' ? 'workspace' : 'tenant'
   const toast = useToast()
   const [context, setContext] = useState<AccessContext | null>(null)
   const [users, setUsers] = useState<TenantUser[]>([])
@@ -362,9 +363,13 @@ export function AccessPanel() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-violet-500">Admin</div>
-          <h2 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">Tenants, usuarios y roles</h2>
+          <h2 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">
+            {product.profile === 'platform' ? 'Workspaces, usuarios y roles' : 'Tenants, usuarios y roles'}
+          </h2>
           <p className="mt-2 max-w-3xl text-sm text-slate-500">
-            Centralizá el alta del workspace, accesos internos y el rol operativo de cada persona sin salir de la consola.
+            {product.profile === 'platform'
+              ? 'Centralizá el alta del workspace, accesos internos y el rol operativo de cada persona sin salir de la consola privada.'
+              : 'Centralizá el alta del workspace, accesos internos y el rol operativo de cada persona sin salir de la consola.'}
           </p>
         </div>
         <Button variant="secondary" onClick={loadData} disabled={loading}>
@@ -374,7 +379,7 @@ export function AccessPanel() {
 
       <div className="grid gap-4 md:grid-cols-4">
         <MetricCard
-          label="Tenant activo"
+          label={scopeLabel === 'workspace' ? 'Workspace activo' : 'Tenant activo'}
           value={context?.tenant_name || context?.tenant_slug || shortId(context?.tenant_id)}
           icon={<Building2 className="h-4 w-4" />}
         />
@@ -386,15 +391,17 @@ export function AccessPanel() {
       <div className={`grid gap-6 ${canManageTenants ? 'xl:grid-cols-[1.1fr,0.9fr]' : ''}`}>
         <Card className="border-slate-200/80">
           <CardHeader>
-            <CardTitle>Equipo del tenant actual</CardTitle>
+            <CardTitle>{scopeLabel === 'workspace' ? 'Equipo del workspace actual' : 'Equipo del tenant actual'}</CardTitle>
             <CardDescription>
-              El owner puede dar de alta usuarios nuevos para este tenant y asignarles el rol inicial.
+              {product.profile === 'platform'
+                ? 'El owner puede dar de alta usuarios nuevos para este workspace y asignarles el rol inicial.'
+                : 'El owner puede dar de alta usuarios nuevos para este tenant y asignarles el rol inicial.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-4">
               <div className="flex flex-wrap items-center gap-3">
-                <Badge tone="violet">Tenant actual</Badge>
+                <Badge tone="violet">{scopeLabel === 'workspace' ? 'Workspace actual' : 'Tenant actual'}</Badge>
                 <span className="rounded bg-white px-2 py-1 text-xs text-slate-700">
                   {context?.tenant_name || context?.tenant_slug || 'Cargando...'}
                 </span>
@@ -410,7 +417,9 @@ export function AccessPanel() {
                 )}
               </div>
               <p className="mt-3 text-sm text-slate-500">
-                Esta vista trabaja sobre tu tenant actual. Los usuarios creados acá quedan aislados dentro de este workspace.
+                {scopeLabel === 'workspace'
+                  ? 'Esta vista trabaja sobre tu workspace actual. Los usuarios creados acá quedan aislados dentro de esta consola privada.'
+                  : 'Esta vista trabaja sobre tu tenant actual. Los usuarios creados acá quedan aislados dentro de este workspace.'}
               </p>
             </div>
 
@@ -463,11 +472,15 @@ export function AccessPanel() {
               <div className="grid grid-cols-[1.7fr,1fr,1fr,1.1fr] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                 <span>Usuario</span>
                 <span>Rol</span>
-                <span>Tenant</span>
+                <span>{scopeLabel === 'workspace' ? 'Workspace' : 'Tenant'}</span>
                 <span>Alta</span>
               </div>
               {users.length === 0 ? (
-                <div className="px-4 py-8 text-sm text-slate-500">Todavía no hay usuarios cargados en este tenant.</div>
+                <div className="px-4 py-8 text-sm text-slate-500">
+                  {scopeLabel === 'workspace'
+                    ? 'Todavía no hay usuarios cargados en este workspace.'
+                    : 'Todavía no hay usuarios cargados en este tenant.'}
+                </div>
               ) : (
                 <div className="divide-y divide-slate-200">
                   {users.map((user) => (
@@ -484,7 +497,7 @@ export function AccessPanel() {
                       <div className="flex items-center">
                         <div className="min-w-0">
                           <p className="truncate text-xs font-medium text-slate-700">
-                            {context?.tenant_name || context?.tenant_slug || 'Tenant actual'}
+                            {context?.tenant_name || context?.tenant_slug || (scopeLabel === 'workspace' ? 'Workspace actual' : 'Tenant actual')}
                           </p>
                           <code className="truncate rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
                             {shortId(user.tenant_id)}
@@ -503,7 +516,7 @@ export function AccessPanel() {
         {canManageTenants && (
           <Card className="border-slate-200/80">
             <CardHeader>
-              <CardTitle>Alta de tenant nuevo</CardTitle>
+              <CardTitle>{scopeLabel === 'workspace' ? 'Alta de workspace nuevo' : 'Alta de tenant nuevo'}</CardTitle>
               <CardDescription>
                 {product.features.plans
                   ? 'Consola reservada al admin general para crear workspaces y asignarles plan inicial.'
@@ -512,7 +525,7 @@ export function AccessPanel() {
             </CardHeader>
             <CardContent className="space-y-5">
               <form className="space-y-4" onSubmit={handleCreateTenant}>
-                <Field label="Nombre del tenant" required>
+                <Field label={scopeLabel === 'workspace' ? 'Nombre del workspace' : 'Nombre del tenant'} required>
                   <Input
                     placeholder="Balanz Labs"
                     value={tenantForm.name}
@@ -566,7 +579,15 @@ export function AccessPanel() {
                     />
                   </Field>
                 </div>
-                <Field label="Owner password" required hint="Se usa para el primer ingreso del nuevo tenant.">
+                <Field
+                  label="Owner password"
+                  required
+                  hint={
+                    product.profile === 'platform'
+                      ? 'Se usa para el primer ingreso del nuevo workspace.'
+                      : 'Se usa para el primer ingreso del nuevo tenant.'
+                  }
+                >
                   <Input
                     type="password"
                     placeholder="********"
@@ -577,16 +598,24 @@ export function AccessPanel() {
                   />
                 </Field>
                 <Button type="submit" className="w-full" disabled={tenantSubmitting}>
-                  {tenantSubmitting ? 'Creando tenant...' : 'Crear tenant'}
+                  {tenantSubmitting
+                    ? scopeLabel === 'workspace'
+                      ? 'Creando workspace...'
+                      : 'Creando tenant...'
+                    : scopeLabel === 'workspace'
+                      ? 'Crear workspace'
+                      : 'Crear tenant'}
                 </Button>
               </form>
 
               {lastTenantCreated && (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-                  <p className="font-medium">Tenant creado con éxito</p>
+                  <p className="font-medium">
+                    {scopeLabel === 'workspace' ? 'Workspace creado con éxito' : 'Tenant creado con éxito'}
+                  </p>
                   <div className="mt-3 space-y-2 text-emerald-800">
                     <p>
-                      <span className="font-medium">Tenant:</span>{' '}
+                      <span className="font-medium">{scopeLabel === 'workspace' ? 'Workspace:' : 'Tenant:'}</span>{' '}
                       <span>{lastTenantCreated.tenant_name}</span>{' '}
                       <code className="rounded bg-white px-2 py-1 text-xs">{lastTenantCreated.tenant_id}</code>
                     </p>
@@ -612,9 +641,11 @@ export function AccessPanel() {
           {product.features.signup && (
             <Card className="border-slate-200/80">
             <CardHeader>
-              <CardTitle>Solicitudes de acceso publico</CardTitle>
-              <CardDescription>
-                Bandeja del admin general para aprobar o rechazar altas públicas antes de crear el tenant.
+              <CardTitle>{scopeLabel === 'workspace' ? 'Solicitudes de acceso público' : 'Solicitudes de acceso publico'}</CardTitle>
+            <CardDescription>
+                {product.profile === 'platform'
+                  ? 'Bandeja del admin general para aprobar o rechazar altas públicas antes de crear el workspace.'
+                  : 'Bandeja del admin general para aprobar o rechazar altas públicas antes de crear el tenant.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -688,17 +719,19 @@ export function AccessPanel() {
 
           <Card className="border-slate-200/80">
             <CardHeader>
-              <CardTitle>Mapa global de tenants y uso</CardTitle>
+              <CardTitle>{product.profile === 'platform' ? 'Mapa global de workspaces y uso' : 'Mapa global de tenants y uso'}</CardTitle>
               <CardDescription>
                 {product.features.plans
-                  ? 'Snapshot del parque actual: plan activo, equipo cargado y consumo operativo por tenant.'
+                  ? product.profile === 'platform'
+                    ? 'Snapshot del parque actual: equipo cargado y consumo operativo por workspace.'
+                    : 'Snapshot del parque actual: plan activo, equipo cargado y consumo operativo por tenant.'
                   : `Snapshot del parque actual dentro de ${branding.appName}: workspaces, equipo cargado y uso operativo por tenant.`}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {overview.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-sm text-slate-500">
-                  Todavía no hay tenants para mostrar.
+                  {product.profile === 'platform' ? 'Todavía no hay workspaces para mostrar.' : 'Todavía no hay tenants para mostrar.'}
                 </div>
               ) : (
                 overview.map((tenant) => (
