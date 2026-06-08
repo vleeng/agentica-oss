@@ -90,7 +90,7 @@ export function APIKeysPanel() {
       <div>
         <h2 className="text-2xl font-semibold text-slate-950">API Keys</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Genera llaves publicas atadas a un agente especifico para widgets e integraciones.
+          Genera llaves públicas atadas a un agente específico para widgets e integraciones.
         </p>
       </div>
 

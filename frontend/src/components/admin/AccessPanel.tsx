@@ -641,7 +641,7 @@ export function AccessPanel() {
           {product.features.signup && (
             <Card className="border-slate-200/80">
             <CardHeader>
-              <CardTitle>{scopeLabel === 'workspace' ? 'Solicitudes de acceso público' : 'Solicitudes de acceso publico'}</CardTitle>
+              <CardTitle>{scopeLabel === 'workspace' ? 'Solicitudes de acceso público' : 'Solicitudes de acceso público'}</CardTitle>
             <CardDescription>
                 {product.profile === 'platform'
                   ? 'Bandeja del admin general para aprobar o rechazar altas públicas antes de crear el workspace.'
