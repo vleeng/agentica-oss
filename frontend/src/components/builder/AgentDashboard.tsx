@@ -114,7 +114,7 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
 
         <Card className="border-slate-200 bg-white/80">
           <CardHeader>
-            <CardTitle>Panorama rapido</CardTitle>
+            <CardTitle>Panorama rápido</CardTitle>
             <CardDescription>{branding.dashboardSummaryDescription}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -180,7 +180,7 @@ export function AgentDashboard({ onSelectAgent, onNewAgent }: Props) {
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div className="flex min-w-0 items-start gap-4">
                       <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-                        {agent.mode === 'crew' ? '◫' : '◉'}
+                        {agent.mode === 'crew' ? 'Crew' : 'Ag'}
                       </div>
                       <div className="min-w-0 space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
@@ -269,14 +269,14 @@ function EmptyState({
   return (
     <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center">
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-2xl text-violet-700">
-        ◉
+        Ag
       </div>
       <h3 className="mt-5 text-lg font-semibold text-slate-900">
-        {filtered ? 'No encontramos agentes con ese criterio' : 'Todavia no creaste agentes'}
+        {filtered ? 'No encontramos agentes con ese criterio' : 'Todavía no creaste agentes'}
       </h3>
       <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
         {filtered
-          ? 'Prueba otra busqueda o limpia el filtro para ver todo el workspace.'
+          ? 'Prueba otra búsqueda o limpia el filtro para ver todo el workspace.'
           : 'Arranca desde el wizard y pasa de idea a monitor con un flujo guiado y listo para operar.'}
       </p>
       {!filtered && canCreate && (

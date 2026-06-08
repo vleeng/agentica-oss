@@ -87,9 +87,9 @@ export function BuilderConfigPanel() {
             <Settings className="h-5 w-5" />
           </div>
           <div>
-            <CardTitle>Configuracion del Builder</CardTitle>
+            <CardTitle>Configuración del Builder</CardTitle>
             <CardDescription>
-              LLM que genera los disenos de agentes cuando se crea uno nuevo.
+              LLM que genera los diseños de agentes cuando se crea uno nuevo.
               {config?.configured
                 ? ' Configurado desde la base de datos.'
                 : ' Usando valores de variables de entorno.'}
@@ -106,12 +106,12 @@ export function BuilderConfigPanel() {
           <div className="space-y-4">
             {keys.length === 0 && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                No hay claves en la boveda. Agrega al menos una credencial para poder seleccionarla como builder.
+                No hay claves en la bóveda. Agrega al menos una credencial para poder seleccionarla como builder.
               </div>
             )}
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Clave de boveda (vault)">
+              <Field label="Clave de bóveda (vault)">
                 <Select
                   value={selectedKeyId}
                   onChange={e => handleKeyChange(e.target.value)}
@@ -161,7 +161,7 @@ export function BuilderConfigPanel() {
                 onClick={save}
                 disabled={saving || !selectedModel.trim()}
               >
-                {saving ? 'Guardando...' : 'Guardar configuracion'}
+                {saving ? 'Guardando...' : 'Guardar configuración'}
               </Button>
             </div>
           </div>
