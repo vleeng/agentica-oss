@@ -1,93 +1,37 @@
-# Agentica
+# Agentica OSS
 
-Plataforma multi-tenant para disenar, construir, probar, desplegar y observar agentes IA con tools, conocimiento y ejecucion monitoreada.
+Agentica OSS es una plataforma open source para crear, configurar, ejecutar y monitorear agentes de IA en instalaciones propias. Esta linea publica esta pensada para la UNICABA, Universidad de la Ciudad de Buenos Aires, y para cualquier organizacion que quiera desplegar su propia base operativa.
 
-## Estado del proyecto
+## Que incluye
 
-La documentacion historica del baseline de mayo 2026 sigue disponible, pero ya no describe por completo el estado actual. La referencia vigente para junio 2026 es este paquete documental:
+- wizard clasico
+- wizard asistido por chat
+- agentes `direct`, `react` y `crew`
+- knowledge bases y RAG
+- skills, tools y MCP
+- editor de flujo
+- monitor del agente
+- monitor de ejecuciones
+- observabilidad de uso por agente
+- integracion Moodle para la linea OSS
 
-- [Arquitectura actual 2026-06-06](docs/arquitectura-actual-2026-06-06.md)
-- [Funcional de modulos 2026-06-06](docs/funcional-modulos-2026-06-06.md)
-- [Runtime y observabilidad 2026-06-06](docs/runtime-observabilidad-2026-06-06.md)
-- [Conocimiento y RAG 2026-06-06](docs/conocimiento-rag-2026-06-06.md)
-- [Version actual 2026-06-06](docs/version-actual-2026-06-06.md)
-- [Plan de separacion Platform / SaaS / OSS 2026-06-06](docs/plan-separacion-platform-saas-oss-2026-06-06.md)
-- [Matriz de implementacion del product profile 2026-06-06](docs/matriz-implementacion-product-profile-2026-06-06.md)
-- [Guia del fork OSS publico](docs/oss-fork-guide.md)
-- [OSS bootstrap checklist](docs/oss-bootstrap-checklist.md)
+## Que no incluye
 
-## Fork OSS publico
+- billing
+- planes comerciales
+- limites de plan
+- onboarding SaaS
+- branding premium de Vleeng
 
-La rama publica para la UNICABA, Universidad de la Ciudad de Buenos Aires, se prepara como un fork separado y debe arrancar con:
+## Requisitos
 
-- `PRODUCT_PROFILE=oss`
-- tema comunitario sobrio
-- sin billing ni planes comerciales
-- Moodle habilitado solo en esta linea
+- Python 3.11
+- Node.js 20
+- PostgreSQL 16
+- Redis 7
+- Qdrant
 
-Para la publicacion inicial del fork, leer:
-
-- [OSS bootstrap checklist](docs/oss-bootstrap-checklist.md)
-- [Guia del fork OSS publico](docs/oss-fork-guide.md)
-- [Paquete de publicacion OSS](docs/oss-publication-package.md)
-- [Borrador de README publico OSS](docs/oss-public-readme-draft.md)
-- [CONTRIBUTING](CONTRIBUTING.md)
-- [SECURITY](SECURITY.md)
-- [LICENSE](LICENSE)
-
-## Que es Agentica hoy
-
-Agentica ya soporta de forma operativa:
-
-- wizard clasico y wizard asistido por chat,
-- agentes simples `direct` y `react`,
-- equipos tipo `crew`,
-- knowledge bases `global` y `restricted`,
-- skills, MCP y tools,
-- editor de flujo,
-- monitor del agente,
-- monitor de ejecuciones con timeline,
-- deploy por branch, tag o commit.
-
-## Stack
-
-- Backend: Python 3.11 + FastAPI + LangChain + CrewAI
-- Frontend: React 18 + TypeScript + Vite + Tailwind CSS
-- Persistencia: PostgreSQL + Redis + Qdrant
-- Infra: Docker Compose
-
-## Mapa de lectura sugerido
-
-### Si sos funcional o producto
-
-Empeza por:
-
-- [Funcional de modulos 2026-06-06](docs/funcional-modulos-2026-06-06.md)
-- [Version actual 2026-06-06](docs/version-actual-2026-06-06.md)
-
-### Si sos tecnico
-
-Empeza por:
-
-- [Arquitectura actual 2026-06-06](docs/arquitectura-actual-2026-06-06.md)
-- [Runtime y observabilidad 2026-06-06](docs/runtime-observabilidad-2026-06-06.md)
-- [Conocimiento y RAG 2026-06-06](docs/conocimiento-rag-2026-06-06.md)
-
-### Si vas a operar deploys
-
-Lee:
-
-- [Operacion de ramas y deploy](docs/operacion-ramas-deploy.md)
-
-## Documentacion historica y complementaria
-
-- [Baseline funcional 2026-05-14](docs/version-agentica-2026-05-14.md)
-- [Implementar baseline 2026-05-14 en otro server](docs/implementar-version-2026-05-14.md)
-- [Manual de usuario](docs/manual-usuario-agentica.md)
-- [Matriz de operatividad de tools](docs/matriz-operatividad-tools.md)
-- [Plan de desarrollo de tools](docs/plan-desarrollo-tools.md)
-
-## Arranque rapido en desarrollo
+## Inicio rapido
 
 ```bash
 cp .env.example .env
@@ -106,44 +50,30 @@ npm install
 npm run dev
 ```
 
-## Deploy
+## Configuracion OSS
 
-```bash
-cd /opt/agentica
-bash infra/scripts/deploy.sh --ref codex-wizard-ai-advisor
-curl -s https://axenova.com/agentica/api/health/version
-```
+Antes de iniciar, ajustar:
 
-Para detalle completo de ramas, rollback y promocion:
+- `PRODUCT_PROFILE=oss`
+- llaves LLM
+- `MOODLE_URL` y `MOODLE_API_KEY` si se usa Moodle
+- `MOODLE_USER_MAP_JSON` para mapear usuarios de Agentica a Moodle
 
-- [Operacion de ramas y deploy](docs/operacion-ramas-deploy.md)
+## Bootstrap del fork
 
-## Estructura resumida
+Seguir [OSS bootstrap checklist](docs/oss-bootstrap-checklist.md) para la publicacion inicial y el primer arranque en el servidor de UNICABA.
 
-```text
-backend/app/
-  api/v1/endpoints/
-  builders/
-  components/
-  core/
-  db/
-  runtime/
-  schemas/
-  services/
+Tambien ayuda revisar:
 
-frontend/src/
-  components/auth/
-  components/builder/
-  components/monitor/
-  components/wizard/
-  lib/
-  types/
+- [Guia del fork OSS publico](docs/oss-fork-guide.md)
+- [Paquete de publicacion OSS](docs/oss-publication-package.md)
+- [Borrador de README publico OSS](docs/oss-public-readme-draft.md)
 
-docs/
-infra/
-widget/
-```
+## Contribuir
 
-## Siguiente gran evolucion
+Ver [CONTRIBUTING.md](CONTRIBUTING.md).
 
-La proxima evolucion estructural prevista del producto es la incorporacion de agentes proactivos como segunda entidad, apoyados en la capa de observabilidad ya existente.
+## Licencia
+
+Ver [LICENSE](LICENSE).
+
