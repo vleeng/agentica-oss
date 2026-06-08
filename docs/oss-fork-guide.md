@@ -1,6 +1,6 @@
 # Guia del fork OSS publico
 
-Este documento resume como publicar la linea open source de Agentica para la UNICABA, Universidad de la Ciudad de Buenos Aires.
+Este documento resume como publicar la linea open source de Agentica para una organizacion o comunidad que quiera desplegar su propia base operativa.
 
 ## Objetivo
 

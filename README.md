@@ -1,6 +1,6 @@
 # Agentica OSS
 
-Agentica OSS es una plataforma open source para crear, configurar, ejecutar y monitorear agentes de IA en instalaciones propias. Esta linea publica esta pensada para la UNICABA, Universidad de la Ciudad de Buenos Aires, y para cualquier organizacion que quiera desplegar su propia base operativa.
+Agentica OSS es una plataforma open source para crear, configurar, ejecutar y monitorear agentes de IA en instalaciones propias. Esta linea publica esta pensada para cualquier organizacion o comunidad que quiera desplegar su propia base operativa.
 
 ## Que incluye
 
@@ -61,7 +61,7 @@ Antes de iniciar, ajustar:
 
 ## Bootstrap del fork
 
-Seguir [OSS bootstrap checklist](docs/oss-bootstrap-checklist.md) para la publicacion inicial y el primer arranque en el servidor de UNICABA.
+Seguir [OSS bootstrap checklist](docs/oss-bootstrap-checklist.md) para la publicacion inicial y el primer arranque en el servidor de destino.
 
 Tambien ayuda revisar:
 
@@ -76,4 +76,3 @@ Ver [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Licencia
 
 Ver [LICENSE](LICENSE).
-

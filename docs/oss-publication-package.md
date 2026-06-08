@@ -1,6 +1,6 @@
 # Paquete de publicacion OSS
 
-Este paquete prepara la apertura del fork publico de Agentica para la UNICABA, Universidad de la Ciudad de Buenos Aires.
+Este paquete prepara la apertura del fork publico de Agentica para una organizacion o comunidad que quiera desplegar su propia base operativa.
 
 ## Objetivo
 

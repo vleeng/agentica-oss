@@ -65,7 +65,7 @@ Ver [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Bootstrap del fork
 
-Seguir [OSS bootstrap checklist](oss-bootstrap-checklist.md) para la publicacion inicial y el primer arranque en el servidor de UNICABA.
+Seguir [OSS bootstrap checklist](oss-bootstrap-checklist.md) para la publicacion inicial y el primer arranque en el servidor de destino.
 
 ## Licencia
 

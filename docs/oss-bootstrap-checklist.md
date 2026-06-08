@@ -1,6 +1,6 @@
 # OSS bootstrap checklist
 
-Este documento convierte el fork publico de Agentica para UNICABA en una secuencia concreta de publicacion.
+Este documento convierte el fork publico de Agentica en una secuencia concreta de publicacion.
 
 ## Objetivo
 
@@ -80,7 +80,7 @@ En el repo publico:
 1. Crear el primer tag publico.
 2. Publicar la version inicial en GitHub.
 3. Actualizar el README publico con el estado actual.
-4. Registrar el server de la UNICABA como despliegue de referencia.
+4. Registrar el server de referencia como despliegue inicial del fork.
 
 ## Criterio de salida
 
@@ -91,4 +91,3 @@ El bootstrap queda completo cuando:
 - la documentacion publica explica instalacion y contribucion
 - la UI no expone planes ni billing
 - Moodle queda aislado a la linea OSS
-
