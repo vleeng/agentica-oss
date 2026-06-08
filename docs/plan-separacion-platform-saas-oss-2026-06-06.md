@@ -38,7 +38,7 @@ No se recomienda forkearlos de entrada.
 
 `OSS` se crea como repositorio aparte, publico, con despliegue propio y ownership externo a Vleeng.
 
-El primer caso de uso y gobierno operativo sera la Universidad de la Ciudad de Buenos Aires.
+El primer caso de uso y gobierno operativo sera la UNICABA, Universidad de la Ciudad de Buenos Aires.
 
 ### Regla de arquitectura
 
@@ -96,7 +96,7 @@ Producto publico, descargable y extensible por la comunidad.
 
 Primer caso:
 
-- Universidad de la Ciudad de Buenos Aires
+- UNICABA, Universidad de la Ciudad de Buenos Aires
 
 Foco:
 

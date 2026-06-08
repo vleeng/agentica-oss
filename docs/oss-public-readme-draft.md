@@ -1,0 +1,69 @@
+# Agentica OSS
+
+Agentica OSS es una plataforma open source para crear, configurar, ejecutar y monitorear agentes de IA en instalaciones propias.
+
+## Que incluye
+
+- wizard clasico
+- wizard asistido por chat
+- agentes `direct`, `react` y `crew`
+- knowledge bases y RAG
+- skills, tools y MCP
+- editor de flujo
+- monitor del agente
+- monitor de ejecuciones
+- observabilidad de uso por agente
+- integracion Moodle para la linea OSS
+
+## Que no incluye
+
+- billing
+- planes comerciales
+- limites de plan
+- onboarding SaaS
+- branding premium de Vleeng
+
+## Requisitos
+
+- Python 3.11
+- Node.js 20
+- PostgreSQL 16
+- Redis 7
+- Qdrant
+
+## Inicio rapido
+
+```bash
+cp .env.example .env
+cp .env backend/.env
+
+docker compose up -d postgres redis qdrant
+
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+cd frontend
+npm install
+npm run dev
+```
+
+## Configuracion OSS
+
+Antes de iniciar, ajustar:
+
+- `PRODUCT_PROFILE=oss`
+- llaves LLM
+- `MOODLE_URL` y `MOODLE_API_KEY` si se usa Moodle
+- `MOODLE_USER_MAP_JSON` para mapear usuarios de Agentica a Moodle
+
+## Contribuir
+
+Ver [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+## Licencia
+
+Ver [LICENSE](../LICENSE).
+

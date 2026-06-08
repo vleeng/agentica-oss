@@ -17,7 +17,7 @@ La documentacion historica del baseline de mayo 2026 sigue disponible, pero ya n
 
 ## Fork OSS publico
 
-La rama publica para la Universidad de la Ciudad de Buenos Aires se prepara como un fork separado y debe arrancar con:
+La rama publica para la UNICABA, Universidad de la Ciudad de Buenos Aires, se prepara como un fork separado y debe arrancar con:
 
 - `PRODUCT_PROFILE=oss`
 - tema comunitario sobrio
@@ -27,7 +27,10 @@ La rama publica para la Universidad de la Ciudad de Buenos Aires se prepara como
 Para la publicacion inicial del fork, leer:
 
 - [Guia del fork OSS publico](docs/oss-fork-guide.md)
+- [Paquete de publicacion OSS](docs/oss-publication-package.md)
+- [Borrador de README publico OSS](docs/oss-public-readme-draft.md)
 - [CONTRIBUTING](CONTRIBUTING.md)
+- [SECURITY](SECURITY.md)
 - [LICENSE](LICENSE)
 
 ## Que es Agentica hoy
