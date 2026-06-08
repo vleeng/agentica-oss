@@ -60,10 +60,10 @@ export function AccountPanel() {
 
   const accountDescription =
     product.profile === 'platform'
-      ? `Gestiona tu acceso personal y verifica que identidad esta activa dentro de ${branding.appName}.`
+      ? `Gestioná tu acceso personal y verificá qué identidad está activa dentro de ${branding.appName}.`
       : product.profile === 'oss'
-        ? `Gestiona tu acceso personal y revisa que identidad esta activa en esta instalacion abierta de ${branding.appName}.`
-        : 'Gestiona tu acceso personal y verifica que identidad esta activa dentro del workspace.'
+        ? `Gestioná tu acceso personal y revisá qué identidad está activa en esta instalación abierta de ${branding.appName}.`
+        : 'Gestioná tu acceso personal y verificá qué identidad está activa dentro del workspace.'
 
   return (
     <div className="space-y-6">
@@ -76,8 +76,8 @@ export function AccountPanel() {
       <div className="grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
         <Card className="border-slate-200/80">
           <CardHeader>
-            <CardTitle>Sesion actual</CardTitle>
-            <CardDescription>Referencia rapida de la identidad autenticada.</CardDescription>
+            <CardTitle>Sesión actual</CardTitle>
+            <CardDescription>Referencia rápida de la identidad autenticada.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
@@ -97,13 +97,17 @@ export function AccountPanel() {
                 <span className="font-medium text-slate-700">Email:</span> {loading ? 'Cargando...' : me?.email || 'Sin dato'}
               </div>
               <div className="mt-2">
-                <span className="font-medium text-slate-700">Tenant interno:</span> {loading ? 'Cargando...' : me?.tenant_id || 'Sin dato'}
+                <span className="font-medium text-slate-700">
+                  {product.profile === 'platform' ? 'Workspace interno:' : 'Tenant interno:'}
+                </span>{' '}
+                {loading ? 'Cargando...' : me?.tenant_id || 'Sin dato'}
               </div>
               <div className="mt-2">
-                <span className="font-medium text-slate-700">Usuario interno:</span> {loading ? 'Cargando...' : me?.user_id || 'Sin dato'}
+                <span className="font-medium text-slate-700">Usuario interno:</span>{' '}
+                {loading ? 'Cargando...' : me?.user_id || 'Sin dato'}
               </div>
               <div className="mt-2">
-                <span className="font-medium text-slate-700">Recuperacion:</span> si olvidas tu contrasena, pide un token desde la pantalla de login.
+                <span className="font-medium text-slate-700">Recuperación:</span> si olvidás tu contraseña, pedí un token desde la pantalla de login.
               </div>
             </div>
           </CardContent>
@@ -116,14 +120,14 @@ export function AccountPanel() {
                 <KeyRound className="h-5 w-5" />
               </div>
               <div>
-                <CardTitle>Cambiar contrasena</CardTitle>
-                <CardDescription>La nueva contrasena debe tener al menos 8 caracteres.</CardDescription>
+                <CardTitle>Cambiar contraseña</CardTitle>
+                <CardDescription>La nueva contraseña debe tener al menos 8 caracteres.</CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={handleSubmit}>
-              <Field label="Contrasena actual" required>
+              <Field label="Contraseña actual" required>
                 <Input
                   type="password"
                   value={currentPassword}
@@ -133,7 +137,7 @@ export function AccountPanel() {
                 />
               </Field>
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Nueva contrasena" required>
+                <Field label="Nueva contraseña" required>
                   <Input
                     type="password"
                     value={newPassword}
@@ -143,7 +147,7 @@ export function AccountPanel() {
                     required
                   />
                 </Field>
-                <Field label="Confirmar nueva contrasena" required>
+                <Field label="Confirmar nueva contraseña" required>
                   <Input
                     type="password"
                     value={confirmPassword}
@@ -162,7 +166,7 @@ export function AccountPanel() {
               )}
 
               <Button type="submit" disabled={submitting || !currentPassword || !newPassword || !confirmPassword}>
-                {submitting ? 'Actualizando...' : 'Guardar nueva contrasena'}
+                {submitting ? 'Actualizando...' : 'Guardar nueva contraseña'}
               </Button>
             </form>
           </CardContent>

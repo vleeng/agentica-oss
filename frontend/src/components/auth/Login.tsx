@@ -213,7 +213,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             <Card className="border-slate-200/80 shadow-none">
               <CardContent className="pt-5">
                 <form onSubmit={handleSubmit} className="space-y-5">
-                  <Field label={mode === 'request' ? 'Correo del owner inicial' : 'Usuario o correo'} required>
+                      <Field label={mode === 'request' ? 'Correo del owner inicial' : 'Usuario o correo'} required>
                     <Input
                       type="text"
                       value={email}
@@ -375,7 +375,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                         }}
                         className="w-full text-sm text-violet-700 hover:text-violet-800"
                       >
-                        Olvide mi contrasena
+                          Olvidé mi contraseña
                       </button>
                     </>
                   )}
@@ -406,7 +406,7 @@ export function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                         size="lg"
                         disabled={loading || !email || !resetToken || !resetPassword || !resetConfirm}
                       >
-                        {loading ? 'Actualizando contrasena...' : 'Guardar nueva contrasena'}
+                          {loading ? 'Actualizando contraseña...' : 'Guardar nueva contraseña'}
                       </Button>
                       <button
                         type="button"
