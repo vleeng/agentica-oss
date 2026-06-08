@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import httpx
 import hashlib
 from typing import Any, Optional, Type
@@ -33,6 +34,29 @@ _moodle_catalog_cache: dict[str, dict] = {}
 
 def is_moodle_integration_enabled() -> bool:
     return get_product_profile_state().features.moodle_integration
+
+
+def resolve_moodle_user_id(agentica_user_id: str | None) -> Optional[str]:
+    if not agentica_user_id:
+        return None
+
+    raw_map = os.getenv("MOODLE_USER_MAP_JSON", "{}")
+    try:
+        mapping = json.loads(raw_map)
+    except json.JSONDecodeError:
+        logger.warning("MOODLE_USER_MAP_JSON no es valido; se ignora el mapeo.")
+        mapping = {}
+
+    if isinstance(mapping, dict):
+        mapped = mapping.get(agentica_user_id)
+        if mapped is None:
+            mapped = mapping.get(str(agentica_user_id))
+        if mapped is not None:
+            mapped_str = str(mapped).strip()
+            return mapped_str or None
+
+    fallback = os.getenv("MOODLE_DEFAULT_USER_ID", "").strip()
+    return fallback or None
 
 
 def get_moodle_ttl(tool_id: str) -> int:

@@ -184,11 +184,11 @@ async def invoke_agent(
     moodle_token = None
     try:
         if get_product_profile_state().features.moodle_integration:
-            x_moodle_user_id = request.headers.get("x-moodle-user-id")
-            if x_moodle_user_id:
-                from app.components.tools.moodle_tools import moodle_user_context
+            from app.components.tools.moodle_tools import moodle_user_context, resolve_moodle_user_id
 
-                moodle_token = moodle_user_context.set(x_moodle_user_id)
+            moodle_user_id = resolve_moodle_user_id(ctx.user_id)
+            if moodle_user_id:
+                moodle_token = moodle_user_context.set(moodle_user_id)
 
         runtime, design = await _get_runtime(agent_id, ctx, repo)
         session_id = body.session_id or f"{ctx.tenant_id}_{agent_id}_default"
@@ -261,17 +261,17 @@ async def invoke_agent(
 async def agent_websocket(websocket: WebSocket, agent_id: str):
     moodle_token = None
     try:
-        if get_product_profile_state().features.moodle_integration:
-            x_moodle_user_id = websocket.headers.get("x-moodle-user-id")
-            if x_moodle_user_id:
-                from app.components.tools.moodle_tools import moodle_user_context
-
-                moodle_token = moodle_user_context.set(x_moodle_user_id)
-
         ctx = await _get_ws_context(websocket)
         if ctx is None:
             await websocket.close(code=1008, reason="Unauthorized")
             return
+
+        if get_product_profile_state().features.moodle_integration:
+            from app.components.tools.moodle_tools import moodle_user_context, resolve_moodle_user_id
+
+            moodle_user_id = resolve_moodle_user_id(ctx.user_id)
+            if moodle_user_id:
+                moodle_token = moodle_user_context.set(moodle_user_id)
 
         await websocket.accept()
         try:
