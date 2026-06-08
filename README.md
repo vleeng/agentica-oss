@@ -13,6 +13,22 @@ La documentacion historica del baseline de mayo 2026 sigue disponible, pero ya n
 - [Version actual 2026-06-06](docs/version-actual-2026-06-06.md)
 - [Plan de separacion Platform / SaaS / OSS 2026-06-06](docs/plan-separacion-platform-saas-oss-2026-06-06.md)
 - [Matriz de implementacion del product profile 2026-06-06](docs/matriz-implementacion-product-profile-2026-06-06.md)
+- [Guia del fork OSS publico](docs/oss-fork-guide.md)
+
+## Fork OSS publico
+
+La rama publica para la Universidad de la Ciudad de Buenos Aires se prepara como un fork separado y debe arrancar con:
+
+- `PRODUCT_PROFILE=oss`
+- tema comunitario sobrio
+- sin billing ni planes comerciales
+- Moodle habilitado solo en esta linea
+
+Para la publicacion inicial del fork, leer:
+
+- [Guia del fork OSS publico](docs/oss-fork-guide.md)
+- [CONTRIBUTING](CONTRIBUTING.md)
+- [LICENSE](LICENSE)
 
 ## Que es Agentica hoy
 
