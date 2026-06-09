@@ -31,6 +31,7 @@ from app.services.designer.design_generator import DesignGeneratorService
 from app.services.evaluator.eval_engine import EvalEngineService
 from app.services.optimizer.optimizer import OptimizerService
 from app.services.selector.framework_selector import FrameworkSelectorService
+from app.tasks.agent_tasks import run_scheduled_agent
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -64,6 +65,8 @@ async def create_agent_from_spec(
         await plan_checker.check_can_use_rag(ctx.tenant_id)
         if not spec.knowledge_base_ids:
             raise HTTPException(400, "Este agente necesita al menos una base de conocimiento asociada.")
+    if spec.execution_mode.value == "scheduled":
+        _validate_schedule_spec(spec)
     await get_rate_limiter().check(ctx.tenant_id, scope="spec")
 
     if spec.knowledge_base_ids:
@@ -95,6 +98,18 @@ def _normalize_single_agent_spec(spec: AgentSpec) -> None:
     spec.tools = []
     spec.rag.enabled = False
     spec.rag.sources = []
+
+
+def _validate_schedule_spec(spec: AgentSpec) -> None:
+    schedule = spec.schedule
+    if not schedule.enabled:
+        raise HTTPException(400, "Este agente necesita una programacion habilitada.")
+    if not str(schedule.cron_expression or "").strip():
+        raise HTTPException(400, "Este agente necesita una expresion cron valida.")
+    if schedule.delivery_mode == "email" and not schedule.delivery_targets:
+        raise HTTPException(400, "Este agente programado por email necesita al menos un destinatario.")
+    if schedule.delivery_mode in {"webhook", "slack"} and not str(schedule.webhook_url or "").strip():
+        raise HTTPException(400, "Este agente programado por webhook necesita una URL de entrega.")
 
 
 @router.post("/{agent_id}/build", status_code=202)
@@ -131,6 +146,10 @@ async def build_agent(
 class InvokeRequest(BaseModel):
     input: str = Field(..., min_length=1, max_length=8000)
     session_id: str = Field(default="", max_length=100)
+
+
+class ScheduledRunRequest(BaseModel):
+    input: str | None = Field(default=None, max_length=8000)
 
 
 class AgentRunSummary(BaseModel):
@@ -255,6 +274,35 @@ async def invoke_agent(
             from app.components.tools.moodle_tools import moodle_user_context
 
             moodle_user_context.reset(moodle_token)
+
+
+@router.post("/{agent_id}/scheduled-run", status_code=202)
+async def run_scheduled_agent_now(
+    agent_id: str,
+    body: ScheduledRunRequest,
+    ctx: CurrentContext,
+    repo: TenantRepo,
+) -> dict:
+    ctx.require_human_user()
+    ctx.require_developer()
+
+    design = await _restore_design(agent_id, ctx, repo)
+    if design.spec.execution_mode.value != "scheduled":
+        raise HTTPException(400, "Este agente no esta configurado como programado.")
+    if not design.spec.schedule.enabled:
+        raise HTTPException(400, "Este agente no tiene la programacion habilitada.")
+
+    task = run_scheduled_agent.delay(
+        agent_id,
+        ctx.tenant_id,
+        design.model_dump(mode="json"),
+        body.input,
+    )
+    return {
+        "agent_id": agent_id,
+        "task_id": task.id,
+        "status": "queued",
+    }
 
 
 @router.websocket("/{agent_id}/ws")

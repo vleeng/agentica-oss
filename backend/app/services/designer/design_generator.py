@@ -77,6 +77,12 @@ Respondé únicamente con el system prompt, sin explicaciones adicionales."""
             "HERRAMIENTAS DISPONIBLES:\n",
             f"MODO DE EJECUCION: {execution_mode_value}\nHERRAMIENTAS DISPONIBLES:\n",
         )
+        if execution_mode_value == "scheduled":
+            prompt += (
+                "\nNOTA: Este agente se ejecuta por horario o trigger. "
+                "El flujo debe producir un resultado listo para entrega automatica por email, webhook o Slack, "
+                "y no debe depender de una conversacion interactiva para cerrar la tarea."
+            )
 
         return await self._client.complete(
             prompt,
@@ -124,6 +130,11 @@ Respondé SOLO con el JSON válido, sin markdown, sin explicaciones."""
             f"FRAMEWORK: {framework.framework}\n",
             f"MODO DE EJECUCION: {execution_mode_value}\nFRAMEWORK: {framework.framework}\n",
         )
+        if execution_mode_value == "scheduled":
+            prompt += (
+                "\nNOTA: Para modo scheduled, el blueprint debe representar una corrida automatica, "
+                "no una sesion de chat. El resultado final debe quedar listo para ser entregado."
+            )
 
         content = await self._client.complete(prompt, max_tokens=1000, temperature=0.1)
         try:

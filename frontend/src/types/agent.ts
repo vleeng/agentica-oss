@@ -3,6 +3,7 @@
 export type AgentMode = 'single' | 'crew'
 export type SingleAgentMode = 'direct' | 'react'
 export type ExecutionMode = 'reactive' | 'scheduled' | 'agentic'
+export type DeliveryMode = 'email' | 'webhook' | 'slack'
 export type MemoryType = 'none' | 'session' | 'persistent' | 'summary'
 export type CrewProcess = 'sequential' | 'hierarchical' | 'parallel'
 export type AutonomyLevel = 'reactive' | 'semi' | 'autonomous'
@@ -45,6 +46,17 @@ export interface ModelParams {
   llm_key_id?: string
 }
 
+export interface ScheduleSpec {
+  enabled: boolean
+  cron_expression: string
+  timezone: string
+  delivery_mode: DeliveryMode
+  delivery_targets: string[]
+  webhook_url?: string | null
+  subject_template: string
+  input_template: string
+}
+
 export interface AgentRoleSpec {
   name: string
   role: string
@@ -72,6 +84,7 @@ export interface AgentSpec {
   expected_outputs: string[]
   memory: MemorySpec
   rag: RAGSpec
+  schedule: ScheduleSpec
   // single
   single_agent_mode: SingleAgentMode
   tools: ToolRef[]
@@ -241,6 +254,7 @@ export interface WizardState {
   tools: ToolRef[]
   memory: MemorySpec
   rag: RAGSpec
+  schedule: ScheduleSpec
   model_params: ModelParams
   constraints: string[]
   autonomy_level: AutonomyLevel
@@ -315,6 +329,16 @@ export const WIZARD_DEFAULTS: WizardState = {
     temperature: 0.3,
     max_tokens: 2048,
     top_p: 1.0,
+  },
+  schedule: {
+    enabled: false,
+    cron_expression: '0 9 * * *',
+    timezone: 'America/Buenos_Aires',
+    delivery_mode: 'email',
+    delivery_targets: [],
+    webhook_url: undefined,
+    subject_template: 'Resultado programado de {agent_name}',
+    input_template: '{goal}',
   },
   constraints: [],
   autonomy_level: 'reactive',

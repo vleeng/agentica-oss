@@ -43,6 +43,12 @@ class ExecutionMode(str, Enum):
     agentic = "agentic"        # Trabaja por objetivos y ejecuta un plan
 
 
+class DeliveryMode(str, Enum):
+    email = "email"
+    webhook = "webhook"
+    slack = "slack"
+
+
 class ChannelType(str, Enum):
     web_chat  = "web_chat"
     whatsapp  = "whatsapp"
@@ -84,6 +90,17 @@ class ModelParams(BaseModel):
     max_tokens: int = Field(2048, ge=256, le=8192)
     top_p: float = Field(1.0, ge=0.0, le=1.0)
     llm_key_id: Optional[str] = None
+
+
+class ScheduleSpec(BaseModel):
+    enabled: bool = False
+    cron_expression: str = "0 9 * * *"
+    timezone: str = "America/Buenos_Aires"
+    delivery_mode: DeliveryMode = DeliveryMode.email
+    delivery_targets: list[str] = Field(default_factory=list)
+    webhook_url: Optional[str] = None
+    subject_template: str = "Resultado programado de {agent_name}"
+    input_template: str = "{goal}"
 
 
 class FlowNodeType(str, Enum):
@@ -217,6 +234,7 @@ class AgentSpec(BaseModel):
     # Memoria y RAG
     memory: MemorySpec = Field(default_factory=MemorySpec)
     rag: RAGSpec = Field(default_factory=RAGSpec)
+    schedule: ScheduleSpec = Field(default_factory=ScheduleSpec)
 
     # Solo para mode=single
     single_agent_mode: SingleAgentMode = SingleAgentMode.react

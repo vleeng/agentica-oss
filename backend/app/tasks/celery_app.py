@@ -25,5 +25,6 @@ celery_app.conf.update(
         "app.tasks.agent_tasks.build_agent":  {"queue": "builds"},
         "app.tasks.agent_tasks.eval_agent":   {"queue": "evals"},
         "app.tasks.agent_tasks.deploy_agent": {"queue": "deploys"},
+        "app.tasks.agent_tasks.run_scheduled_agent": {"queue": "scheduled"},
     },
 )

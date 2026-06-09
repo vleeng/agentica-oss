@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   AgentMode, WizardState, WIZARD_DEFAULTS,
-  applyToolReadiness, AVAILABLE_TOOLS, ChannelType, ExecutionMode, KnowledgeBase, SingleAgentMode, ToolReadinessStatus, ToolRef,
+  applyToolReadiness, AVAILABLE_TOOLS, ChannelType, DeliveryMode, ExecutionMode, KnowledgeBase, SingleAgentMode, ToolReadinessStatus, ToolRef,
 } from '../../types/agent'
 import { StepCrew } from './StepCrew'
 
@@ -662,6 +662,99 @@ function StepMemoryChannels({ state, update, knowledgeBases }: StepProps & { kno
           )}
         </div>
       )}
+
+      {state.execution_mode === 'scheduled' && (
+        <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+          <div>
+            <div className="text-sm font-semibold text-gray-900">Programacion y entrega</div>
+            <div className="text-xs text-gray-500 mt-1">
+              Defini cada cuanto corre el agente y por donde entrega el resultado.
+            </div>
+          </div>
+
+          <Field label="Cron expression" hint="Formato cron de 5 campos. Ej: 0 9 * * *">
+            <input
+              type="text"
+              value={state.schedule.cron_expression}
+              onChange={e => update({ schedule: { ...state.schedule, cron_expression: e.target.value } })}
+              placeholder="0 9 * * *"
+              className={inputCls}
+            />
+          </Field>
+
+          <Field label="Zona horaria">
+            <input
+              type="text"
+              value={state.schedule.timezone}
+              onChange={e => update({ schedule: { ...state.schedule, timezone: e.target.value } })}
+              placeholder="America/Buenos_Aires"
+              className={inputCls}
+            />
+          </Field>
+
+          <Field label="Modo de entrega">
+            <select
+              value={state.schedule.delivery_mode}
+              onChange={e => update({ schedule: { ...state.schedule, delivery_mode: e.target.value as DeliveryMode } })}
+              className={inputCls}
+            >
+              <option value="email">Email</option>
+              <option value="webhook">Webhook</option>
+              <option value="slack">Slack</option>
+            </select>
+          </Field>
+
+          {state.schedule.delivery_mode === 'email' && (
+            <Field
+              label="Destinatarios"
+              hint="Uno por linea. Si dejas uno solo, se envia solo a esa casilla."
+            >
+              <textarea
+                value={state.schedule.delivery_targets.join('\n')}
+                onChange={e => update({
+                  schedule: {
+                    ...state.schedule,
+                    delivery_targets: e.target.value.split('\n').map((item) => item.trim()).filter(Boolean),
+                  },
+                })}
+                rows={3}
+                className={inputCls}
+                placeholder="persona@dominio.com"
+              />
+            </Field>
+          )}
+
+          {(state.schedule.delivery_mode === 'webhook' || state.schedule.delivery_mode === 'slack') && (
+            <Field label="Webhook URL">
+              <input
+                type="text"
+                value={state.schedule.webhook_url || ''}
+                onChange={e => update({ schedule: { ...state.schedule, webhook_url: e.target.value } })}
+                placeholder="https://..."
+                className={inputCls}
+              />
+            </Field>
+          )}
+
+          <Field label="Template de asunto" hint="Se usan placeholders como {agent_name} y {goal}.">
+            <input
+              type="text"
+              value={state.schedule.subject_template}
+              onChange={e => update({ schedule: { ...state.schedule, subject_template: e.target.value } })}
+              className={inputCls}
+            />
+          </Field>
+
+          <Field label="Template de entrada" hint="Texto base para el run programado.">
+            <textarea
+              value={state.schedule.input_template}
+              onChange={e => update({ schedule: { ...state.schedule, input_template: e.target.value } })}
+              rows={3}
+              className={inputCls}
+            />
+          </Field>
+        </div>
+      )}
     </div>
   )
 }
@@ -797,6 +890,9 @@ function StepReview({ state, knowledgeBases }: { state: WizardState; knowledgeBa
     { label: 'Memoria',     value: state.memory.type },
     { label: 'Canales',     value: state.channels.join(', ') },
     { label: 'RAG',         value: state.rag.enabled ? 'Si' : 'No' },
+    { label: 'Programacion', value: state.execution_mode === 'scheduled'
+        ? `${state.schedule.cron_expression} · ${state.schedule.delivery_mode}`
+        : 'No aplica' },
     { label: 'KBs asociadas', value: selectedKnowledgeBases.length ? selectedKnowledgeBases.map((kb) => kb.name).join(', ') : 'Ninguna' },
     { label: 'Modelo',      value: state.model_params.model },
     { label: 'Temperatura', value: String(state.model_params.temperature) },
@@ -853,8 +949,12 @@ function isStepValid(state: WizardState): boolean {
   switch (state.step) {
     case 0: return !!state.mode
     case 1: return state.name.length >= 2 && state.goal.length >= 10
-    case 3: return !state.rag.enabled || state.knowledge_base_ids.length > 0
-    case 5: return !state.rag.enabled || state.knowledge_base_ids.length > 0
+    case 3:
+      return (!state.rag.enabled || state.knowledge_base_ids.length > 0)
+        && (state.execution_mode !== 'scheduled' || isScheduledReady(state.schedule))
+    case 5:
+      return (!state.rag.enabled || state.knowledge_base_ids.length > 0)
+        && (state.execution_mode !== 'scheduled' || isScheduledReady(state.schedule))
     default: return true
   }
 }
@@ -865,6 +965,7 @@ function mergeWizardPatch(prev: WizardState, patch: Partial<WizardState>): Wizar
     ...patch,
     memory: patch.memory ? { ...prev.memory, ...patch.memory } : prev.memory,
     rag: patch.rag ? { ...prev.rag, ...patch.rag } : prev.rag,
+    schedule: patch.schedule ? { ...prev.schedule, ...patch.schedule } : prev.schedule,
     model_params: patch.model_params ? { ...prev.model_params, ...patch.model_params } : prev.model_params,
   })
 }
@@ -884,6 +985,15 @@ function normalizeWizardState(state: WizardState): WizardState {
   }
 
   return state
+}
+
+function isScheduledReady(schedule: WizardState['schedule']): boolean {
+  const cron = schedule.cron_expression.trim()
+  const deliveryMode = schedule.delivery_mode
+  if (!cron || !deliveryMode) return false
+  if (deliveryMode === 'email') return schedule.delivery_targets.length > 0
+  if (deliveryMode === 'webhook' || deliveryMode === 'slack') return Boolean(schedule.webhook_url?.trim())
+  return true
 }
 
 

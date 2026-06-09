@@ -10,6 +10,7 @@ interface ChatWizardProps {
 const focusLabels: Record<string, string> = {
   intro: 'Objetivo y tipo',
   execution: 'Modo de ejecucion',
+  schedule: 'Programacion',
   name: 'Nombre operativo',
   behavior: 'Modo y estructura',
   knowledge: 'Conocimiento interno',
@@ -105,6 +106,13 @@ export function ChatWizard({ onComplete }: ChatWizardProps) {
       {
         label: 'Canales',
         value: draft.channels?.length ? draft.channels.join(', ') : 'Pendiente',
+      },
+      {
+        label: 'Programacion',
+        value:
+          draft.execution_mode === 'scheduled'
+            ? `${draft.schedule?.cron_expression || 'Pendiente'} · ${draft.schedule?.delivery_mode || 'Pendiente'}`
+            : 'No aplica',
       },
     ]
   }, [draft, knowledgeBases])

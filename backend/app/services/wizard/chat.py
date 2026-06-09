@@ -44,6 +44,16 @@ WIZARD_CHAT_DEFAULTS: dict[str, Any] = {
         "max_tokens": 2048,
         "top_p": 1.0,
     },
+    "schedule": {
+        "enabled": False,
+        "cron_expression": "0 9 * * *",
+        "timezone": "America/Buenos_Aires",
+        "delivery_mode": "email",
+        "delivery_targets": [],
+        "webhook_url": None,
+        "subject_template": "Resultado programado de {agent_name}",
+        "input_template": "{goal}",
+    },
     "constraints": [],
     "autonomy_level": "reactive",
     "knowledge_base_ids": [],
@@ -68,7 +78,7 @@ CHANNEL_ALIASES: dict[str, tuple[str, ...]] = {
     "rest_api": ("api", "rest api", "rest"),
 }
 
-FOCUS_ORDER = ("intro", "execution", "name", "behavior", "knowledge", "channels", "review")
+FOCUS_ORDER = ("intro", "execution", "schedule", "name", "behavior", "knowledge", "channels", "review")
 
 
 @dataclass
@@ -238,8 +248,18 @@ Schema:
   "channels": ["web_chat"],
   "tools": ["web_search"],
   "rag_enabled": true | false | null,
+  "schedule": {
+    "enabled": true | false | null,
+    "cron_expression": "string o vacio",
+    "timezone": "string o vacio",
+    "delivery_mode": "email" | "webhook" | "slack" | null,
+    "delivery_targets": ["string"],
+    "webhook_url": "string o vacio",
+    "subject_template": "string o vacio",
+    "input_template": "string o vacio"
+  },
   "constraints": ["string"],
-  "answered_focuses": ["intro", "execution", "behavior", "knowledge", "channels"],
+  "answered_focuses": ["intro", "execution", "schedule", "behavior", "knowledge", "channels"],
   "agents": [{{"name": "researcher", "role": "Researcher", "goal": "string", "backstory": "string", "tools": [], "allow_delegation": false}}]
 }}
 
@@ -296,7 +316,27 @@ Contexto:
         agents = parsed.get("agents")
         if isinstance(agents, list):
             updates["agents"] = [item for item in agents if isinstance(item, dict)]
+        schedule = parsed.get("schedule")
+        if isinstance(schedule, dict):
+            updates["schedule"] = self._sanitize_schedule(schedule, fallback.get("schedule", {}))
         return updates
+
+    def _sanitize_schedule(self, parsed: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+        schedule = deepcopy(fallback) if isinstance(fallback, dict) else {}
+        for key in ("cron_expression", "timezone", "subject_template", "input_template", "webhook_url"):
+            value = parsed.get(key)
+            if isinstance(value, str):
+                schedule[key] = value.strip()
+        enabled = parsed.get("enabled")
+        if isinstance(enabled, bool):
+            schedule["enabled"] = enabled
+        delivery_mode = parsed.get("delivery_mode")
+        if isinstance(delivery_mode, str) and delivery_mode in {"email", "webhook", "slack"}:
+            schedule["delivery_mode"] = delivery_mode
+        delivery_targets = parsed.get("delivery_targets")
+        if isinstance(delivery_targets, list):
+            schedule["delivery_targets"] = [str(item).strip() for item in delivery_targets if str(item).strip()]
+        return schedule
 
     def _rule_based_extract(
         self,
@@ -320,7 +360,7 @@ Contexto:
             updates["mode"] = mode
             updates["answered_focuses"].append("intro")
 
-        if any(token in lower for token in ("cada", "diario", "semanal", "mensual", "programado", "cron", "scheduler", "schedule", "agenda", "tarea recurrente", "reporte periodico", "automatizacion periodica")):
+        if any(token in lower for token in ("cada", "diario", "semanal", "mensual", "programado", "cron", "scheduler", "schedule", "agenda", "tarea recurrente", "reporte periodico", "automatizacion periodica", "recurrente", "todos los dias", "todas las semanas")):
             execution_mode = "scheduled"
         elif any(token in lower for token in ("objetivo", "por objetivos", "goal", "openclaw", "autonomo", "autonoma", "proactivo", "proactiva", "seguimiento continuo", "plan de accion")):
             execution_mode = "agentic"
@@ -364,6 +404,37 @@ Contexto:
             updates["rag"] = {"enabled": False}
             updates["answered_focuses"].append("knowledge")
 
+        if any(token in lower for token in ("email", "correo", "mail", "webhook", "slack")) or current_focus == "schedule":
+            schedule_updates: dict[str, Any] = {}
+            if any(token in lower for token in ("si", "activar", "habilitar", "programar", "programado", "recurrente", "cron", "cada", "todos los dias", "todas las semanas")):
+                schedule_updates["enabled"] = True
+            cron_match = re.search(r"\b(?:cron[:=]\s*)?([0-9*/,\-]+\s+[0-9*/,\-]+\s+[0-9*/,\-]+\s+[0-9*/,\-]+\s+[0-9*/,\-]+)\b", lower)
+            if cron_match:
+                schedule_updates["cron_expression"] = cron_match.group(1).strip()
+            if "mensual" in lower:
+                schedule_updates["cron_expression"] = "0 9 1 * *"
+            elif "semanal" in lower:
+                schedule_updates["cron_expression"] = "0 9 * * 1"
+            elif "diario" in lower or "todos los dias" in lower:
+                schedule_updates["cron_expression"] = "0 9 * * *"
+            if any(token in lower for token in ("utc", "buenos aires", "argentina", "gmt")):
+                schedule_updates["timezone"] = "America/Buenos_Aires"
+            if "webhook" in lower:
+                schedule_updates["delivery_mode"] = "webhook"
+            elif "slack" in lower:
+                schedule_updates["delivery_mode"] = "slack"
+            elif any(token in lower for token in ("email", "correo", "mail")):
+                schedule_updates["delivery_mode"] = "email"
+            recipients = re.findall(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", text)
+            if recipients:
+                schedule_updates["delivery_targets"] = recipients
+            url_match = re.search(r"https?://\S+", text)
+            if url_match:
+                schedule_updates["webhook_url"] = url_match.group(0).rstrip(".,;")
+            if schedule_updates:
+                updates["schedule"] = {**deepcopy(draft_state.get("schedule") or {}), **schedule_updates}
+                updates["answered_focuses"].append("schedule")
+
         if current_focus == "name":
             updates["name"] = self._clean_sentence(text)
         elif current_focus == "intro":
@@ -377,6 +448,17 @@ Contexto:
             else:
                 updates["execution_mode"] = "reactive"
             updates["answered_focuses"].append("execution")
+        elif current_focus == "schedule":
+            schedule = deepcopy(draft_state.get("schedule") or {})
+            schedule["enabled"] = True
+            if not schedule.get("delivery_mode"):
+                schedule["delivery_mode"] = "email"
+            if not schedule.get("timezone"):
+                schedule["timezone"] = "America/Buenos_Aires"
+            if not schedule.get("cron_expression"):
+                schedule["cron_expression"] = "0 9 * * *"
+            updates["schedule"] = schedule
+            updates["answered_focuses"].append("schedule")
         elif current_focus == "behavior" and draft_state.get("mode") == "crew":
             role_names = [
                 self._to_role_name(chunk)
@@ -417,6 +499,9 @@ Contexto:
             draft_state["goal"] = updates["goal"]
         if "execution_mode" in updates and updates["execution_mode"] in {"reactive", "scheduled", "agentic"}:
             draft_state["execution_mode"] = updates["execution_mode"]
+            if updates["execution_mode"] == "scheduled":
+                draft_state.setdefault("schedule", deepcopy(WIZARD_CHAT_DEFAULTS["schedule"]))
+                draft_state["schedule"]["enabled"] = True
         if "single_agent_mode" in updates and updates["single_agent_mode"] in {"direct", "react"}:
             draft_state["single_agent_mode"] = updates["single_agent_mode"]
         if "channels" in updates and updates["channels"]:
@@ -435,6 +520,12 @@ Contexto:
         if isinstance(rag_update, dict) and "enabled" in rag_update:
             draft_state.setdefault("rag", deepcopy(WIZARD_CHAT_DEFAULTS["rag"]))
             draft_state["rag"]["enabled"] = bool(rag_update["enabled"])
+        schedule_update = updates.get("schedule")
+        if isinstance(schedule_update, dict):
+            draft_state.setdefault("schedule", deepcopy(WIZARD_CHAT_DEFAULTS["schedule"]))
+            for key in ("enabled", "cron_expression", "timezone", "delivery_mode", "delivery_targets", "webhook_url", "subject_template", "input_template"):
+                if key in schedule_update and schedule_update[key] not in (None, "", []):
+                    draft_state["schedule"][key] = schedule_update[key]
 
     def _fill_inferred_defaults(self, draft_state: dict[str, Any]) -> None:
         goal = str(draft_state.get("goal") or "").strip()
@@ -444,6 +535,9 @@ Contexto:
             draft_state["name"] = self._suggest_name(goal, draft_state.get("mode"))
         if not draft_state.get("execution_mode"):
             draft_state["execution_mode"] = "reactive"
+        if draft_state.get("execution_mode") == "scheduled":
+            draft_state.setdefault("schedule", deepcopy(WIZARD_CHAT_DEFAULTS["schedule"]))
+            draft_state["schedule"]["enabled"] = True
         if draft_state.get("single_agent_mode") == "direct":
             draft_state["execution_mode"] = "reactive"
             draft_state["tools"] = []
@@ -459,6 +553,8 @@ Contexto:
             return "intro"
         if not str(draft_state.get("execution_mode") or "").strip():
             return "execution"
+        if draft_state.get("execution_mode") == "scheduled" and not self._schedule_defined(draft_state):
+            return "schedule"
         if not str(draft_state.get("name") or "").strip():
             return "name"
         if draft_state.get("mode") == "crew" and not draft_state.get("agents"):
@@ -481,6 +577,7 @@ Contexto:
             "behavior" in reviewed or draft_state.get("mode") == "crew" and bool(draft_state.get("agents")),
             "knowledge" in reviewed,
             "channels" in reviewed,
+            draft_state.get("execution_mode") != "scheduled" or self._schedule_defined(draft_state),
         ]
         completed = sum(1 for item in checks if item)
         return round((completed / len(checks)) * 100)
@@ -508,6 +605,12 @@ Contexto:
             message = (
                 "Como queres que trabaje este agente: en tiempo real por chat, programado por horario "
                 "o con objetivos y plan de accion?"
+            )
+            return f"{acknowledgement} {message}".strip() if acknowledgement else message
+        if next_focus == "schedule":
+            message = (
+                "Dame el horario y la entrega programada. Si ya lo tenes claro, decime algo como: "
+                "'todos los dias a las 9 por email a persona@dominio.com'."
             )
             return f"{acknowledgement} {message}".strip() if acknowledgement else message
         if next_focus == "name":
@@ -581,6 +684,22 @@ Contexto:
         rag_state = draft_state.get("rag") or {}
         return bool(rag_state.get("enabled"))
 
+    def _schedule_defined(self, draft_state: dict[str, Any]) -> bool:
+        schedule = draft_state.get("schedule") or {}
+        if not isinstance(schedule, dict):
+            return False
+        if not schedule.get("enabled"):
+            return False
+        if not str(schedule.get("cron_expression") or "").strip():
+            return False
+        if not str(schedule.get("delivery_mode") or "").strip():
+            return False
+        if schedule.get("delivery_mode") == "email" and not schedule.get("delivery_targets"):
+            return False
+        if schedule.get("delivery_mode") == "webhook" and not str(schedule.get("webhook_url") or "").strip():
+            return False
+        return True
+
     def _infer_answered_focuses(self, updates: dict[str, Any]) -> set[str]:
         inferred = {
             item
@@ -597,6 +716,8 @@ Contexto:
             inferred.add("knowledge")
         if updates.get("channels"):
             inferred.add("channels")
+        if updates.get("schedule"):
+            inferred.add("schedule")
         return inferred
 
     def _build_description(self, goal: str) -> str:
