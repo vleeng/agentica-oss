@@ -103,3 +103,24 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user
   ON public.password_reset_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_free_account_requests_status
   ON public.free_account_requests(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.agent_schedule_states (
+    agent_id        UUID PRIMARY KEY,
+    tenant_id       UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    enabled         BOOLEAN NOT NULL DEFAULT FALSE,
+    cron_expression TEXT NOT NULL DEFAULT '0 9 * * *',
+    timezone        TEXT NOT NULL DEFAULT 'America/Buenos_Aires',
+    delivery_mode   TEXT NOT NULL DEFAULT 'email',
+    delivery_targets TEXT[] NOT NULL DEFAULT '{}',
+    webhook_url     TEXT,
+    subject_template TEXT NOT NULL DEFAULT 'Resultado programado de {agent_name}',
+    input_template   TEXT NOT NULL DEFAULT '{goal}',
+    last_run_at     TIMESTAMPTZ,
+    next_run_at     TIMESTAMPTZ,
+    last_status     TEXT,
+    last_error      TEXT,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_schedule_next_run
+  ON public.agent_schedule_states(enabled, next_run_at);

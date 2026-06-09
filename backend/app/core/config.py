@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     builds_path: str = "/app/builds"
     max_eval_rounds: int = 3
     eval_pass_threshold: float = 0.75
+    scheduled_poll_seconds: int = 60
+    scheduled_batch_size: int = 25
 
     # Docker (para deploy de agentes)
     docker_registry: Optional[str] = None           # None = solo local

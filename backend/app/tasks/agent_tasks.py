@@ -10,6 +10,7 @@ import httpx
 
 from app.core.mailer import MailerNotConfiguredError, is_mailer_configured, send_email
 from app.services.model_catalog import calculate_model_cost, estimate_usage_tokens, resolve_model_pricing
+from app.services.scheduler import mark_schedule_execution
 from uuid import UUID
 
 from app.tasks.celery_app import celery_app
@@ -147,96 +148,106 @@ async def _run_scheduled_agent(agent_id: str, tenant_id: str, design_json: dict,
 
     design = AgentDesign.model_validate(design_json)
     schedule = design.spec.schedule
-    runtime = await RuntimeFactory().build(design)
     session_id = f"scheduled_{agent_id}_{uuid4().hex[:12]}"
 
-    scheduled_input = (input_text or "").strip()
-    if not scheduled_input:
-        template = (schedule.input_template or "{goal}").strip()
-        scheduled_input = template.format(
-            goal=design.spec.goal,
-            agent_name=design.spec.name,
-            description=design.spec.description,
-        ).strip()
-    if not scheduled_input:
-        scheduled_input = design.spec.goal or design.spec.description or "Run programado de Agentica"
+    try:
+        runtime = await RuntimeFactory().build(design)
+        scheduled_input = (input_text or "").strip()
+        if not scheduled_input:
+            template = (schedule.input_template or "{goal}").strip()
+            scheduled_input = template.format(
+                goal=design.spec.goal,
+                agent_name=design.spec.name,
+                description=design.spec.description,
+            ).strip()
+        if not scheduled_input:
+            scheduled_input = design.spec.goal or design.spec.description or "Run programado de Agentica"
 
-    progress_events: list[dict[str, Any]] = []
-    runtime.set_progress_callback(lambda event: progress_events.append(dict(event)))
-    started_at = time.monotonic()
-    response = await runtime.invoke(scheduled_input, session_id)
-    elapsed_ms = round((time.monotonic() - started_at) * 1000, 2)
+        progress_events: list[dict[str, Any]] = []
+        runtime.set_progress_callback(lambda event: progress_events.append(dict(event)))
+        started_at = time.monotonic()
+        response = await runtime.invoke(scheduled_input, session_id)
+        elapsed_ms = round((time.monotonic() - started_at) * 1000, 2)
 
-    tokens_in, tokens_out = estimate_usage_tokens(
-        scheduled_input,
-        response.output,
-        reported_tokens_in=response.tokens_in,
-        reported_tokens_out=response.tokens_out,
-    )
-    pricing = await resolve_model_pricing(tenant_id, design.spec.model_params)
-    cost = calculate_model_cost(tokens_in, tokens_out, pricing)
-
-    async with get_tenant_session_factory(tenant_id)() as session:
-        repo = AgentRepository(session)
-        conv_id = await repo.upsert_conversation(agent_id, session_id, "scheduled", user_ref="scheduled")
-        await repo.save_message(conv_id, "user", scheduled_input)
-        await repo.save_conversation_event(
-            conv_id,
-            "invoke_start",
-            phase="invoke",
-            actor="agent",
-            message="Inicio de ejecucion programada",
-            payload={
-                "channel": "scheduled",
-                "session_id": session_id,
-                "agent_name": design.spec.name,
-                "execution_mode": design.spec.execution_mode.value,
-                "schedule": design.spec.schedule.model_dump(mode="json"),
-            },
+        tokens_in, tokens_out = estimate_usage_tokens(
+            scheduled_input,
+            response.output,
+            reported_tokens_in=response.tokens_in,
+            reported_tokens_out=response.tokens_out,
         )
-        for event in progress_events:
+        pricing = await resolve_model_pricing(tenant_id, design.spec.model_params)
+        cost = calculate_model_cost(tokens_in, tokens_out, pricing)
+
+        async with get_tenant_session_factory(tenant_id)() as session:
+            repo = AgentRepository(session)
+            conv_id = await repo.upsert_conversation(agent_id, session_id, "scheduled", user_ref="scheduled")
+            await repo.save_message(conv_id, "user", scheduled_input)
             await repo.save_conversation_event(
                 conv_id,
-                "progress",
-                phase=str(event.get("phase") or ""),
-                actor=str(event.get("actor") or "") or None,
-                kind=str(event.get("kind") or "") or None,
-                message=str(event.get("message") or "") or "",
-                payload=event,
+                "invoke_start",
+                phase="invoke",
+                actor="agent",
+                message="Inicio de ejecucion programada",
+                payload={
+                    "channel": "scheduled",
+                    "session_id": session_id,
+                    "agent_name": design.spec.name,
+                    "execution_mode": design.spec.execution_mode.value,
+                    "schedule": design.spec.schedule.model_dump(mode="json"),
+                },
             )
-        await repo.save_message(conv_id, "assistant", response.output, tokens_in, tokens_out)
-        await repo.save_conversation_event(
-            conv_id,
-            "response_final",
-            phase="completed",
-            actor="assistant",
-            message="Respuesta programada generada",
-            payload={
-                "preview": (response.output or "")[:600],
-                "tokens_in": tokens_in,
-                "tokens_out": tokens_out,
-                "elapsed_ms": elapsed_ms,
-            },
+            for event in progress_events:
+                await repo.save_conversation_event(
+                    conv_id,
+                    "progress",
+                    phase=str(event.get("phase") or ""),
+                    actor=str(event.get("actor") or "") or None,
+                    kind=str(event.get("kind") or "") or None,
+                    message=str(event.get("message") or "") or "",
+                    payload=event,
+                )
+            await repo.save_message(conv_id, "assistant", response.output, tokens_in, tokens_out)
+            await repo.save_conversation_event(
+                conv_id,
+                "response_final",
+                phase="completed",
+                actor="assistant",
+                message="Respuesta programada generada",
+                payload={
+                    "preview": (response.output or "")[:600],
+                    "tokens_in": tokens_in,
+                    "tokens_out": tokens_out,
+                    "elapsed_ms": elapsed_ms,
+                },
+            )
+            await repo.record_billing_event(agent_id, conv_id, tokens_in, tokens_out, cost)
+
+        delivery = await _deliver_scheduled_result(
+            tenant_id=tenant_id,
+            design=design,
+            scheduled_input=scheduled_input,
+            output=response.output,
         )
-        await repo.record_billing_event(agent_id, conv_id, tokens_in, tokens_out, cost)
+        await mark_schedule_execution(
+            tenant_id,
+            agent_id,
+            status=delivery.get("status", "completed"),
+            error=delivery.get("reason"),
+        )
 
-    delivery = await _deliver_scheduled_result(
-        tenant_id=tenant_id,
-        design=design,
-        scheduled_input=scheduled_input,
-        output=response.output,
-    )
-
-    return {
-        "agent_id": agent_id,
-        "session_id": session_id,
-        "conversation_id": conv_id,
-        "output": response.output,
-        "tokens_in": tokens_in,
-        "tokens_out": tokens_out,
-        "elapsed_ms": elapsed_ms,
-        "delivery": delivery,
-    }
+        return {
+            "agent_id": agent_id,
+            "session_id": session_id,
+            "conversation_id": conv_id,
+            "output": response.output,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "elapsed_ms": elapsed_ms,
+            "delivery": delivery,
+        }
+    except Exception as exc:
+        await mark_schedule_execution(tenant_id, agent_id, status="failed", error=str(exc))
+        raise
 
 
 async def _deliver_scheduled_result(*, tenant_id: str, design: Any, scheduled_input: str, output: str) -> dict[str, Any]:

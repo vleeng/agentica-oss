@@ -160,7 +160,7 @@ services:
     depends_on:
       - postgres
       - redis
-    command: celery -A app.tasks.celery_app worker --loglevel=info -Q builds,evals,deploys --concurrency=2
+    command: celery -A app.tasks.celery_app worker --loglevel=info -Q builds,evals,deploys,scheduled --concurrency=2
 
   # ── Frontend ──────────────────────────────────────────────────────────────────
   frontend:

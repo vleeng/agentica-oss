@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from app.api.deps import TenantRepo
 from app.core.security import CurrentContext, RequestContext, decode_access_token
@@ -31,6 +32,8 @@ from app.services.designer.design_generator import DesignGeneratorService
 from app.services.evaluator.eval_engine import EvalEngineService
 from app.services.optimizer.optimizer import OptimizerService
 from app.services.selector.framework_selector import FrameworkSelectorService
+from app.services.scheduler import sync_agent_schedule_state
+from app.db.session import PublicSessionFactory
 from app.tasks.agent_tasks import run_scheduled_agent
 
 router = APIRouter()
@@ -86,6 +89,7 @@ async def create_agent_from_spec(
         kb = await repo.get_knowledge_base(kb_id)
         if kb and (kb.get("access_mode") or "restricted") != "global":
             await repo.assign_kb_to_agent(str(design.agent_id), kb_id)
+    await sync_agent_schedule_state(ctx.tenant_id, str(design.agent_id), design)
     await get_runtime_store().save_design(str(design.agent_id), design)
 
     return design
@@ -190,6 +194,24 @@ class AgentRunTrace(BaseModel):
     last_activity_at: str
     messages: list[dict[str, Any]] = Field(default_factory=list)
     events: list[AgentRunEvent] = Field(default_factory=list)
+
+
+class ScheduleStateResponse(BaseModel):
+    agent_id: str
+    tenant_id: str
+    enabled: bool
+    cron_expression: str
+    timezone: str
+    delivery_mode: str
+    delivery_targets: list[str] = Field(default_factory=list)
+    webhook_url: str | None = None
+    subject_template: str
+    input_template: str
+    last_run_at: str | None = None
+    next_run_at: str | None = None
+    last_status: str | None = None
+    last_error: str | None = None
+    updated_at: str | None = None
 
 
 @router.post("/{agent_id}/invoke", response_model=AgentResponse)
@@ -303,6 +325,52 @@ async def run_scheduled_agent_now(
         "task_id": task.id,
         "status": "queued",
     }
+
+
+@router.get("/{agent_id}/schedule", response_model=ScheduleStateResponse)
+async def get_agent_schedule_state(
+    agent_id: str,
+    ctx: CurrentContext,
+    repo: TenantRepo,
+) -> ScheduleStateResponse:
+    ctx.require_human_user()
+    ctx.require_developer()
+
+    async with PublicSessionFactory() as db:
+        result = await db.execute(
+            text("""
+                SELECT agent_id, tenant_id, enabled, cron_expression, timezone,
+                       delivery_mode, delivery_targets, webhook_url, subject_template,
+                       input_template, last_run_at, next_run_at, last_status, last_error, updated_at
+                FROM public.agent_schedule_states
+                WHERE tenant_id = CAST(:tenant_id AS uuid)
+                  AND agent_id = CAST(:agent_id AS uuid)
+                LIMIT 1
+            """),
+            {"tenant_id": ctx.tenant_id, "agent_id": agent_id},
+        )
+        row = result.mappings().first()
+
+    if not row:
+        raise HTTPException(404, "No hay programacion registrada para este agente.")
+
+    return ScheduleStateResponse(
+        agent_id=str(row["agent_id"]),
+        tenant_id=str(row["tenant_id"]),
+        enabled=bool(row["enabled"]),
+        cron_expression=str(row["cron_expression"] or "0 9 * * *"),
+        timezone=str(row["timezone"] or "America/Buenos_Aires"),
+        delivery_mode=str(row["delivery_mode"] or "email"),
+        delivery_targets=list(row["delivery_targets"] or []),
+        webhook_url=row["webhook_url"],
+        subject_template=str(row["subject_template"] or "Resultado programado de {agent_name}"),
+        input_template=str(row["input_template"] or "{goal}"),
+        last_run_at=row["last_run_at"].isoformat() if row["last_run_at"] else None,
+        next_run_at=row["next_run_at"].isoformat() if row["next_run_at"] else None,
+        last_status=row["last_status"],
+        last_error=row["last_error"],
+        updated_at=row["updated_at"].isoformat() if row["updated_at"] else None,
+    )
 
 
 @router.websocket("/{agent_id}/ws")

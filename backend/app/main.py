@@ -16,6 +16,7 @@ from app.core.product_profile import get_product_profile_state
 from app.core.rate_limiter import init_rate_limiter
 from app.db.session import engine, Base
 from app.runtime.store import init_runtime_store
+from app.services.scheduler import scheduled_agent_scheduler
 from app.api.v1.endpoints import (
     auth, tenants, agents, builds, channels,
     knowledge, api_keys, usage, custom_tools,
@@ -113,6 +114,29 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE IF EXISTS public.free_account_requests "
             "ADD COLUMN IF NOT EXISTS job_title TEXT"
         ))
+        await conn.execute(_text(
+            "CREATE TABLE IF NOT EXISTS public.agent_schedule_states ("
+            "  agent_id UUID PRIMARY KEY,"
+            "  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,"
+            "  enabled BOOLEAN NOT NULL DEFAULT FALSE,"
+            "  cron_expression TEXT NOT NULL DEFAULT '0 9 * * *',"
+            "  timezone TEXT NOT NULL DEFAULT 'America/Buenos_Aires',"
+            "  delivery_mode TEXT NOT NULL DEFAULT 'email',"
+            "  delivery_targets TEXT[] NOT NULL DEFAULT '{}',"
+            "  webhook_url TEXT,"
+            "  subject_template TEXT NOT NULL DEFAULT 'Resultado programado de {agent_name}',"
+            "  input_template TEXT NOT NULL DEFAULT '{goal}',"
+            "  last_run_at TIMESTAMPTZ,"
+            "  next_run_at TIMESTAMPTZ,"
+            "  last_status TEXT,"
+            "  last_error TEXT,"
+            "  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+            ")"
+        ))
+        await conn.execute(_text(
+            "CREATE INDEX IF NOT EXISTS idx_agent_schedule_next_run "
+            "ON public.agent_schedule_states(enabled, next_run_at)"
+        ))
 
     from app.core.plan_limits import seed_default_plans
     await seed_default_plans()
@@ -170,11 +194,13 @@ async def lifespan(app: FastAPI):
     # Inicializar servicios con Redis
     init_runtime_store(redis_client=_redis_client)
     init_rate_limiter(redis_client=_redis_client)
+    await scheduled_agent_scheduler.start()
 
     yield
 
     if _redis_client:
         await _redis_client.aclose()
+    await scheduled_agent_scheduler.stop()
     await engine.dispose()
     print("[SHUTDOWN] Conexiones cerradas")
 
