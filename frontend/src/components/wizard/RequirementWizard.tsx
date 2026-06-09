@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   AgentMode, WizardState, WIZARD_DEFAULTS,
-  applyToolReadiness, AVAILABLE_TOOLS, ChannelType, KnowledgeBase, SingleAgentMode, ToolReadinessStatus, ToolRef,
+  applyToolReadiness, AVAILABLE_TOOLS, ChannelType, ExecutionMode, KnowledgeBase, SingleAgentMode, ToolReadinessStatus, ToolRef,
 } from '../../types/agent'
 import { StepCrew } from './StepCrew'
 
@@ -296,6 +296,55 @@ function StepIdentity({ state, update }: StepProps) {
           className={inputCls}
         />
       </Field>
+
+      <div className="space-y-2">
+        <div>
+          <div className="text-sm font-medium text-gray-700">Modo de ejecucion</div>
+          <p className="text-xs text-gray-400 mt-1">
+            Define como trabaja el agente en el tiempo: en chat, por horario o por objetivos.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {([
+            {
+              value: 'reactive',
+              title: 'Reactivo',
+              description: 'Responde cuando lo invocan por chat o API.',
+            },
+            {
+              value: 'scheduled',
+              title: 'Programado',
+              description: 'Corre por horario o trigger y entrega resultados.',
+            },
+            {
+              value: 'agentic',
+              title: 'Agentico',
+              description: 'Trabaja por objetivos y sigue un plan de accion.',
+            },
+          ] as Array<{ value: ExecutionMode; title: string; description: string }>).map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => update({ execution_mode: opt.value })}
+              className={`rounded-xl border p-4 text-left transition-all ${
+                state.execution_mode === opt.value
+                  ? 'border-violet-500 bg-violet-50'
+                  : 'border-gray-200 hover:border-violet-300 bg-white'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`mt-1 h-4 w-4 rounded-full border-2 ${
+                  state.execution_mode === opt.value ? 'border-violet-500 bg-violet-500' : 'border-gray-300'
+                }`} />
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">{opt.title}</div>
+                  <div className="mt-1 text-xs leading-relaxed text-gray-500">{opt.description}</div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <Field label="Descripcion" hint="Contexto adicional para el diseno (opcional)">
         <textarea
@@ -741,6 +790,7 @@ function StepReview({ state, knowledgeBases }: { state: WizardState; knowledgeBa
   const rows: Array<{ label: string; value: string }> = [
     { label: 'Nombre',      value: state.name || '-' },
     { label: 'Modo',        value: state.mode === 'single' ? 'Agente simple' : 'Equipo de agentes' },
+    { label: 'Ejecucion',    value: state.execution_mode === 'reactive' ? 'Reactivo' : state.execution_mode === 'scheduled' ? 'Programado' : 'Agentico' },
     { label: 'Comportamiento', value: state.mode === 'single' ? (state.single_agent_mode === 'direct' ? 'Respuesta inmediata' : 'ReAct con herramientas') : 'N/A' },
     { label: 'Objetivo',    value: state.goal || '-' },
     { label: 'Herramientas', value: state.tools.map(t => t.name).join(', ') || 'Ninguna' },
@@ -823,6 +873,7 @@ function normalizeWizardState(state: WizardState): WizardState {
   if (state.mode === 'single' && state.single_agent_mode === 'direct') {
     return {
       ...state,
+      execution_mode: 'reactive',
       tools: [],
       rag: {
         ...state.rag,

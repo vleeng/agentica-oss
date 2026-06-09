@@ -71,6 +71,13 @@ NIVEL DE AUTONOMÍA: {spec.autonomy_level.value if hasattr(spec, 'autonomy_level
 
 Respondé únicamente con el system prompt, sin explicaciones adicionales."""
 
+        execution_mode = getattr(spec, "execution_mode", None)
+        execution_mode_value = execution_mode.value if execution_mode else "reactive"
+        prompt = prompt.replace(
+            "HERRAMIENTAS DISPONIBLES:\n",
+            f"MODO DE EJECUCION: {execution_mode_value}\nHERRAMIENTAS DISPONIBLES:\n",
+        )
+
         return await self._client.complete(
             prompt,
             max_tokens=800,
@@ -110,6 +117,13 @@ MODO AGENTE SIMPLE: {getattr(spec.single_agent_mode, "value", spec.single_agent_
 {"Para cada nodo tool, completa siempre data.tool_name con el nombre tecnico exacto de la herramienta, por ejemplo knowledge_base, web_search o send_email." if spec.mode.value == "single" else ""}
 
 Respondé SOLO con el JSON válido, sin markdown, sin explicaciones."""
+
+        execution_mode = getattr(spec, "execution_mode", None)
+        execution_mode_value = execution_mode.value if execution_mode else "reactive"
+        prompt = prompt.replace(
+            f"FRAMEWORK: {framework.framework}\n",
+            f"MODO DE EJECUCION: {execution_mode_value}\nFRAMEWORK: {framework.framework}\n",
+        )
 
         content = await self._client.complete(prompt, max_tokens=1000, temperature=0.1)
         try:

@@ -9,6 +9,7 @@ interface ChatWizardProps {
 
 const focusLabels: Record<string, string> = {
   intro: 'Objetivo y tipo',
+  execution: 'Modo de ejecucion',
   name: 'Nombre operativo',
   behavior: 'Modo y estructura',
   knowledge: 'Conocimiento interno',
@@ -67,6 +68,15 @@ export function ChatWizard({ onComplete }: ChatWizardProps) {
     const selectedKnowledgeBases = knowledgeBases.filter((kb) => draft.knowledge_base_ids?.includes(kb.id))
     return [
       { label: 'Modo', value: draft.mode === 'crew' ? 'Equipo de agentes' : draft.mode === 'single' ? 'Agente simple' : 'Pendiente' },
+      {
+        label: 'Ejecucion',
+        value:
+          draft.execution_mode === 'scheduled'
+            ? 'Programado'
+            : draft.execution_mode === 'agentic'
+              ? 'Agentico'
+              : 'Reactivo',
+      },
       { label: 'Nombre', value: draft.name || 'Pendiente' },
       { label: 'Objetivo', value: draft.goal || 'Pendiente' },
       {

@@ -2,6 +2,7 @@
 
 export type AgentMode = 'single' | 'crew'
 export type SingleAgentMode = 'direct' | 'react'
+export type ExecutionMode = 'reactive' | 'scheduled' | 'agentic'
 export type MemoryType = 'none' | 'session' | 'persistent' | 'summary'
 export type CrewProcess = 'sequential' | 'hierarchical' | 'parallel'
 export type AutonomyLevel = 'reactive' | 'semi' | 'autonomous'
@@ -63,6 +64,7 @@ export interface AgentSpec {
   description: string
   goal: string
   mode: AgentMode
+  execution_mode: ExecutionMode
   channels: ChannelType[]
   model_params: ModelParams
   constraints: string[]
@@ -234,6 +236,7 @@ export interface WizardState {
   description: string
   goal: string
   channels: ChannelType[]
+  execution_mode: ExecutionMode
   single_agent_mode: SingleAgentMode
   tools: ToolRef[]
   memory: MemorySpec
@@ -294,6 +297,7 @@ export const WIZARD_DEFAULTS: WizardState = {
   description: '',
   goal: '',
   channels: ['web_chat'],
+  execution_mode: 'reactive',
   single_agent_mode: 'react',
   tools: [],
   memory: { type: 'session', max_messages: 50 },

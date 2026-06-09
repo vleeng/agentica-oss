@@ -18,6 +18,7 @@ from app.services.llm_client import TextGenerationClient
 WIZARD_CHAT_DEFAULTS: dict[str, Any] = {
     "step": 0,
     "mode": None,
+    "execution_mode": "reactive",
     "name": "",
     "description": "",
     "goal": "",
@@ -67,7 +68,7 @@ CHANNEL_ALIASES: dict[str, tuple[str, ...]] = {
     "rest_api": ("api", "rest api", "rest"),
 }
 
-FOCUS_ORDER = ("intro", "name", "behavior", "knowledge", "channels", "review")
+FOCUS_ORDER = ("intro", "execution", "name", "behavior", "knowledge", "channels", "review")
 
 
 @dataclass
@@ -93,7 +94,7 @@ class WizardChatService:
         session = WizardChatSession(session_id=session_id, draft_state=draft_state)
         assistant = (
             "Te ayudo a crear el agente por chat. Contame que queres resolver, "
-            "si va a responder solo por chat o tambien usar herramientas y datos, "
+            "si va a responder en tiempo real por chat, correr por horario o trabajar por objetivos, "
             "y cual es el objetivo principal."
         )
         session.messages.append(WizardChatMessage(role="assistant", content=assistant))
@@ -229,6 +230,7 @@ Responde solo JSON valido, sin markdown.
 Schema:
 {{
   "mode": "single" | "crew" | null,
+  "execution_mode": "reactive" | "scheduled" | "agentic" | null,
   "name": "string o vacio",
   "description": "string o vacio",
   "goal": "string o vacio",
@@ -237,7 +239,7 @@ Schema:
   "tools": ["web_search"],
   "rag_enabled": true | false | null,
   "constraints": ["string"],
-  "answered_focuses": ["intro", "behavior", "knowledge", "channels"],
+  "answered_focuses": ["intro", "execution", "behavior", "knowledge", "channels"],
   "agents": [{{"name": "researcher", "role": "Researcher", "goal": "string", "backstory": "string", "tools": [], "allow_delegation": false}}]
 }}
 
@@ -245,6 +247,7 @@ Reglas:
 - No inventes herramientas fuera de allowed_tools.
 - Si el usuario no menciono un campo, devolvelo vacio o null.
 - En answered_focuses inclui los temas que el usuario ya respondio de forma suficiente, aunque nadie se los haya preguntado todavia.
+- Si el mensaje describe solo el estilo de operacion del agente, traduci eso en execution_mode aunque no use esos nombres exactos.
 - Si menciona un equipo, intenta proponer de 2 a 4 roles utiles.
 - Escribi en espanol claro.
 
@@ -267,7 +270,7 @@ Contexto:
 
     def _sanitize_updates(self, parsed: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
         updates = deepcopy(fallback)
-        for key in ("mode", "name", "description", "goal", "single_agent_mode"):
+        for key in ("mode", "execution_mode", "name", "description", "goal", "single_agent_mode"):
             value = parsed.get(key)
             if isinstance(value, str):
                 updates[key] = value.strip()
@@ -306,6 +309,7 @@ Contexto:
         updates: dict[str, Any] = {"answered_focuses": []}
 
         mode = None
+        execution_mode = None
         if any(token in lower for token in ("equipo", "crew", "varios agentes", "multiagente", "muchos agentes")):
             mode = "crew"
         elif any(token in lower for token in ("agente simple", "uno solo", "single", "un agente")):
@@ -315,6 +319,16 @@ Contexto:
         if mode:
             updates["mode"] = mode
             updates["answered_focuses"].append("intro")
+
+        if any(token in lower for token in ("cada", "diario", "semanal", "mensual", "programado", "cron", "scheduler", "schedule", "agenda", "tarea recurrente", "reporte periodico", "automatizacion periodica")):
+            execution_mode = "scheduled"
+        elif any(token in lower for token in ("objetivo", "por objetivos", "goal", "openclaw", "autonomo", "autonoma", "proactivo", "proactiva", "seguimiento continuo", "plan de accion")):
+            execution_mode = "agentic"
+        elif any(token in lower for token in ("tiempo real", "chat", "cuando lo invocan", "on demand", "reactivo")):
+            execution_mode = "reactive"
+        if execution_mode:
+            updates["execution_mode"] = execution_mode
+            updates["answered_focuses"].append("execution")
 
         if any(token in lower for token in ("react", "herramient", "tools", "buscar", "consultar", "web", "datos externos", "documentos", "base de conocimiento", "rag", "calcular", "ejecutar")):
             updates["single_agent_mode"] = "react"
@@ -355,6 +369,14 @@ Contexto:
         elif current_focus == "intro":
             updates["goal"] = text
             updates["answered_focuses"].append("intro")
+        elif current_focus == "execution" and not execution_mode:
+            if any(token in lower for token in ("cada", "diario", "semanal", "mensual", "cron", "schedule")):
+                updates["execution_mode"] = "scheduled"
+            elif any(token in lower for token in ("objetivo", "openclaw", "proactivo", "autonom", "plan")):
+                updates["execution_mode"] = "agentic"
+            else:
+                updates["execution_mode"] = "reactive"
+            updates["answered_focuses"].append("execution")
         elif current_focus == "behavior" and draft_state.get("mode") == "crew":
             role_names = [
                 self._to_role_name(chunk)
@@ -393,6 +415,8 @@ Contexto:
             draft_state["description"] = updates["description"]
         if "goal" in updates and updates["goal"]:
             draft_state["goal"] = updates["goal"]
+        if "execution_mode" in updates and updates["execution_mode"] in {"reactive", "scheduled", "agentic"}:
+            draft_state["execution_mode"] = updates["execution_mode"]
         if "single_agent_mode" in updates and updates["single_agent_mode"] in {"direct", "react"}:
             draft_state["single_agent_mode"] = updates["single_agent_mode"]
         if "channels" in updates and updates["channels"]:
@@ -418,7 +442,10 @@ Contexto:
             draft_state["description"] = self._build_description(goal)
         if goal and not draft_state.get("name"):
             draft_state["name"] = self._suggest_name(goal, draft_state.get("mode"))
+        if not draft_state.get("execution_mode"):
+            draft_state["execution_mode"] = "reactive"
         if draft_state.get("single_agent_mode") == "direct":
+            draft_state["execution_mode"] = "reactive"
             draft_state["tools"] = []
             draft_state.setdefault("rag", deepcopy(WIZARD_CHAT_DEFAULTS["rag"]))
             draft_state["rag"]["enabled"] = False
@@ -430,6 +457,8 @@ Contexto:
             return "intro"
         if not str(draft_state.get("goal") or "").strip():
             return "intro"
+        if not str(draft_state.get("execution_mode") or "").strip():
+            return "execution"
         if not str(draft_state.get("name") or "").strip():
             return "name"
         if draft_state.get("mode") == "crew" and not draft_state.get("agents"):
@@ -445,6 +474,7 @@ Contexto:
     def _completion(self, draft_state: dict[str, Any], reviewed: set[str]) -> int:
         checks = [
             bool(draft_state.get("mode")),
+            bool(str(draft_state.get("execution_mode") or "").strip()),
             bool(str(draft_state.get("goal") or "").strip()),
             bool(str(draft_state.get("name") or "").strip()),
             bool(str(draft_state.get("description") or "").strip()),
@@ -460,9 +490,10 @@ Contexto:
         if next_focus is None:
             mode = "agente simple" if draft_state.get("mode") == "single" else "equipo de agentes"
             channels = ", ".join(draft_state.get("channels") or ["web_chat"])
+            execution_mode = draft_state.get("execution_mode") or "reactive"
             message = (
                 f"Ya tengo un borrador listo para crear un {mode}. "
-                f"Nombre: {draft_state.get('name')}. Canal principal: {channels}. "
+                f"Nombre: {draft_state.get('name')}. Modo de ejecucion: {execution_mode}. Canal principal: {channels}. "
                 "Si queres, ya podes crear el agente o seguir refinando tools, restricciones y tono."
             )
             return f"{acknowledgement} {message}".strip() if acknowledgement else message
@@ -471,6 +502,12 @@ Contexto:
             message = (
                 "Perfecto. Ahora contame mejor el objetivo y decime si esto lo resuelve "
                 "un solo agente o si necesitas varios roles colaborando."
+            )
+            return f"{acknowledgement} {message}".strip() if acknowledgement else message
+        if next_focus == "execution":
+            message = (
+                "Como queres que trabaje este agente: en tiempo real por chat, programado por horario "
+                "o con objetivos y plan de accion?"
             )
             return f"{acknowledgement} {message}".strip() if acknowledgement else message
         if next_focus == "name":

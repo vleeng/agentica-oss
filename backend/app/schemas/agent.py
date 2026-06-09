@@ -37,6 +37,12 @@ class AutonomyLevel(str, Enum):
     autonomous = "autonomous"  # Ejecuta sin pedir confirmación
 
 
+class ExecutionMode(str, Enum):
+    reactive = "reactive"      # Responde en tiempo real por chat
+    scheduled = "scheduled"    # Corre por horario o trigger y entrega resultados
+    agentic = "agentic"        # Trabaja por objetivos y ejecuta un plan
+
+
 class ChannelType(str, Enum):
     web_chat  = "web_chat"
     whatsapp  = "whatsapp"
@@ -193,6 +199,9 @@ class AgentSpec(BaseModel):
 
     # Modo — determina el framework
     mode: AgentMode
+
+    # Modo de ejecucion del agente
+    execution_mode: ExecutionMode = ExecutionMode.reactive
 
     # Canales de despliegue
     channels: list[ChannelType] = Field(default_factory=lambda: [ChannelType.web_chat])

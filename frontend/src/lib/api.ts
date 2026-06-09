@@ -531,12 +531,19 @@ export const customToolsApi = {
 }
 
 export function wizardStateToSpec(state: WizardState, tenantId: string): AgentSpec {
+  const autonomyLevel = state.execution_mode === 'scheduled'
+    ? 'semi'
+    : state.execution_mode === 'agentic'
+    ? 'autonomous'
+    : 'reactive'
+
   return {
     tenant_id: tenantId,
     name: state.name,
     description: state.description,
     goal: state.goal,
     mode: state.mode!,
+    execution_mode: state.execution_mode,
     channels: state.channels,
     model_params: state.model_params,
     constraints: state.constraints,
@@ -546,7 +553,7 @@ export function wizardStateToSpec(state: WizardState, tenantId: string): AgentSp
     rag: state.rag,
     single_agent_mode: state.single_agent_mode,
     tools: state.tools,
-    autonomy_level: 'reactive',
+    autonomy_level: autonomyLevel,
     knowledge_base_ids: state.knowledge_base_ids,
     agents: state.agents,
     process: state.process,
